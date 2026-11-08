@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EPIC · 个人市场分析工具</title>
+  <style>
+    :root {
+      --bg: #0b0f14; --panel: #121820; --panel-2: #18212c; --line: #24303d;
+      --text: #d7e1ea; --muted: #8fa3b5; --accent: #4cc2ff; --ok: #37d67a;
+      --warn: #ffb020; --bad: #ff5c5c;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; font-size: 14px;
+    }
+    header {
+      display: flex; align-items: center; gap: 16px; padding: 14px 22px;
+      border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #0e141b, #0b0f14);
+      position: sticky; top: 0; z-index: 5;
+    }
+    .logo { font-weight: 700; letter-spacing: .5px; font-size: 18px; }
+    .logo span { color: var(--accent); }
+    .sub { color: var(--muted); font-size: 12px; }
+    .spacer { flex: 1; }
+    .badge {
+      padding: 3px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line);
+      background: var(--panel-2);
+    }
+    .badge.ok { color: var(--ok); border-color: #1f5c3a; }
+    .badge.bad { color: var(--bad); border-color: #6b2626; }
+    main { max-width: 1280px; margin: 0 auto; padding: 22px; }
+    .grid { display: grid; gap: 14px; }
+    .cards { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .card {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+    }
+    .card h3 { margin: 0 0 10px; font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .3px; }
+    .metric { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .metric small { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+    .kv { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px dashed var(--line); }
+    .kv:last-child { border-bottom: 0; }
+    .kv span:first-child { color: var(--muted); }
+    .kv span:last-child { font-family: var(--mono); }
+    section { margin-top: 22px; }
+    section > h2 { font-size: 15px; margin: 0 0 12px; color: var(--text); }
+    .roadmap { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+    .step { border-left: 3px solid var(--line); padding: 10px 12px; background: var(--panel); border-radius: 6px; }
+    .step.done { border-left-color: var(--ok); }
+    .step.next { border-left-color: var(--accent); }
+    .step h4 { margin: 0 0 6px; font-size: 13px; }
+    .step p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
+    th { color: var(--muted); font-weight: 600; }
+    td { font-family: var(--mono); }
+    .placeholder {
+      border: 1px dashed var(--line); border-radius: 8px; padding: 18px; color: var(--muted);
+      font-size: 13px; line-height: 1.7;
+    }
+    footer { color: var(--muted); font-size: 12px; text-align: center; padding: 30px 0 18px; }
+    a { color: var(--accent); text-decoration: none; }
+    .err { color: var(--bad); font-family: var(--mono); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="logo">EPIC<span>.</span></div>
+      <div class="sub">Economic Positioning, Intelligence &amp; Cycles · 个人市场分析工具</div>
+    </div>
+    <div class="spacer"></div>
+    <span id="clock" class="sub"></span>
+    <span id="status" class="badge">连接中…</span>
+  </header>
+
+  <main>
+    <div class="grid cards">
+      <div class="card">
+        <h3>系统状态</h3>
+        <div class="metric" id="health">—</div>
+        <div class="kv"><span>版本</span><span id="version">—</span></div>
+        <div class="kv"><span>环境</span><span id="env">—</span></div>
+        <div class="kv"><span>本地时间</span><span id="local-time">—</span></div>
+      </div>
+      <div class="card">
+        <h3>数据库</h3>
+        <div class="metric" id="db-state">—</div>
+        <div class="kv"><span>引擎</span><span id="db-engine">—</span></div>
+        <div class="kv"><span>合约</span><span id="count-instruments">—</span></div>
+        <div class="kv"><span>行情行数</span><span id="count-bars">—</span></div>
+      </div>
+      <div class="card">
+        <h3>调度器</h3>
+        <div class="metric" id="sched-state">—</div>
+        <div class="kv"><span>运行任务</span><span id="sched-jobs">—</span></div>
+        <div class="kv"><span>信息条目</span><span id="count-docs">—</span></div>
+        <div class="kv"><span>断言</span><span id="count-claims">—</span></div>
+      </div>
+      <div class="card">
+        <h3>今日主线（M2 起自动生成）</h3>
+        <div class="placeholder" id="mainline">
+          数据管道尚未接入。M1 完成后这里将显示跨资产概览、风险开关与当日主线；
+          M2 起每条结论附带证据链。
+        </div>
+      </div>
+    </div>
+
+    <section>
+      <h2>建设进度</h2>
+      <div class="grid roadmap">
+        <div class="step done"><h4>M0 环境与骨架</h4><p>FastAPI、SQLite、调度器、健康检查、看板空壳 —— 已就绪</p></div>
+        <div class="step next"><h4>M1 数据地基</h4><p>国内期货/外盘/宏观/新闻采集与多源降级 —— 下一步</p></div>
+        <div class="step"><h4>M2 证据与简报</h4><p>原文快照、断言抽取、可信度、证据链、日报 v1</p></div>
+        <div class="step"><h4>M3 分析引擎</h4><p>周期定位、定价归因、传导图、持仓、历史类比</p></div>
+        <div class="step"><h4>M4 决策系统</h4><p>信号、情景、交易计划、风控、回测、预测账本</p></div>
+        <div class="step"><h4>M5 打磨验收</h4><p>告警、导出、系统页、性能、安全、文档</p></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>任务</h2>
+      <table>
+        <thead><tr><th>名称</th><th>计划</th><th>状态</th><th>最近运行</th></tr></thead>
+        <tbody id="jobs"><tr><td colspan="4">加载中…</td></tr></tbody>
+      </table>
+    </section>
+
+    <footer>仅供个人研究，不构成投资建议 · <span id="footer-time"></span></footer>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const fmt = (v) => (v === null || v === undefined ? "—" : v);
+
+    function setBadge(el, text, kind) {
+      el.textContent = text;
+      el.className = "badge" + (kind ? " " + kind : "");
+    }
+
+    async function loadHealth() {
+      try {
+        const res = await fetch("/api/system/health", { cache: "no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const h = await res.json();
+        setBadge($("status"), h.status === "ok" ? "运行中" : "降级", h.status === "ok" ? "ok" : "bad");
+        $("health").textContent = h.status === "ok" ? "正常" : "异常";
+        $("version").textContent = fmt(h.version);
+        $("env").textContent = fmt(h.env);
+        $("local-time").textContent = (h.time_local || "").slice(0, 19).replace("T", " ");
+        $("db-state").textContent = h.database.ok ? "正常" : "异常";
+        $("db-engine").textContent = fmt(h.database.engine);
+        const c = h.counts || {};
+        $("count-instruments").textContent = fmt(c.instruments);
+        $("count-bars").textContent = fmt(c.market_bars);
+        $("count-docs").textContent = fmt(c.documents);
+        $("count-claims").textContent = fmt(c.claims);
+        $("sched-state").textContent = h.scheduler.running ? "运行中" : "停止";
+        $("sched-jobs").textContent = (h.scheduler.jobs || []).map((j) => j.id).join(", ") || "—";
+      } catch (err) {
+        setBadge($("status"), "连接失败", "bad");
+        $("health").textContent = "无法连接后端";
+        $("mainline").innerHTML = '<span class="err">' + String(err) + "</span>";
+      }
+    }
+
+    async function loadJobs() {
+      try {
+        const res = await fetch("/api/system/jobs", { cache: "no-store" });
+        const data = await res.json();
+        const rows = (data.data || []).map((j) =>
+          `<tr><td>${j.name}</td><td>${fmt(j.cron)}</td><td>${fmt(j.last_status)}</td><td>${fmt(j.last_run_at || "").slice(0, 19).replace("T", " ")}</td></tr>`
+        );
+        $("jobs").innerHTML = rows.length ? rows.join("") : '<tr><td colspan="4">暂无任务</td></tr>';
+      } catch (err) {
+        $("jobs").innerHTML = '<tr><td colspan="4" class="err">' + String(err) + "</td></tr>";
+      }
+    }
+
+    function tick() {
+      const now = new Date();
+      $("clock").textContent = now.toLocaleString("zh-CN", { hour12: false });
+      $("footer-time").textContent = now.toLocaleString("zh-CN", { hour12: false });
+    }
+
+    tick();
+    loadHealth();
+    loadJobs();
+    setInterval(tick, 1000);
+    setInterval(() => { loadHealth(); loadJobs(); }, 15000);
+  </script>
+</body>
+</html>

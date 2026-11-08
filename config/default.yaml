@@ -1,0 +1,56 @@
+# EPIC 默认配置（非敏感；可由 .env / 环境变量覆盖）
+app:
+  name: EPIC
+  timezone: Asia/Shanghai
+  host: 127.0.0.1
+  port: 8765
+
+market:
+  # 重点覆盖：内外盘同品种 + 有色链（V1 交易池）
+  instruments:
+    precious:
+      - {symbol: XAUUSD, name: 伦敦金现, asset_class: metal, currency: USD}
+      - {symbol: GC, name: COMEX黄金, asset_class: metal, currency: USD, exchange: COMEX}
+      - {symbol: AU, name: 沪金, asset_class: metal, currency: CNY, exchange: SHFE}
+      - {symbol: AG, name: 沪银, asset_class: metal, currency: CNY, exchange: SHFE}
+    energy:
+      - {symbol: CL, name: WTI原油, asset_class: energy, currency: USD, exchange: NYMEX}
+      - {symbol: BZ, name: Brent原油, asset_class: energy, currency: USD, exchange: ICE}
+      - {symbol: SC, name: 原油, asset_class: energy, currency: CNY, exchange: INE}
+    industrial:
+      - {symbol: CU, name: 沪铜, asset_class: metal, currency: CNY, exchange: SHFE}
+      - {symbol: AL, name: 沪铝, asset_class: metal, currency: CNY, exchange: SHFE}
+      - {symbol: ZN, name: 沪锌, asset_class: metal, currency: CNY, exchange: SHFE}
+      - {symbol: NI, name: 沪镍, asset_class: metal, currency: CNY, exchange: SHFE}
+      - {symbol: HG, name: COMEX铜, asset_class: metal, currency: USD, exchange: COMEX}
+    fx:
+      - {symbol: DXY, name: 美元指数, asset_class: fx, currency: USD}
+      - {symbol: USDCNH, name: 离岸人民币, asset_class: fx, currency: CNY}
+      - {symbol: USDJPY, name: 美元日元, asset_class: fx, currency: JPY}
+    rates:
+      - {symbol: US10Y, name: 美债10年, asset_class: rate, currency: USD}
+      - {symbol: US2Y, name: 美债2年, asset_class: rate, currency: USD}
+      - {symbol: CN10Y, name: 中债10年, asset_class: rate, currency: CNY}
+    equity:
+      - {symbol: SPX, name: 标普500, asset_class: equity, currency: USD}
+      - {symbol: NDX, name: 纳斯达克100, asset_class: equity, currency: USD}
+      - {symbol: 000300, name: 沪深300, asset_class: equity, currency: CNY}
+      - {symbol: 603993, name: 洛阳钼业, asset_class: equity, currency: CNY}
+
+llm:
+  extract_model: deepseek-chat
+  reason_model: deepseek-reasoner
+  daily_budget_usd: 5
+  cache: true
+
+scheduler:
+  heartbeat_seconds: 60
+  brief_premarket: "07:30"
+  brief_postmarket: "21:00"
+
+data:
+  quote_delay_note:
+    cn_futures: "实时（新浪/东财，约 3-60 秒）"
+    cn_equity: "实时（东财，约 3-5 秒）"
+    overseas: "免费源约 15 分钟延迟或日线"
+    rates: "日频（FRED，17:00 ET 后）"
