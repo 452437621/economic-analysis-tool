@@ -152,7 +152,14 @@
     </section>
 
     <section>
-      <h2>每日简报 <span class="hint" id="brief-meta"></span> <a id="brief-print" class="hint" href="#" target="_blank" style="margin-left: auto; color: var(--accent);">打印 / PDF</a> <a id="brief-export" class="hint" href="#" download style="color: var(--accent);">导出 Markdown</a></h2>
+      <h2>简报 <span class="hint" id="brief-meta"></span>
+        <span style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
+          <button class="modal-close" onclick="loadBrief()">日常</button>
+          <button class="modal-close" onclick="loadBrief('weekly')">周报</button>
+          <a id="brief-print" class="hint" href="#" target="_blank" style="color: var(--accent);">打印 / PDF</a>
+          <a id="brief-export" class="hint" href="#" download style="color: var(--accent);">导出 Markdown</a>
+        </span>
+      </h2>
       <div class="brief" id="brief">加载中…</div>
     </section>
 
@@ -395,19 +402,19 @@
       }
     }
 
-    async function loadBrief() {
+    async function loadBrief(kind) {
       try {
-        const payload = await getJSON("/api/briefs/latest");
+        const query = kind ? `?kind=${encodeURIComponent(kind)}` : "";
+        const payload = await getJSON("/api/briefs/latest" + query);
         const brief = payload.data;
         if (!brief) {
-          $("brief").textContent = "暂无简报，等待 07:30 / 21:00 定时任务，或手动运行 brief_manual。";
+          $("brief").textContent = "暂无简报，等待 07:30 / 21:00 定时任务，或手动运行 brief_manual / weekly_review。";
           return;
         }
         $("brief-meta").textContent = `${brief.kind} · ${fmtTime(brief.created_at, true)}`;
         $("brief-export").href = `/api/briefs/${brief.id}/markdown`;
         $("brief-print").href = `/api/briefs/${brief.id}/print`;
-        $("brief").innerHTML = renderBriefMarkdown(brief.markdown);
-      } catch (err) {
+        $("brief").innerHTML = renderBriefMarkdown(brief.markdown);      } catch (err) {
         $("brief").innerHTML = `<span class="err">${esc(err.message)}</span>`;
       }
     }

@@ -57,3 +57,7 @@ def test_acceptance_endpoint_structure():
 def test_dxy_daily_coverage_configured():
     assert EM_DAILY_SECID.get("DXY") == "100.UDI"
     assert EM_DAILY_SECID.get("USDCNH") == "133.USDCNH"
+    assert EM_DAILY_SECID.get("SPX") == "100.SPX"
+    from app.ingest.symbols import SINA_HF
+
+    assert SINA_HF.get("AL_LME") == "hf_AHD"

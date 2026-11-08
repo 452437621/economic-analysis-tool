@@ -113,11 +113,13 @@ def parse_overseas_quote(text: str, symbol: str) -> Quote | None:
     if price is None:
         return None
     volume = _f(fields[14]) if len(fields) > 14 else None
+    # LME 等品种的字段 8（昨结算）可能为 0，退回到字段 7 的昨收
+    prev_close = _f(fields[8]) or (_f(fields[7]) if len(fields) > 7 else None)
     return Quote(
         symbol=symbol,
         ts=ts.astimezone(timezone.utc),
         price=price,
-        prev_close=_f(fields[8]),
+        prev_close=prev_close,
         open=_f(fields[9]),
         high=_f(fields[4]),
         low=_f(fields[5]),

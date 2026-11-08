@@ -2,9 +2,9 @@
 
 > **Economic Positioning, Intelligence & Cycles** —— 本地运行、以证据为中心的个人宏观—市场—交易决策工作台。
 >
-> 状态：**M0–M5 完成（v0.3）；M6 试运行支持工具就绪，等待真实使用与校准**（2026-11-09）。新增 DXY/USDCNH 日线、交易日志、周报、验收自动化；LLM 已接入待 Key。
+> 状态：**M0–M5 完成（v0.4）；M6 试运行支持工具就绪，等待真实使用与校准**（2026-11-09）。35 个标的、3.9 万根日线；新增全球股指/LME 金属、DXY/USDCNH 日线、交易日志、周报、验收自动化；LLM 已接入待 Key。
 
-![M7 看板](docs/assets/m7-dashboard.png)
+![M8 看板](docs/assets/m8-dashboard.png)
 
 ---
 
@@ -43,6 +43,8 @@ powershell -File .\scripts\start.ps1
 | 外盘金银油铜 | 新浪 | 伦敦金银、COMEX 金银、WTI、Brent、LME 铜（约 15 分钟延迟，界面标注） |
 | 汇率 | 新浪 | USDCNH/USDJPY/EURUSD/GBPUSD/USDCAD/USDSEK/USDCHF + 自算 DXY 代理 |
 | 美元/人民币日线 | 东方财富 | DXY、USDCNH 各 2000 根（2019–2026），DXY 实时报价 |
+| 全球股指 | 东方财富 | 标普500、纳指100、道琼斯、恒生（日线约 2000 根 + 实时） |
+| LME 金属 | 新浪 | 伦铝/伦锌/伦镍实时（约 15 分钟延迟；无免费日线） |
 | 美债利率 | 美国财政部 CSV | 2/5/10/30Y、5/10Y 实际利率、盈亏平衡通胀，近 5 年日频 |
 | 新闻政策 | 官方 RSS/HTML | 美联储、欧洲央行、美国财政部（标题+元数据+原文快照） |
 

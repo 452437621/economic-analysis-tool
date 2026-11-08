@@ -26,6 +26,9 @@ SINA_HF: dict[str, str] = {
     "CL": "hf_CL",
     "BZ": "hf_OIL",
     "HG": "hf_CAD",
+    "AL_LME": "hf_AHD",
+    "ZN_LME": "hf_ZSD",
+    "NI_LME": "hf_NID",
 }
 
 # 汇率（新浪 fx_ 系列）
@@ -45,14 +48,22 @@ EM_SECID: dict[str, str] = {
     "603993": "1.603993",
 }
 
-# 东财全球指数/外汇（可提供 DXY、USDCNH 的实时报价与日线历史）
+# 东财全球指数/外汇（可提供 DXY、USDCNH 及海外股指的实时报价与日线历史）
 EM_QUOTE_SECID: dict[str, str] = {
     "DXY": "100.UDI",
     "USDCNH": "133.USDCNH",
+    "SPX": "100.SPX",
+    "NDX": "100.NDX",
+    "DJIA": "100.DJIA",
+    "HSI": "100.HSI",
 }
 EM_DAILY_SECID: dict[str, str] = {
     "DXY": "100.UDI",
     "USDCNH": "133.USDCNH",
+    "SPX": "100.SPX",
+    "NDX": "100.NDX",
+    "DJIA": "100.DJIA",
+    "HSI": "100.HSI",
 }
 
 # ICE 美元指数篮子权重（用于由 6 组汇率合成 DXY 代理）

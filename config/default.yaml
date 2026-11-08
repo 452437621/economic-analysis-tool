@@ -24,6 +24,9 @@ market:
       - {symbol: ZN, name: 沪锌, asset_class: metal, currency: CNY, exchange: SHFE}
       - {symbol: NI, name: 沪镍, asset_class: metal, currency: CNY, exchange: SHFE}
       - {symbol: HG, name: LME铜, asset_class: metal, currency: USD, exchange: LME}
+      - {symbol: AL_LME, name: 伦铝, asset_class: metal, currency: USD, exchange: LME}
+      - {symbol: ZN_LME, name: 伦锌, asset_class: metal, currency: USD, exchange: LME}
+      - {symbol: NI_LME, name: 伦镍, asset_class: metal, currency: USD, exchange: LME}
     fx:
       - {symbol: DXY, name: 美元指数(代理), asset_class: fx, currency: USD}
       - {symbol: USDCNH, name: 离岸人民币, asset_class: fx, currency: CNY}
@@ -36,6 +39,10 @@ market:
     equity:
       - {symbol: "000300", name: 沪深300, asset_class: equity, currency: CNY}
       - {symbol: "603993", name: 洛阳钼业, asset_class: equity, currency: CNY}
+      - {symbol: SPX, name: 标普500, asset_class: equity, currency: USD}
+      - {symbol: NDX, name: 纳斯达克100, asset_class: equity, currency: USD}
+      - {symbol: DJIA, name: 道琼斯, asset_class: equity, currency: USD}
+      - {symbol: HSI, name: 恒生指数, asset_class: equity, currency: HKD}
     agri:
       - {symbol: M, name: 豆粕, asset_class: agri, currency: CNY, exchange: DCE}
       - {symbol: P, name: 棕榈油, asset_class: agri, currency: CNY, exchange: DCE}
