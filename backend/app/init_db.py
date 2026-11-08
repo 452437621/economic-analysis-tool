@@ -17,9 +17,32 @@ from app.platform.db import SessionLocal, init_db
 
 logger = logging.getLogger(__name__)
 
+# 交易所标准合约参数（近似值，用户应按期货公司实际标准覆写 extra/margin）
+CONTRACT_SPECS: dict[str, dict] = {
+    "AU": {"contract_size": 1000, "margin_pct": 0.09, "fee_per_lot": 10.0, "tick_size": 0.02},
+    "AG": {"contract_size": 15, "margin_pct": 0.10, "fee_per_lot": 3.0, "tick_size": 1.0},
+    "CU": {"contract_size": 5, "margin_pct": 0.10, "fee_per_lot": 15.0, "tick_size": 10.0},
+    "AL": {"contract_size": 5, "margin_pct": 0.10, "fee_per_lot": 3.0, "tick_size": 5.0},
+    "ZN": {"contract_size": 5, "margin_pct": 0.10, "fee_per_lot": 3.0, "tick_size": 5.0},
+    "NI": {"contract_size": 1, "margin_pct": 0.12, "fee_per_lot": 3.0, "tick_size": 10.0},
+    "SC": {"contract_size": 1000, "margin_pct": 0.12, "fee_per_lot": 20.0, "tick_size": 0.1},
+    "M": {"contract_size": 10, "margin_pct": 0.08, "fee_per_lot": 1.5, "tick_size": 1.0},
+    "I": {"contract_size": 100, "margin_pct": 0.10, "fee_per_lot": 2.0, "tick_size": 0.5},
+    "SR": {"contract_size": 10, "margin_pct": 0.07, "fee_per_lot": 3.0, "tick_size": 1.0},
+    "CF": {"contract_size": 5, "margin_pct": 0.07, "fee_per_lot": 4.3, "tick_size": 5.0},
+    "P": {"contract_size": 10, "margin_pct": 0.09, "fee_per_lot": 2.5, "tick_size": 2.0},
+    "603993": {
+        "contract_size": 1,
+        "margin_pct": 1.0,
+        "fee_per_lot": 0.0,
+        "commission_rate": 0.0003,
+        "tick_size": 0.01,
+    },
+}
+
 
 def seed_instruments() -> int:
-    """Seed instrument master data from config/default.yaml (idempotent)."""
+    """Seed/update instrument master data from config/default.yaml (idempotent)."""
     config_path = ROOT_DIR / "config" / "default.yaml"
     if not config_path.exists():
         logger.warning("config file not found: %s", config_path)
@@ -37,10 +60,8 @@ def seed_instruments() -> int:
                 exists = session.scalar(
                     select(Instrument).where(Instrument.symbol == symbol)
                 )
-                if exists:
-                    continue
-                session.add(
-                    Instrument(
+                if exists is None:
+                    exists = Instrument(
                         symbol=symbol,
                         name=str(item.get("name", symbol)),
                         exchange=item.get("exchange"),
@@ -48,10 +69,19 @@ def seed_instruments() -> int:
                         currency=item.get("currency"),
                         active=True,
                     )
-                )
-                created += 1
+                    session.add(exists)
+                    created += 1
+                spec = CONTRACT_SPECS.get(symbol)
+                if spec:
+                    exists.contract_size = spec["contract_size"]
+                    exists.margin_pct = spec["margin_pct"]
+                    extra = dict(exists.extra or {})
+                    extra.update(
+                        {key: value for key, value in spec.items() if key not in ("contract_size", "margin_pct")}
+                    )
+                    exists.extra = extra
         session.commit()
-    logger.info("seeded %s instruments", created)
+    logger.info("seeded/updated %s instruments", created)
     return created
 
 

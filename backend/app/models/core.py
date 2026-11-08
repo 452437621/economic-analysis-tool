@@ -440,3 +440,26 @@ class PlanCheck(Base):
     detail: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+
+class PlanDetail(Base):
+    __tablename__ = "plan_details"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    plan_id: Mapped[str] = mapped_column(
+        ForeignKey("trade_plans.id", ondelete="CASCADE"), unique=True
+    )
+    payload: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Alert(Base):
+    __tablename__ = "alerts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    level: Mapped[str] = mapped_column(String(16), default="info")  # info/warn/critical
+    kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
+

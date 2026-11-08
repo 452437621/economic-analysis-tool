@@ -6,7 +6,15 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.core import AnalyticsResult, Instrument, PlanCheck, Prediction, Signal, TradePlan
+from app.models.core import (
+    AnalyticsResult,
+    Instrument,
+    PlanCheck,
+    PlanDetail,
+    Prediction,
+    Signal,
+    TradePlan,
+)
 from app.platform.db import get_session
 
 router = APIRouter(prefix="/api/decisions", tags=["decisions"])
@@ -43,6 +51,11 @@ def summary(session: Session = Depends(get_session)) -> dict:
         checks_by_plan.setdefault(check.plan_id, []).append(
             {"rule": check.rule, "passed": check.passed, "detail": check.detail}
         )
+    plan_ids = [row.id for row in plans]
+    details = {
+        row.plan_id: row.payload
+        for row in session.scalars(select(PlanDetail).where(PlanDetail.plan_id.in_(plan_ids))).all()
+    }
 
     return {
         "signals": [
@@ -72,6 +85,7 @@ def summary(session: Session = Depends(get_session)) -> dict:
                 "time_stop_days": row.time_stop_days,
                 "invalidation": row.invalidation,
                 "status": row.status,
+                "detail": details.get(row.id),
                 "checks": checks_by_plan.get(row.id, []),
             }
             for row in plans
@@ -121,6 +135,10 @@ def list_plans(
         by_plan.setdefault(check.plan_id, []).append(
             {"rule": check.rule, "passed": check.passed, "detail": check.detail}
         )
+    details = {
+        row.plan_id: row.payload
+        for row in session.scalars(select(PlanDetail).where(PlanDetail.plan_id.in_(plan_ids))).all()
+    }
     return {
         "data": [
             {
@@ -136,6 +154,7 @@ def list_plans(
                 "time_stop_days": row.time_stop_days,
                 "invalidation": row.invalidation,
                 "status": row.status,
+                "detail": details.get(row.id),
                 "checks": by_plan.get(row.id, []),
             }
             for row in rows

@@ -11,7 +11,15 @@ from app.analytics.data import aligned, load_frames
 from app.decision.backtest import backtest_all
 from app.decision.plans import build_plan
 from app.decision.signals import generate_all
-from app.models.core import AnalyticsResult, Instrument, PlanCheck, Prediction, Signal, TradePlan
+from app.models.core import (
+    AnalyticsResult,
+    Instrument,
+    PlanCheck,
+    PlanDetail,
+    Prediction,
+    Signal,
+    TradePlan,
+)
 from app.platform.db import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -40,16 +48,19 @@ def run_decision() -> dict:
 
     with SessionLocal() as session:
         session.execute(delete(Signal).where(Signal.ts >= asof))
+        draft_ids = session.scalars(
+            select(TradePlan.id).where(TradePlan.status == "draft")
+        ).all()
+        if draft_ids:
+            session.execute(delete(Prediction).where(Prediction.plan_id.in_(draft_ids)))
         session.execute(delete(TradePlan).where(TradePlan.status == "draft"))
         session.execute(
             delete(AnalyticsResult).where(
                 AnalyticsResult.kind == "signal_backtest", AnalyticsResult.asof == asof
             )
         )
-        instrument_ids = {
-            row.symbol: row.id
-            for row in session.scalars(select(Instrument)).all()
-        }
+        instrument_ids = {row.symbol: row.id for row in session.scalars(select(Instrument)).all()}
+        instruments = {row.symbol: row for row in session.scalars(select(Instrument)).all()}
 
         saved: list[dict] = []
         for item in signals:
@@ -79,11 +90,16 @@ def run_decision() -> dict:
         for item in saved[:MAX_PLANS]:
             if item["strength"] < MIN_STRENGTH:
                 continue
-            instrument_id = instrument_ids[item["symbol"]]
-            plan = build_plan(item)
+            instrument = instruments[item["symbol"]]
+            spec = {
+                "contract_size": instrument.contract_size,
+                "margin_pct": instrument.margin_pct,
+                **(instrument.extra or {}),
+            }
+            plan = build_plan(item, spec=spec)
             trade_plan = TradePlan(
                 signal_id=item["signal_id"],
-                instrument_id=instrument_id,
+                instrument_id=instrument.id,
                 side=plan["side"],
                 entry_low=plan["entry_low"],
                 entry_high=plan["entry_high"],
@@ -98,6 +114,23 @@ def run_decision() -> dict:
             session.add(trade_plan)
             session.flush()
             counts["plans"] += 1
+
+            session.add(
+                PlanDetail(
+                    plan_id=trade_plan.id,
+                    payload={
+                        "lots": plan["size"],
+                        "raw_lots": plan["raw_lots"],
+                        "contract_size": plan["contract_size"],
+                        "margin_pct": plan["margin_pct"],
+                        "notional": plan["notional"],
+                        "margin": plan["margin"],
+                        "fee": plan["fee"],
+                        "equity": plan["equity"],
+                        "checks": plan["checks"],
+                    },
+                )
+            )
 
             for check in plan["checks"]:
                 session.add(

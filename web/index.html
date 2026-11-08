@@ -137,6 +137,11 @@
     </div>
 
     <section>
+      <h2>告警 <span class="hint" id="alert-hint"></span></h2>
+      <ul class="news" id="alerts"><li>加载中…</li></ul>
+    </section>
+
+    <section>
       <h2>市场快照 <span class="hint" id="snapshot-hint">国内期货实时 · 外盘延迟约 15 分钟 · 美债日频</span></h2>
       <table>
         <thead><tr><th>品种</th><th>名称</th><th>最新</th><th>涨跌幅</th><th>数据源</th><th>时点</th></tr></thead>
@@ -145,7 +150,7 @@
     </section>
 
     <section>
-      <h2>每日简报 <span class="hint" id="brief-meta"></span></h2>
+      <h2>每日简报 <span class="hint" id="brief-meta"></span> <a id="brief-export" class="hint" href="#" download style="margin-left: auto; color: var(--accent);">导出 Markdown</a></h2>
       <div class="brief" id="brief">加载中…</div>
     </section>
 
@@ -186,8 +191,8 @@
         <div class="panel">
           <h3>交易计划（草稿，需人工确认）</h3>
           <table>
-            <thead><tr><th>品种</th><th>方向</th><th>入场区</th><th>止损</th><th>T1</th><th>仓位</th><th>风控</th></tr></thead>
-            <tbody id="plans"><tr><td colspan="7">加载中…</td></tr></tbody>
+            <thead><tr><th>品种</th><th>方向</th><th>入场区</th><th>止损</th><th>T1</th><th>手数</th><th>保证金</th><th>手续费</th><th>风控</th></tr></thead>
+            <tbody id="plans"><tr><td colspan="9">加载中…</td></tr></tbody>
           </table>
           <div class="mini" id="decision-note"></div>
         </div>
@@ -209,6 +214,14 @@
       <table>
         <thead><tr><th>来源</th><th>类型</th><th>等级</th><th>条目</th><th>最近状态</th><th>最近检查</th></tr></thead>
         <tbody id="sources"><tr><td colspan="6">加载中…</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>数据质检 <span class="hint">官方对账与新鲜度</span></h2>
+      <table>
+        <thead><tr><th>数据集</th><th>类型</th><th>状态</th><th>明细</th></tr></thead>
+        <tbody id="quality"><tr><td colspan="4">加载中…</td></tr></tbody>
       </table>
     </section>
 
@@ -377,6 +390,7 @@
           return;
         }
         $("brief-meta").textContent = `${brief.kind} · ${fmtTime(brief.created_at, true)}`;
+        $("brief-export").href = `/api/briefs/${brief.id}/markdown`;
         $("brief").innerHTML = renderBriefMarkdown(brief.markdown);
       } catch (err) {
         $("brief").innerHTML = `<span class="err">${esc(err.message)}</span>`;
@@ -523,17 +537,63 @@
         $("plans").innerHTML = plans.map((p) => {
           const checks = p.checks || [];
           const allPassed = checks.every((check) => check.passed);
+          const detail = p.detail || {};
           return `<tr><td class="sym">${esc(p.symbol || "")}</td>
             <td class="${p.side === "long" ? "up" : "down"}">${p.side === "long" ? "多" : "空"}</td>
             <td class="num">${fmtNum(p.entry_low, 2)}–${fmtNum(p.entry_high, 2)}</td>
             <td class="num">${fmtNum(p.stop, 2)}</td>
             <td class="num">${fmtNum((p.targets || {}).T1, 2)}</td>
-            <td class="num">${fmtNum(p.size, 2)}</td>
+            <td class="num">${fmtNum(p.size, 0)}</td>
+            <td class="num">${fmtNum(detail.margin, 0)}</td>
+            <td class="num">${fmtNum(detail.fee, 2)}</td>
             <td>${allPassed ? '<span class="badge ok">通过</span>' : '<span class="badge bad">拦截</span>'}</td></tr>`;
-        }).join("") || '<tr><td colspan="7">暂无计划</td></tr>';
-        $("decision-note").textContent = "仓位按「以损定量」计算（权益 × 风险% ÷ 止损距离）；期货合约乘数尚未接入，手数需人工换算。计划为草稿，不构成投资建议。";
+        }).join("") || '<tr><td colspan="9">暂无计划</td></tr>';
+        $("decision-note").textContent = "仓位按「以损定量」计算（权益 × 风险% ÷ 止损距离 ÷ 合约乘数），手数为整数；保证金与手续费按交易所标准近似，实际以期货公司为准。计划为草稿，不构成投资建议。";
       } catch (err) {
         $("decision-cards").innerHTML = `<div class="card err">${esc(err.message)}</div>`;
+      }
+    }
+
+    async function loadAlerts() {
+      try {
+        const payload = await getJSON("/api/alerts?limit=10");
+        const rows = payload.data || [];
+        $("alert-hint").textContent = rows.length ? `${rows.length} 条未确认` : "无未确认告警";
+        $("alerts").innerHTML = rows.map((alert) => `
+          <li>
+            <div class="meta">
+              <span class="badge ${alert.level === "critical" ? "bad" : "warn"}">${esc(alert.level)}</span>
+              ${esc(alert.kind)} · ${fmtTime(alert.created_at, true)}
+              <button class="modal-close" style="float: right;" onclick="ackAlert('${esc(alert.id)}')">确认</button>
+            </div>
+            <div>${esc(alert.title)}</div>
+            <div class="muted">${esc(alert.message || "")}</div>
+          </li>`).join("") || "<li>暂无告警</li>";
+      } catch (err) {
+        $("alerts").innerHTML = `<li class="err">${esc(err.message)}</li>`;
+      }
+    }
+
+    async function ackAlert(id) {
+      try {
+        await fetch(`/api/alerts/${id}/ack`, { method: "POST" });
+        loadAlerts();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function loadQuality() {
+      try {
+        const payload = await getJSON("/api/system/data-quality");
+        const rows = payload.data || [];
+        $("quality").innerHTML = rows.map((row) => `
+          <tr><td>${esc(row.dataset)}</td><td>${esc(row.kind)}</td>
+          <td>${row.passed ? '<span class="badge ok">通过</span>' : '<span class="badge bad">失败</span>'}</td>
+          <td class="muted">${esc(row.detail || "")}</td></tr>`).join("")
+          || '<tr><td colspan="4">暂无检查结果</td></tr>';
+      } catch (err) {
+        $("quality").innerHTML = `<tr><td colspan="4" class="err">${esc(err.message)}</td></tr>`;
       }
     }
 
@@ -627,7 +687,7 @@
     }
 
     tick();
-    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions();
+    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadAlerts(); loadQuality();
     const docParam = new URLSearchParams(location.search).get("doc");
     if (docParam) openDoc(docParam);
     setInterval(tick, 1000);
@@ -635,6 +695,7 @@
     setInterval(() => { loadMacro(); loadNews(); loadSources(); loadBrief(); }, 60000);
     setInterval(loadAnalytics, 120000);
     setInterval(loadDecisions, 60000);
+    setInterval(() => { loadAlerts(); loadQuality(); }, 30000);
   </script>
 </body>
 </html>

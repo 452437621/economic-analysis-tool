@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -156,3 +157,52 @@ def get_brief(brief_id: str, session: Session = Depends(get_session)) -> dict:
         "markdown": brief.markdown,
         "meta": brief.meta,
     }
+
+
+@router.get("/briefs/{brief_id}/markdown")
+def export_brief(brief_id: str, session: Session = Depends(get_session)) -> PlainTextResponse:
+    brief = session.get(Brief, brief_id)
+    if brief is None:
+        raise HTTPException(status_code=404, detail="brief not found")
+    filename = f"epic-brief-{brief.kind}-{brief.trade_date.isoformat()}.md"
+    return PlainTextResponse(
+        brief.markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/documents/{document_id}/evidence")
+def export_evidence(document_id: str, session: Session = Depends(get_session)) -> JSONResponse:
+    document = session.get(Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="document not found")
+    body = session.scalar(select(DocumentBody).where(DocumentBody.document_id == document.id))
+    claims = session.scalars(select(Claim).where(Claim.document_id == document.id)).all()
+    payload = {
+        "document": {
+            "id": document.id,
+            "title": document.title,
+            "url": document.url,
+            "published_at": _iso(document.published_at or document.fetched_at),
+            "sha256": body.sha256 if body else None,
+        },
+        "body": body.text if body else None,
+        "claims": [
+            {
+                "id": claim.id,
+                "subject": claim.subject,
+                "predicate": claim.predicate,
+                "value": claim.value,
+                "unit": claim.unit,
+                "confidence": claim.confidence,
+            }
+            for claim in claims
+        ],
+        "exported_at": datetime.now().isoformat(),
+    }
+    filename = f"epic-evidence-{document.id[:8]}.json"
+    return JSONResponse(
+        payload,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

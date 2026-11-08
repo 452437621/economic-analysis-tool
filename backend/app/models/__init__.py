@@ -2,6 +2,7 @@
 
 from app.models.base import Base, new_id, utcnow
 from app.models.core import (
+    Alert,
     AnalyticsResult,
     AuditLog,
     Brief,
@@ -23,6 +24,7 @@ from app.models.core import (
     MarketBar,
     Outcome,
     PlanCheck,
+    PlanDetail,
     Prediction,
     Quote,
     Scenario,
@@ -38,6 +40,7 @@ __all__ = [
     "Base",
     "new_id",
     "utcnow",
+    "Alert",
     "AnalyticsResult",
     "AuditLog",
     "Brief",
@@ -59,6 +62,7 @@ __all__ = [
     "MarketBar",
     "Outcome",
     "PlanCheck",
+    "PlanDetail",
     "Prediction",
     "Quote",
     "Scenario",

@@ -141,6 +141,23 @@ def _register_collectors() -> None:
         max_instances=1,
     )
     scheduler.add_job(
+        _collector("scan_alerts"),
+        trigger=IntervalTrigger(seconds=300),
+        id="scan_alerts",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        next_run_time=now + timedelta(seconds=45),
+    )
+    scheduler.add_job(
+        _collector("score_predictions"),
+        trigger=CronTrigger(hour=17, minute=0, timezone=CST),
+        id="score_predictions",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
         _collector("brief_premarket"),
         trigger=CronTrigger(hour=7, minute=30, timezone=CST),
         id="brief_premarket",
