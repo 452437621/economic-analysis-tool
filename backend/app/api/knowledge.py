@@ -126,10 +126,19 @@ def latest_brief(
     kind: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> dict:
-    stmt = select(Brief).order_by(Brief.created_at.desc()).limit(1)
     if kind:
         stmt = select(Brief).where(Brief.kind == kind).order_by(Brief.created_at.desc()).limit(1)
+    else:
+        # 看板默认展示日常简报，周报只在显式查询时返回
+        stmt = (
+            select(Brief)
+            .where(Brief.kind != "weekly")
+            .order_by(Brief.created_at.desc())
+            .limit(1)
+        )
     brief = session.scalar(stmt)
+    if brief is None and not kind:
+        brief = session.scalar(select(Brief).order_by(Brief.created_at.desc()).limit(1))
     if brief is None:
         return {"data": None}
     return {

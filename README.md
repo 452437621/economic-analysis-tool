@@ -2,9 +2,9 @@
 
 > **Economic Positioning, Intelligence & Cycles** —— 本地运行、以证据为中心的个人宏观—市场—交易决策工作台。
 >
-> 状态：**M0–M5 完成（v0.2，LLM 已接入待 Key），M6 试运行待校准**（2026-11-09）。行情/利率/新闻、证据链、简报（含 LLM 编辑接口）、周期/归因/相关性/风向/类比、信号/计划/风控/回测/预测、告警/质检/导出/通知/手册均已可用。
+> 状态：**M0–M5 完成（v0.3）；M6 试运行支持工具就绪，等待真实使用与校准**（2026-11-09）。新增 DXY/USDCNH 日线、交易日志、周报、验收自动化；LLM 已接入待 Key。
 
-![M6 看板](docs/assets/m6-dashboard.png)
+![M7 看板](docs/assets/m7-dashboard.png)
 
 ---
 
@@ -25,6 +25,7 @@ powershell -File .\scripts\start.ps1
 - 生成简报：`--job brief_manual`，然后打开看板「每日简报」，或调用 `/api/briefs/latest`
 - 证据链：点击任意新闻 → 正文弹窗 + 数字断言高亮；也可用 `http://127.0.0.1:8765/?doc=<document_id>` 深链
 - 开发模式：`.\scripts\start.ps1 -Reload`
+- 验收：`powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1`（跑测试 + 12 项 DoD）
 - 备份：`.\scripts\backup.ps1` → `data/backup/<时间戳>/`
 - 测试：`.\.venv\Scripts\python.exe -m pytest -q`
 
@@ -41,6 +42,7 @@ powershell -File .\scripts\start.ps1
 | A 股/指数 | 东方财富 | 沪深 300、洛阳钼业（日线 + 快照） |
 | 外盘金银油铜 | 新浪 | 伦敦金银、COMEX 金银、WTI、Brent、LME 铜（约 15 分钟延迟，界面标注） |
 | 汇率 | 新浪 | USDCNH/USDJPY/EURUSD/GBPUSD/USDCAD/USDSEK/USDCHF + 自算 DXY 代理 |
+| 美元/人民币日线 | 东方财富 | DXY、USDCNH 各 2000 根（2019–2026），DXY 实时报价 |
 | 美债利率 | 美国财政部 CSV | 2/5/10/30Y、5/10Y 实际利率、盈亏平衡通胀，近 5 年日频 |
 | 新闻政策 | 官方 RSS/HTML | 美联储、欧洲央行、美国财政部（标题+元数据+原文快照） |
 
@@ -107,7 +109,7 @@ FastAPI (api / SSE / 导出)
 | M3 | 周期/定价/关联/类比/参与者分析 | ✅ v0 完成（周期/归因/相关性/风向/类比；传导图与持仓待补） |
 | M4 | 信号、情景、交易计划、风控、回测、预测账本 | ✅ 完成（v0.1：合约乘数/手数/保证金/手续费、成本回测、预测对账） |
 | M5 | 告警、导出、系统页、性能、文档、安全 | ✅ 完成（v0.2：通知渠道、打印/PDF、LLM 接入、复核 API、验收文档） |
-| M6 | 两周试运行与校准 | 🚧 当前阶段（待真实使用与参数校准） |
+| M6 | 两周试运行与校准 | 🟡 支持工具就绪（交易日志/周报/验收/日线补齐），待真实使用 |
 
 ---
 

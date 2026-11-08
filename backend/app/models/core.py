@@ -463,3 +463,12 @@ class Alert(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
 
+
+class JournalEntry(Base, TimestampMixin):
+    __tablename__ = "journal_entries"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    entry_date: Mapped[date] = mapped_column(Date, nullable=False, unique=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    meta: Mapped[dict | None] = mapped_column(JSON)
+

@@ -24,6 +24,7 @@ from app.ingest import pipeline
 from app.models.base import utcnow
 from app.models.core import Job, JobRun
 from app.narrative import brief as brief_mod
+from app.narrative import weekly as weekly_mod
 from app.platform.config import settings
 from app.platform.db import SessionLocal
 from app.platform.logging import setup_logging
@@ -46,6 +47,7 @@ JOBS = {
     "brief_premarket": lambda: brief_mod.generate("premarket"),
     "brief_postmarket": lambda: brief_mod.generate("postmarket"),
     "brief_manual": lambda: brief_mod.generate("manual"),
+    "weekly_review": weekly_mod.generate_weekly,
 }
 
 

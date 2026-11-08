@@ -74,6 +74,8 @@
     .panel h3 { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
     .panel table th, .panel table td { font-size: 12px; padding: 6px 8px; }
     .mini { color: var(--muted); font-size: 11px; line-height: 1.6; }
+    .journal-input { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+      border-radius: 8px; padding: 10px; font-family: inherit; font-size: 13px; line-height: 1.6; resize: vertical; }
     .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .72); display: none; align-items: flex-start; justify-content: center; padding: 40px 16px; z-index: 20; }
     .modal.open { display: flex; }
     .modal-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; width: min(980px, 100%); max-height: 84vh; display: flex; flex-direction: column; }
@@ -161,8 +163,8 @@
         <div class="panel">
           <h3>定价归因（近 20 日贡献，%）</h3>
           <table>
-            <thead><tr><th>资产</th><th>实际</th><th>R²</th><th>实际利率</th><th>盈亏平衡</th><th>曲线</th><th>残差</th></tr></thead>
-            <tbody id="attribution"><tr><td colspan="7">加载中…</td></tr></tbody>
+            <thead><tr><th>资产</th><th>实际</th><th>R²</th><th>实际利率</th><th>盈亏平衡</th><th>曲线</th><th>美元</th><th>残差</th></tr></thead>
+            <tbody id="attribution"><tr><td colspan="8">加载中…</td></tr></tbody>
           </table>
           <div class="mini" id="attribution-note"></div>
         </div>
@@ -197,6 +199,18 @@
           <div class="mini" id="decision-note"></div>
         </div>
       </div>
+    </section>
+
+    <section>
+      <h2>交易日志 <span class="hint">用于 M6 复盘；周报自动汇总</span></h2>
+      <div class="panel">
+        <textarea id="journal-input" class="journal-input" rows="4" placeholder="今日主线、判断依据、计划执行、情绪与错误……"></textarea>
+        <div style="margin-top: 8px; display: flex; gap: 10px; align-items: center;">
+          <button class="modal-close" onclick="saveJournal()">保存今日日志</button>
+          <span class="hint" id="journal-status"></span>
+        </div>
+      </div>
+      <ul class="news" id="journal"><li>加载中…</li></ul>
     </section>
 
     <section>
@@ -482,9 +496,9 @@
           const c = p.contributions_pct || {};
           return `<tr><td class="sym">${symbol}</td><td class="num">${pctCell(p.actual_pct)}</td><td class="num">${p.r2}</td>
             <td class="num">${pctCell(c.real_yield_chg)}</td><td class="num">${pctCell(c.breakeven_chg)}</td>
-            <td class="num">${pctCell(c.curve_chg)}</td><td class="num">${pctCell(p.residual_pct)}</td></tr>`;
+            <td class="num">${pctCell(c.curve_chg)}</td><td class="num">${pctCell(c.dxy_chg)}</td><td class="num">${pctCell(p.residual_pct)}</td></tr>`;
         });
-        $("attribution").innerHTML = attrRows.join("") || '<tr><td colspan="7">暂无归因结果</td></tr>';
+        $("attribution").innerHTML = attrRows.join("") || '<tr><td colspan="8">暂无归因结果</td></tr>';
         $("attribution-note").textContent = "回归窗口 120 日，驱动为美国利率变化；R² 低说明价格主要由其他因素驱动（仓位/地缘/国内供需），需结合 M2 证据链判断。";
 
         const analogs = a.analogs;
@@ -607,6 +621,38 @@
       }
     }
 
+    async function loadJournal() {
+      try {
+        const payload = await getJSON("/api/journal?limit=5");
+        const rows = payload.data || [];
+        $("journal").innerHTML = rows.map((entry) => `
+          <li><div class="meta">${esc(entry.entry_date)}</div><div style="white-space: pre-wrap;">${esc(entry.content)}</div></li>`).join("")
+          || "<li>暂无日志。今天的判断、执行与错误，值得记录下来。</li>";
+      } catch (err) {
+        $("journal").innerHTML = `<li class="err">${esc(err.message)}</li>`;
+      }
+    }
+
+    async function saveJournal() {
+      const content = $("journal-input").value.trim();
+      if (!content) {
+        $("journal-status").textContent = "内容为空";
+        return;
+      }
+      try {
+        await fetch("/api/journal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        });
+        $("journal-status").textContent = "已保存";
+        $("journal-input").value = "";
+        loadJournal();
+      } catch (err) {
+        $("journal-status").textContent = "保存失败：" + err.message;
+      }
+    }
+
     async function openDoc(id) {
       $("modal").classList.add("open");
       $("doc-title").textContent = "加载中…";
@@ -697,7 +743,7 @@
     }
 
     tick();
-    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadAlerts(); loadQuality();
+    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadAlerts(); loadQuality(); loadJournal();
     const docParam = new URLSearchParams(location.search).get("doc");
     if (docParam) openDoc(docParam);
     setInterval(tick, 1000);
@@ -706,6 +752,7 @@
     setInterval(loadAnalytics, 120000);
     setInterval(loadDecisions, 60000);
     setInterval(() => { loadAlerts(); loadQuality(); }, 30000);
+    setInterval(loadJournal, 120000);
   </script>
 </body>
 </html>

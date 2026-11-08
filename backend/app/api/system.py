@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 
 from app.models.base import utcnow
 from app.models.core import (
+    Alert,
+    AnalyticsResult,
     Brief,
     Claim,
     DataCheck,
@@ -22,6 +24,7 @@ from app.models.core import (
     MacroObs,
     MarketBar,
     Quote,
+    Signal,
     Thesis,
     TradePlan,
 )
@@ -131,7 +134,6 @@ def meta() -> dict:
 
 @router.get("/data-quality")
 def data_quality(session: Session = Depends(get_session)) -> dict:
-    """Latest reconciliation and freshness checks."""
     checks = session.scalars(
         select(DataCheck).order_by(DataCheck.check_date.desc()).limit(80)
     ).all()
@@ -159,4 +161,50 @@ def data_quality(session: Session = Depends(get_session)) -> dict:
             "passed": sum(1 for check in latest_by_dataset.values() if check.passed),
             "failed": sum(1 for check in latest_by_dataset.values() if not check.passed),
         },
+    }
+
+
+@router.get("/acceptance")
+def acceptance(session: Session = Depends(get_session)) -> dict:
+    """Automated DoD/acceptance checks (V0.x)."""
+    counts = {
+        "instruments": int(session.scalar(select(func.count()).select_from(Instrument)) or 0),
+        "market_bars": int(session.scalar(select(func.count()).select_from(MarketBar)) or 0),
+        "quotes": int(session.scalar(select(func.count()).select_from(Quote)) or 0),
+        "macro": int(session.scalar(select(func.count()).select_from(MacroObs)) or 0),
+        "documents": int(session.scalar(select(func.count()).select_from(Document)) or 0),
+        "bodies": int(session.scalar(select(func.count()).select_from(DocumentBody)) or 0),
+        "claims": int(session.scalar(select(func.count()).select_from(Claim)) or 0),
+        "briefs": int(session.scalar(select(func.count()).select_from(Brief)) or 0),
+        "analytics": int(session.scalar(select(func.count()).select_from(AnalyticsResult)) or 0),
+        "signals": int(session.scalar(select(func.count()).select_from(Signal)) or 0),
+        "plans": int(session.scalar(select(func.count()).select_from(TradePlan)) or 0),
+        "alerts": int(session.scalar(select(func.count()).select_from(Alert)) or 0),
+    }
+    checks_rows = session.scalars(
+        select(DataCheck).order_by(DataCheck.check_date.desc()).limit(80)
+    ).all()
+    latest: dict[str, DataCheck] = {}
+    for check in checks_rows:
+        latest.setdefault(f"{check.kind}:{check.dataset}", check)
+    quality_failed = sum(1 for check in latest.values() if not check.passed)
+
+    checks = [
+        {"name": "行情标的 ≥ 20", "passed": counts["instruments"] >= 20, "detail": counts["instruments"]},
+        {"name": "日线 ≥ 10,000", "passed": counts["market_bars"] >= 10000, "detail": counts["market_bars"]},
+        {"name": "行情快照 ≥ 20", "passed": counts["quotes"] >= 20, "detail": counts["quotes"]},
+        {"name": "宏观观测 ≥ 1,000", "passed": counts["macro"] >= 1000, "detail": counts["macro"]},
+        {"name": "新闻 ≥ 10", "passed": counts["documents"] >= 10, "detail": counts["documents"]},
+        {"name": "正文 ≥ 10", "passed": counts["bodies"] >= 10, "detail": counts["bodies"]},
+        {"name": "断言 ≥ 50", "passed": counts["claims"] >= 50, "detail": counts["claims"]},
+        {"name": "简报 ≥ 1", "passed": counts["briefs"] >= 1, "detail": counts["briefs"]},
+        {"name": "分析结果 ≥ 10", "passed": counts["analytics"] >= 10, "detail": counts["analytics"]},
+        {"name": "信号 ≥ 1", "passed": counts["signals"] >= 1, "detail": counts["signals"]},
+        {"name": "计划 ≥ 1", "passed": counts["plans"] >= 1, "detail": counts["plans"]},
+        {"name": "数据质检全部通过", "passed": quality_failed == 0, "detail": f"failed={quality_failed}"},
+    ]
+    return {
+        "passed": all(check["passed"] for check in checks),
+        "checks": checks,
+        "counts": counts,
     }

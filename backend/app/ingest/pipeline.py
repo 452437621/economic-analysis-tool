@@ -14,7 +14,15 @@ from app.ingest.contracts import Bar, MacroPoint, Quote
 from app.ingest.http import HttpClient
 from app.ingest.providers import czce, eastmoney, rss, sina, treasury
 from app.ingest.providers.html_extract import extract_main_text
-from app.ingest.symbols import CN_FUTURES, EM_SECID, SINA_FX, SINA_HF, compute_dxy
+from app.ingest.symbols import (
+    CN_FUTURES,
+    EM_DAILY_SECID,
+    EM_QUOTE_SECID,
+    EM_SECID,
+    SINA_FX,
+    SINA_HF,
+    compute_dxy,
+)
 from app.knowledge.extract import extract_numeric_claims
 from app.knowledge.store import save_claims
 from app.models.core import (
@@ -107,14 +115,13 @@ def collect_quotes() -> dict:
             store.record_health(session, sina_source.id, ok=False, error=str(exc))
             stats["errors"].append(f"overseas: {exc}")
 
-        # 3) FX + computed DXY proxy
+        # 3) FX + computed DXY proxy (fallback if Eastmoney DXY unavailable)
+        dxy_price = None
         try:
             t0 = time.perf_counter()
             fx_quotes = sina.fetch_fx_quotes(client, SINA_FX)
             quotes = list(fx_quotes.values())
             dxy_price = compute_dxy({symbol: quote.price for symbol, quote in fx_quotes.items()})
-            if dxy_price:
-                quotes.append(Quote(symbol="DXY", ts=_now(), price=dxy_price, delay_sec=30))
             n = store.upsert_quotes(session, quotes, symbol_ids, sina_source.id)
             store.record_health(session, sina_source.id, ok=True, latency_ms=int((time.perf_counter() - t0) * 1000))
             stats["groups"]["fx"] = n
@@ -124,14 +131,17 @@ def collect_quotes() -> dict:
             store.record_health(session, sina_source.id, ok=False, error=str(exc))
             stats["errors"].append(f"fx: {exc}")
 
-        # 4) A-share / index via Eastmoney
+        # 4) A-share / index / DXY / USDCNH via Eastmoney
         try:
             t0 = time.perf_counter()
             quotes = []
-            for symbol, secid in EM_SECID.items():
+            for symbol, secid in {**EM_SECID, **EM_QUOTE_SECID}.items():
                 quote = eastmoney.fetch_quote(client, secid, symbol)
                 if quote:
                     quotes.append(quote)
+            fetched = {quote.symbol for quote in quotes}
+            if dxy_price and "DXY" not in fetched:
+                quotes.append(Quote(symbol="DXY", ts=_now(), price=dxy_price, delay_sec=30))
             n = store.upsert_quotes(session, quotes, symbol_ids, em_source.id)
             store.record_health(session, em_source.id, ok=True, latency_ms=int((time.perf_counter() - t0) * 1000))
             stats["groups"]["cn_equity"] = n
@@ -177,6 +187,19 @@ def collect_daily_bars() -> dict:
         store.record_health(session, sina_source.id, ok=not stats["errors"])
 
         for symbol, secid in EM_SECID.items():
+            instrument_id = symbol_ids.get(symbol)
+            if not instrument_id:
+                continue
+            try:
+                bars = _latest(eastmoney.fetch_daily_kline(client, secid), 2000)
+                n = store.upsert_bars(session, instrument_id, "1d", bars, em_source.id)
+                stats["bars"] += n
+                stats["symbols"] += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("daily kline failed: %s", symbol)
+                stats["errors"].append(f"{symbol}: {exc}")
+
+        for symbol, secid in EM_DAILY_SECID.items():
             instrument_id = symbol_ids.get(symbol)
             if not instrument_id:
                 continue

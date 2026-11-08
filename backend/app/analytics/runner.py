@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.analytics.analogs import build_state, find_analogs
 from app.analytics.attribution import build_drivers, decompose
@@ -32,20 +32,15 @@ def _asof(closes) -> datetime:  # noqa: ANN001
 
 
 def _save(session, kind: str, subject: str, asof: datetime, payload: dict) -> None:  # noqa: ANN001
-    row = session.scalar(
-        select(AnalyticsResult).where(
-            AnalyticsResult.kind == kind,
-            AnalyticsResult.subject == subject,
-            AnalyticsResult.asof == asof,
+    # 每类结果只保留最新快照，避免旧的 asof 覆盖新计算结果
+    session.execute(
+        delete(AnalyticsResult).where(
+            AnalyticsResult.kind == kind, AnalyticsResult.subject == subject
         )
     )
-    if row is None:
-        session.add(
-            AnalyticsResult(kind=kind, subject=subject, asof=asof, payload=payload, code_version="m3.0")
-        )
-    else:
-        row.payload = payload
-        row.created_at = datetime.now(timezone.utc)
+    session.add(
+        AnalyticsResult(kind=kind, subject=subject, asof=asof, payload=payload, code_version="m3.0")
+    )
 
 
 def run_analytics() -> dict:
@@ -88,6 +83,8 @@ def run_analytics() -> dict:
             counts["correlation"] = 1
 
         drivers = build_drivers(macro)
+        if "DXY" in closes.columns:
+            drivers["dxy_chg"] = closes["DXY"].pct_change()
         if not drivers.empty:
             for symbol in ATTRIBUTION_SYMBOLS:
                 if symbol not in closes.columns:

@@ -76,7 +76,17 @@ def load_frames(session: Session | None = None) -> MarketFrames:
 
 
 def aligned(frames: MarketFrames, symbols: list[str] | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Return (asset closes, macro) on the asset trading calendar, macro forward-filled 7d."""
+    """Return (asset closes, macro) on a common trading calendar.
+
+    Forex/global indices can carry weekend or next-day bars while domestic
+    futures are still closed; rows where fewer than half of the assets have
+    data are dropped so indicators/wind do not read stale or NaN rows.
+    """
     closes = frames.closes if symbols is None else frames.closes[[s for s in symbols if s in frames.closes]]
-    macro = frames.macro.reindex(frames.closes.index, method="ffill", limit=7)
+    closes = closes.copy()
+    if len(closes) and len(closes.columns):
+        required = max(1, int(len(closes.columns) * 0.5))
+        keep = closes.notna().sum(axis=1) >= required
+        closes = closes[keep]
+    macro = frames.macro.reindex(closes.index, method="ffill", limit=7)
     return closes, macro

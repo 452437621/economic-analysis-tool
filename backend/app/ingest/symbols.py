@@ -45,6 +45,16 @@ EM_SECID: dict[str, str] = {
     "603993": "1.603993",
 }
 
+# 东财全球指数/外汇（可提供 DXY、USDCNH 的实时报价与日线历史）
+EM_QUOTE_SECID: dict[str, str] = {
+    "DXY": "100.UDI",
+    "USDCNH": "133.USDCNH",
+}
+EM_DAILY_SECID: dict[str, str] = {
+    "DXY": "100.UDI",
+    "USDCNH": "133.USDCNH",
+}
+
 # ICE 美元指数篮子权重（用于由 6 组汇率合成 DXY 代理）
 DXY_BASKET: dict[str, float] = {
     "EURUSD": -0.576,
