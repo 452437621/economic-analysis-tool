@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.api import system
+from app.api import market, system
 from app.platform.config import ROOT_DIR, settings
 from app.platform.db import init_db
 from app.platform.logging import setup_logging
@@ -26,6 +26,10 @@ async def lifespan(app: FastAPI):
     logger.info("starting %s %s (env=%s)", settings.app_name, settings.app_version, settings.env)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     init_db()
+    from app.init_db import seed_instruments, seed_jobs
+
+    seed_instruments()
+    seed_jobs()
     start_scheduler()
     try:
         yield
@@ -39,6 +43,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(system.router)
+app.include_router(market.router)
 
 if WEB_DIR.exists():
     assets_dir = WEB_DIR / "assets"

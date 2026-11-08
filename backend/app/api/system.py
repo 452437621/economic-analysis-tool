@@ -16,7 +16,9 @@ from app.models.core import (
     Instrument,
     Job,
     JobRun,
+    MacroObs,
     MarketBar,
+    Quote,
     Thesis,
     TradePlan,
 )
@@ -28,7 +30,9 @@ router = APIRouter(prefix="/api/system", tags=["system"])
 
 _COUNTED = {
     "instruments": Instrument,
+    "quotes": Quote,
     "market_bars": MarketBar,
+    "macro_observations": MacroObs,
     "documents": Document,
     "claims": Claim,
     "theses": Thesis,

@@ -1,12 +1,15 @@
-"""Background scheduler: in-process jobs (heartbeat now, collectors/analysis later)."""
+"""Background scheduler: heartbeat + data collection jobs."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import select
 
@@ -17,7 +20,8 @@ from app.platform.db import SessionLocal
 
 logger = logging.getLogger(__name__)
 
-scheduler = AsyncIOScheduler(timezone=ZoneInfo(settings.timezone))
+CST = ZoneInfo(settings.timezone)
+scheduler = AsyncIOScheduler(timezone=CST)
 
 
 def _heartbeat_sync() -> None:
@@ -39,6 +43,73 @@ async def heartbeat_job() -> None:
         logger.exception("heartbeat job failed")
 
 
+def _collector(name: str):
+    async def _run() -> None:
+        from app.jobs.runner import run_job
+
+        try:
+            await asyncio.to_thread(run_job, name)
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("scheduled job failed: %s", name)
+
+    return _run
+
+
+def _register_collectors() -> None:
+    now = datetime.now(CST)
+    scheduler.add_job(
+        _collector("collect_quotes"),
+        trigger=IntervalTrigger(seconds=300),
+        id="collect_quotes",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        next_run_time=now + timedelta(seconds=3),
+    )
+    scheduler.add_job(
+        _collector("collect_news"),
+        trigger=IntervalTrigger(seconds=180),
+        id="collect_news",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        next_run_time=now + timedelta(seconds=8),
+    )
+    scheduler.add_job(
+        _collector("collect_rates"),
+        trigger=IntervalTrigger(hours=6),
+        id="collect_rates",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        next_run_time=now + timedelta(seconds=15),
+    )
+    # 首次启动回补日线，之后按收盘时点更新
+    scheduler.add_job(
+        _collector("collect_daily_bars"),
+        trigger=DateTrigger(run_date=now + timedelta(seconds=25)),
+        id="collect_daily_bars_bootstrap",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        _collector("collect_daily_bars"),
+        trigger=CronTrigger(hour=15, minute=40, timezone=CST),
+        id="collect_daily_bars_cn",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _collector("collect_daily_bars"),
+        trigger=CronTrigger(hour=6, minute=30, timezone=CST),
+        id="collect_daily_bars_us",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
+
 def start_scheduler() -> None:
     if scheduler.running:
         return
@@ -50,8 +121,10 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
+    if settings.env != "test":
+        _register_collectors()
     scheduler.start()
-    logger.info("scheduler started (heartbeat every 60s)")
+    logger.info("scheduler started")
 
 
 def stop_scheduler() -> None:

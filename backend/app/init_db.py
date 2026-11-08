@@ -59,18 +59,29 @@ def seed_jobs() -> int:
     """Seed built-in job definitions (idempotent)."""
     defaults = [
         {"name": "heartbeat", "cron": "every 60s"},
-        {"name": "collect_market", "cron": "every 60s (trading hours)"},
+        {"name": "collect_quotes", "cron": "every 60s (trading hours)"},
         {"name": "collect_news", "cron": "every 3m"},
+        {"name": "collect_rates", "cron": "every 6h"},
+        {"name": "collect_daily_bars", "cron": "15:40 / 06:30"},
         {"name": "brief_premarket", "cron": "07:30"},
         {"name": "brief_postmarket", "cron": "21:00"},
     ]
     created = 0
     with SessionLocal() as session:
+        legacy = session.scalar(select(Job).where(Job.name == "collect_market"))
+        if legacy is not None:
+            session.delete(legacy)
         for item in defaults:
             exists = session.scalar(select(Job).where(Job.name == item["name"]))
             if exists:
                 continue
-            session.add(Job(name=item["name"], cron=item["cron"], enabled=item["name"] == "heartbeat"))
+            session.add(
+                Job(
+                    name=item["name"],
+                    cron=item["cron"],
+                    enabled=item["name"] in {"heartbeat", "collect_quotes", "collect_news"},
+                )
+            )
             created += 1
         session.commit()
     return created

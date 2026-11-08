@@ -11,6 +11,7 @@ market:
     precious:
       - {symbol: XAUUSD, name: 伦敦金现, asset_class: metal, currency: USD}
       - {symbol: GC, name: COMEX黄金, asset_class: metal, currency: USD, exchange: COMEX}
+      - {symbol: SI, name: COMEX白银, asset_class: metal, currency: USD, exchange: COMEX}
       - {symbol: AU, name: 沪金, asset_class: metal, currency: CNY, exchange: SHFE}
       - {symbol: AG, name: 沪银, asset_class: metal, currency: CNY, exchange: SHFE}
     energy:
@@ -22,20 +23,42 @@ market:
       - {symbol: AL, name: 沪铝, asset_class: metal, currency: CNY, exchange: SHFE}
       - {symbol: ZN, name: 沪锌, asset_class: metal, currency: CNY, exchange: SHFE}
       - {symbol: NI, name: 沪镍, asset_class: metal, currency: CNY, exchange: SHFE}
-      - {symbol: HG, name: COMEX铜, asset_class: metal, currency: USD, exchange: COMEX}
+      - {symbol: HG, name: LME铜, asset_class: metal, currency: USD, exchange: LME}
     fx:
-      - {symbol: DXY, name: 美元指数, asset_class: fx, currency: USD}
+      - {symbol: DXY, name: 美元指数(代理), asset_class: fx, currency: USD}
       - {symbol: USDCNH, name: 离岸人民币, asset_class: fx, currency: CNY}
       - {symbol: USDJPY, name: 美元日元, asset_class: fx, currency: JPY}
-    rates:
-      - {symbol: US10Y, name: 美债10年, asset_class: rate, currency: USD}
-      - {symbol: US2Y, name: 美债2年, asset_class: rate, currency: USD}
-      - {symbol: CN10Y, name: 中债10年, asset_class: rate, currency: CNY}
+      - {symbol: EURUSD, name: 欧元美元, asset_class: fx, currency: USD}
+      - {symbol: GBPUSD, name: 英镑美元, asset_class: fx, currency: USD}
+      - {symbol: USDCAD, name: 美元加元, asset_class: fx, currency: CAD}
+      - {symbol: USDSEK, name: 美元瑞典克朗, asset_class: fx, currency: SEK}
+      - {symbol: USDCHF, name: 美元瑞郎, asset_class: fx, currency: CHF}
     equity:
-      - {symbol: SPX, name: 标普500, asset_class: equity, currency: USD}
-      - {symbol: NDX, name: 纳斯达克100, asset_class: equity, currency: USD}
-      - {symbol: 000300, name: 沪深300, asset_class: equity, currency: CNY}
-      - {symbol: 603993, name: 洛阳钼业, asset_class: equity, currency: CNY}
+      - {symbol: "000300", name: 沪深300, asset_class: equity, currency: CNY}
+      - {symbol: "603993", name: 洛阳钼业, asset_class: equity, currency: CNY}
+    agri:
+      - {symbol: M, name: 豆粕, asset_class: agri, currency: CNY, exchange: DCE}
+      - {symbol: P, name: 棕榈油, asset_class: agri, currency: CNY, exchange: DCE}
+      - {symbol: SR, name: 白糖, asset_class: agri, currency: CNY, exchange: CZCE}
+      - {symbol: CF, name: 棉花, asset_class: agri, currency: CNY, exchange: CZCE}
+    black:
+      - {symbol: I, name: 铁矿石, asset_class: black, currency: CNY, exchange: DCE}
+
+macro:
+  series:
+    - {code: US2Y, name: 美债2年, unit: "%", freq: d, country: US}
+    - {code: US10Y, name: 美债10年, unit: "%", freq: d, country: US}
+    - {code: US30Y, name: 美债30年, unit: "%", freq: d, country: US}
+    - {code: US5Y_REAL, name: 美债5年实际利率, unit: "%", freq: d, country: US}
+    - {code: US10Y_REAL, name: 美债10年实际利率, unit: "%", freq: d, country: US}
+    - {code: US5Y_BE, name: 5年盈亏平衡通胀, unit: "%", freq: d, country: US}
+    - {code: US10Y_BE, name: 10年盈亏平衡通胀, unit: "%", freq: d, country: US}
+
+news:
+  feeds:
+    - {name: 美联储, url: "https://www.federalreserve.gov/feeds/press_all.xml", tier: S1}
+    - {name: 欧洲央行, url: "https://www.ecb.europa.eu/rss/press.html", tier: S1}
+    - {name: 美国财政部, url: "https://home.treasury.gov/news/press-releases", tier: S1, type: html}
 
 llm:
   extract_model: deepseek-chat
@@ -50,7 +73,7 @@ scheduler:
 
 data:
   quote_delay_note:
-    cn_futures: "实时（新浪/东财，约 3-60 秒）"
+    cn_futures: "实时（新浪，约 3-60 秒）"
     cn_equity: "实时（东财，约 3-5 秒）"
     overseas: "免费源约 15 分钟延迟或日线"
-    rates: "日频（FRED，17:00 ET 后）"
+    rates: "日频（美国财政部 CSV，17:00 ET 后）"

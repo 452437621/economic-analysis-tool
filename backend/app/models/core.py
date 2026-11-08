@@ -84,6 +84,30 @@ class MarketBar(Base):
     delay_sec: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class Quote(Base):
+    __tablename__ = "quotes"
+    __table_args__ = (
+        UniqueConstraint("instrument_id", "ts_utc", name="uq_quote_key"),
+        Index("ix_quotes_instrument_ts", "instrument_id", "ts_utc"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    instrument_id: Mapped[str] = mapped_column(ForeignKey("instruments.id", ondelete="CASCADE"))
+    ts_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    price: Mapped[float] = mapped_column(Float, nullable=False)
+    prev_close: Mapped[float | None] = mapped_column(Float)
+    change_pct: Mapped[float | None] = mapped_column(Float)
+    open: Mapped[float | None] = mapped_column(Float)
+    high: Mapped[float | None] = mapped_column(Float)
+    low: Mapped[float | None] = mapped_column(Float)
+    volume: Mapped[float | None] = mapped_column(Float)
+    open_interest: Mapped[float | None] = mapped_column(Float)
+    bid: Mapped[float | None] = mapped_column(Float)
+    ask: Mapped[float | None] = mapped_column(Float)
+    source_id: Mapped[str | None] = mapped_column(ForeignKey("sources.id", ondelete="SET NULL"))
+    delay_sec: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class MacroSeries(Base, TimestampMixin):
     __tablename__ = "macro_series"
 

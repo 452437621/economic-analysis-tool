@@ -2,7 +2,9 @@
 
 > **Economic Positioning, Intelligence & Cycles** —— 本地运行、以证据为中心的个人宏观—市场—交易决策工作台。
 >
-> 状态：**M0 已完成**（2026-11-09）：后端可运行、数据库与调度器就绪、看板可访问；**M1 数据地基进行中**。
+> 状态：**M0 完成 · M1 数据地基核心完成**（2026-11-09）。已接入国内外行情、美债利率与官方新闻，看板可实时查看；下一步 M2 证据链与每日简报。
+
+![M1 看板](docs/assets/m1-dashboard.png)
 
 ---
 
@@ -12,12 +14,14 @@
 # 1) 初始化（自动引导 Python 3.12、创建 .venv、安装依赖、建库、写入种子数据）
 powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
 
-# 2) 启动
+# 2) 启动（后台会自动开始采集）
 powershell -File .\scripts\start.ps1
 ```
 
-浏览器打开 **http://127.0.0.1:8765** ，可见系统状态看板。
+浏览器打开 **http://127.0.0.1:8765**。
 
+- 首次启动 30 秒内完成行情/利率/新闻的自动回补与入库（约 2.7 万根日线、9 千条利率观测）。
+- 手动跑任务：`.\.venv\Scripts\python.exe -m app.jobs.runner --list` / `--job collect_quotes` / `--all`
 - 开发模式：`.\scripts\start.ps1 -Reload`
 - 备份：`.\scripts\backup.ps1` → `data/backup/<时间戳>/`
 - 测试：`.\.venv\Scripts\python.exe -m pytest -q`
@@ -26,11 +30,27 @@ powershell -File .\scripts\start.ps1
 
 ---
 
+## 已接入的数据（2026-11-09 实测）
+
+| 数据 | 来源 | 覆盖 |
+|---|---|---|
+| 国内期货日线 | 新浪 | 黄金/白银/铜/铝/锌/镍/原油/豆粕/铁矿/白糖/棉花/棕榈油，各约 2000 根 |
+| 国内期货实时 | 新浪 | 主力连续（价、涨跌、成交、持仓），约 3–60 秒 |
+| A 股/指数 | 东方财富 | 沪深 300、洛阳钼业（日线 + 快照） |
+| 外盘金银油铜 | 新浪 | 伦敦金银、COMEX 金银、WTI、Brent、LME 铜（约 15 分钟延迟，界面标注） |
+| 汇率 | 新浪 | USDCNH/USDJPY/EURUSD/GBPUSD/USDCAD/USDSEK/USDCHF + 自算 DXY 代理 |
+| 美债利率 | 美国财政部 CSV | 2/5/10/30Y、5/10Y 实际利率、盈亏平衡通胀，近 5 年日频 |
+| 新闻政策 | 官方 RSS/HTML | 美联储、欧洲央行、美国财政部（标题+元数据+原文快照） |
+
+> 限制：Yahoo/CFTC/LME 国内直连 403；FRED 超时；BLS 403。对应替代与后续方案见 [05 数据源](docs/05-数据源与接口清单.md)、[07 开发进度](docs/07-开发进度.md)。
+
+---
+
 ## 它要解决什么
 
 把「信息汇聚 → 证据固化 → 因果分析 → 情景推演 → 交易计划 → 复盘校准」做成可重复的流水线：
 
-- **信息**：官方/媒体/持仓/日历多源汇聚，事件聚类，原文快照与可信度评分；
+- **信息**：多源汇聚、事件聚类、原文快照与可信度评分；
 - **分析**：经济周期定位、资产定价分解、跨市场传导、参与者行为、历史类比；
 - **取证**：每条结论可溯源到原文片段、时间与来源，矛盾并列不隐藏；
 - **决策**：面向国内期货与 A 股的交易计划（方向、价位、仓位、止损、时间止损、失效条件）；
@@ -44,32 +64,32 @@ powershell -File .\scripts\start.ps1
 
 | 文档 | 内容 |
 |---|---|
-| [01 需求分析与产品定义](./docs/01-需求分析与产品定义.md) | 背景、痛点、范围、功能/非功能需求、验收标准 |
-| [02 系统架构设计](./docs/02-系统架构设计.md) | 分层架构、数据模型、采集适配、LLM 编排、前端、部署 |
-| [03 分析框架与模型设计](./docs/03-分析框架与模型设计.md) | 周期/定价/传导/参与者/历史类比/证据可信度/交易系统 |
-| [04 实施方案与里程碑](./docs/04-实施方案与里程碑.md) | M0–M6 里程碑、WBS、关键路径、测试、风险 |
-| [05 数据源与接口清单](./docs/05-数据源与接口清单.md) | 免费/付费数据源、实测可用性、降级链、合规 |
-| [06 示例输出：黄金分析](./docs/06-示例输出-黄金分析.md) | 简报/计划卡/证据链样例 |
-| [07 开发进度](./docs/07-开发进度.md) | 已完成、遇到的问题、下一步任务 |
+| [01 需求分析与产品定义](docs/01-需求分析与产品定义.md) | 背景、痛点、范围、功能/非功能需求、验收标准 |
+| [02 系统架构设计](docs/02-系统架构设计.md) | 分层架构、数据模型、采集适配、LLM 编排、前端、部署 |
+| [03 分析框架与模型设计](docs/03-分析框架与模型设计.md) | 周期/定价/传导/参与者/历史类比/证据可信度/交易系统 |
+| [04 实施方案与里程碑](docs/04-实施方案与里程碑.md) | M0–M6 里程碑、WBS、关键路径、测试、风险 |
+| [05 数据源与接口清单](docs/05-数据源与接口清单.md) | 免费/付费数据源、实测可用性、降级链、合规 |
+| [06 示例输出：黄金分析](docs/06-示例输出-黄金分析.md) | 简报/计划卡/证据链样例 |
+| [07 开发进度](docs/07-开发进度.md) | 已完成、问题与修复、下一步 |
 
 ---
 
 ## 架构一览
 
 ```
-浏览器 (静态看板 → M1 起 React)
+浏览器 (静态看板 → M2 起 React)
    │ HTTP 127.0.0.1:8765
 FastAPI (api / SSE / 导出)
    │
-├─ 采集适配层  market / macro / news / positions / calendar
-├─ 知识层      documents / claims / events / theses / evidence
-├─ 分析层      regime / pricing / correlation / analog / sentiment
-├─ 决策层      signals / plans / risk / backtest / predictions
-├─ LLM 编排    DeepSeek（抽取/分析/核查/编辑）
+├─ 采集适配层  sina / eastmoney / treasury / rss（限速、重试、快照、健康）
+├─ 知识层      documents / claims / events / theses / evidence（M2）
+├─ 分析层      regime / pricing / correlation / analog / sentiment（M3）
+├─ 决策层      signals / plans / risk / backtest / predictions（M4）
+├─ LLM 编排    DeepSeek（M2）
 └─ 存储        SQLite + DuckDB/Parquet + 文件快照
 ```
 
-技术栈：Python 3.12 + FastAPI + SQLAlchemy + APScheduler + DuckDB；前端 React/TS/ECharts（M1 起）；数据源见 [05](./docs/05-数据源与接口清单.md)。
+技术栈：Python 3.12 + FastAPI + SQLAlchemy + APScheduler + DuckDB；前端 React/TS/ECharts（M2 起）；数据源见 [05](docs/05-数据源与接口清单.md)。
 
 ---
 
@@ -78,8 +98,8 @@ FastAPI (api / SSE / 导出)
 | 阶段 | 交付 | 状态 |
 |---|---|---|
 | M0 | 环境、骨架、数据库、调度器、健康检查、看板 | ✅ 完成 |
-| M1 | 行情/宏观/新闻/持仓采集 + 多源降级 + 数据看板 | 🚧 进行中 |
-| M2 | 证据链、可信度、每日简报 v1 | 待开始 |
+| M1 | 行情/宏观/新闻接入 + 多源降级 + 数据看板 | ✅ 核心完成（剩余：CZCE 对账、数据质量报告、经济日历） |
+| M2 | 证据链、可信度、每日简报 v1 | 🚧 下一步 |
 | M3 | 周期/定价/关联/类比/参与者分析 | 待开始 |
 | M4 | 信号、情景、交易计划、风控、回测、预测账本 | 待开始 |
 | M5 | 告警、导出、系统页、性能、文档、安全 | 待开始 |
@@ -90,12 +110,12 @@ FastAPI (api / SSE / 导出)
 ## 目录
 
 ```
-backend/app/        FastAPI 应用（api / platform / models / ...）
-web/                零构建看板（M1 换 React）
-config/             默认配置（关注清单、LLM、调度）
-docs/               设计与进度文档
+backend/app/        FastAPI 应用（api / ingest / jobs / platform / models）
+web/                零构建看板（M2 换 React）
+config/             默认配置（关注清单、宏观序列、新闻源、LLM）
+docs/               设计与进度文档（含看板截图）
 scripts/            setup / start / backup
-tests/              pytest
+tests/              pytest（解析器离线测试 + smoke）
 data/               运行时数据（gitignore）
 ```
 

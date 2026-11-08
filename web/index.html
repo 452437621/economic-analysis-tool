@@ -12,57 +12,59 @@
       --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
     * { box-sizing: border-box; }
-    body {
-      margin: 0; background: var(--bg); color: var(--text);
-      font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; font-size: 14px;
-    }
-    header {
-      display: flex; align-items: center; gap: 16px; padding: 14px 22px;
+    body { margin: 0; background: var(--bg); color: var(--text);
+      font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; font-size: 14px; }
+    header { display: flex; align-items: center; gap: 16px; padding: 14px 22px;
       border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #0e141b, #0b0f14);
-      position: sticky; top: 0; z-index: 5;
-    }
+      position: sticky; top: 0; z-index: 5; }
     .logo { font-weight: 700; letter-spacing: .5px; font-size: 18px; }
     .logo span { color: var(--accent); }
     .sub { color: var(--muted); font-size: 12px; }
     .spacer { flex: 1; }
-    .badge {
-      padding: 3px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line);
-      background: var(--panel-2);
-    }
+    .badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line);
+      background: var(--panel-2); white-space: nowrap; }
     .badge.ok { color: var(--ok); border-color: #1f5c3a; }
     .badge.bad { color: var(--bad); border-color: #6b2626; }
-    main { max-width: 1280px; margin: 0 auto; padding: 22px; }
+    .badge.warn { color: var(--warn); border-color: #6b4d1f; }
+    main { max-width: 1320px; margin: 0 auto; padding: 22px; }
     .grid { display: grid; gap: 14px; }
-    .cards { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-    .card {
-      background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px;
-    }
+    .cards { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 15px; }
     .card h3 { margin: 0 0 10px; font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .3px; }
-    .metric { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
-    .metric small { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 6px; }
-    .kv { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px dashed var(--line); }
+    .metric { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .metric small { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+    .kv { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
     .kv:last-child { border-bottom: 0; }
     .kv span:first-child { color: var(--muted); }
     .kv span:last-child { font-family: var(--mono); }
     section { margin-top: 22px; }
-    section > h2 { font-size: 15px; margin: 0 0 12px; color: var(--text); }
-    .roadmap { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
-    .step { border-left: 3px solid var(--line); padding: 10px 12px; background: var(--panel); border-radius: 6px; }
-    .step.done { border-left-color: var(--ok); }
-    .step.next { border-left-color: var(--accent); }
-    .step h4 { margin: 0 0 6px; font-size: 13px; }
-    .step p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-    table { width: 100%; border-collapse: collapse; }
+    section > h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
+    .hint { font-size: 12px; color: var(--muted); font-weight: 400; }
+    table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 10px; overflow: hidden; }
     th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
-    th { color: var(--muted); font-weight: 600; }
-    td { font-family: var(--mono); }
-    .placeholder {
-      border: 1px dashed var(--line); border-radius: 8px; padding: 18px; color: var(--muted);
-      font-size: 13px; line-height: 1.7;
-    }
+    th { color: var(--muted); font-weight: 600; background: var(--panel-2); }
+    tr.group td { background: #0f151d; color: var(--muted); font-size: 12px; letter-spacing: .5px; }
+    td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+    .up { color: var(--ok); } .down { color: var(--bad); } .flat { color: var(--muted); }
+    .sym { font-family: var(--mono); font-weight: 600; }
+    .muted { color: var(--muted); }
+    .macro-grid { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+    .macro { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+    .macro .name { color: var(--muted); font-size: 12px; }
+    .macro .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 4px; }
+    .macro .ts { color: var(--muted); font-size: 11px; margin-top: 2px; }
+    ul.news { list-style: none; margin: 0; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+    ul.news li { padding: 10px 14px; border-bottom: 1px solid var(--line); }
+    ul.news li:last-child { border-bottom: 0; }
+    ul.news .meta { color: var(--muted); font-size: 11px; margin-bottom: 3px; }
+    ul.news a { color: var(--text); text-decoration: none; }
+    ul.news a:hover { color: var(--accent); }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+    .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); }
+    .placeholder { border: 1px dashed var(--line); border-radius: 8px; padding: 14px; color: var(--muted); font-size: 13px; line-height: 1.7; }
     footer { color: var(--muted); font-size: 12px; text-align: center; padding: 30px 0 18px; }
-    a { color: var(--accent); text-decoration: none; }
     .err { color: var(--bad); font-family: var(--mono); font-size: 12px; }
+    @media (max-width: 760px) { main { padding: 14px; } th, td { padding: 6px 7px; } }
   </style>
 </head>
 <body>
@@ -86,45 +88,59 @@
         <div class="kv"><span>本地时间</span><span id="local-time">—</span></div>
       </div>
       <div class="card">
-        <h3>数据库</h3>
-        <div class="metric" id="db-state">—</div>
-        <div class="kv"><span>引擎</span><span id="db-engine">—</span></div>
-        <div class="kv"><span>合约</span><span id="count-instruments">—</span></div>
-        <div class="kv"><span>行情行数</span><span id="count-bars">—</span></div>
+        <h3>行情覆盖</h3>
+        <div class="metric" id="quoted">—<small>个标的</small></div>
+        <div class="kv"><span>合约总数</span><span id="count-instruments">—</span></div>
+        <div class="kv"><span>最新快照</span><span id="snapshot-asof">—</span></div>
+        <div class="kv"><span>数据延迟</span><span id="delay-note">—</span></div>
+      </div>
+      <div class="card">
+        <h3>数据量</h3>
+        <div class="metric" id="count-bars">—</div>
+        <div class="kv"><span>行情快照</span><span id="count-quotes">—</span></div>
+        <div class="kv"><span>利率观测</span><span id="count-macro">—</span></div>
+        <div class="kv"><span>新闻条目</span><span id="count-docs">—</span></div>
       </div>
       <div class="card">
         <h3>调度器</h3>
         <div class="metric" id="sched-state">—</div>
-        <div class="kv"><span>运行任务</span><span id="sched-jobs">—</span></div>
-        <div class="kv"><span>信息条目</span><span id="count-docs">—</span></div>
-        <div class="kv"><span>断言</span><span id="count-claims">—</span></div>
-      </div>
-      <div class="card">
-        <h3>今日主线（M2 起自动生成）</h3>
-        <div class="placeholder" id="mainline">
-          数据管道尚未接入。M1 完成后这里将显示跨资产概览、风险开关与当日主线；
-          M2 起每条结论附带证据链。
-        </div>
+        <div class="kv"><span>任务数</span><span id="sched-jobs">—</span></div>
+        <div class="kv"><span>下一任务</span><span id="sched-next">—</span></div>
+        <div class="kv"><span>错误任务</span><span id="job-errors">—</span></div>
       </div>
     </div>
 
     <section>
-      <h2>建设进度</h2>
-      <div class="grid roadmap">
-        <div class="step done"><h4>M0 环境与骨架</h4><p>FastAPI、SQLite、调度器、健康检查、看板空壳 —— 已就绪</p></div>
-        <div class="step next"><h4>M1 数据地基</h4><p>国内期货/外盘/宏观/新闻采集与多源降级 —— 下一步</p></div>
-        <div class="step"><h4>M2 证据与简报</h4><p>原文快照、断言抽取、可信度、证据链、日报 v1</p></div>
-        <div class="step"><h4>M3 分析引擎</h4><p>周期定位、定价归因、传导图、持仓、历史类比</p></div>
-        <div class="step"><h4>M4 决策系统</h4><p>信号、情景、交易计划、风控、回测、预测账本</p></div>
-        <div class="step"><h4>M5 打磨验收</h4><p>告警、导出、系统页、性能、安全、文档</p></div>
-      </div>
+      <h2>市场快照 <span class="hint" id="snapshot-hint">国内期货实时 · 外盘延迟约 15 分钟 · 美债日频</span></h2>
+      <table>
+        <thead><tr><th>品种</th><th>名称</th><th>最新</th><th>涨跌幅</th><th>数据源</th><th>时点</th></tr></thead>
+        <tbody id="quotes"><tr><td colspan="6">加载中…</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>利率与流动性 <span class="hint">美国财政部日频曲线</span></h2>
+      <div class="grid macro-grid" id="macro"><div class="card muted">加载中…</div></div>
+    </section>
+
+    <section>
+      <h2>新闻与政策 <span class="hint">官方来源 · 仅标题与元数据</span></h2>
+      <ul class="news" id="news"><li>加载中…</li></ul>
+    </section>
+
+    <section>
+      <h2>数据源健康</h2>
+      <table>
+        <thead><tr><th>来源</th><th>类型</th><th>等级</th><th>条目</th><th>最近状态</th><th>最近检查</th></tr></thead>
+        <tbody id="sources"><tr><td colspan="6">加载中…</td></tr></tbody>
+      </table>
     </section>
 
     <section>
       <h2>任务</h2>
       <table>
-        <thead><tr><th>名称</th><th>计划</th><th>状态</th><th>最近运行</th></tr></thead>
-        <tbody id="jobs"><tr><td colspan="4">加载中…</td></tr></tbody>
+        <thead><tr><th>名称</th><th>计划</th><th>启用</th><th>最近状态</th><th>最近运行</th></tr></thead>
+        <tbody id="jobs"><tr><td colspan="5">加载中…</td></tr></tbody>
       </table>
     </section>
 
@@ -134,48 +150,167 @@
   <script>
     const $ = (id) => document.getElementById(id);
     const fmt = (v) => (v === null || v === undefined ? "—" : v);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
-    function setBadge(el, text, kind) {
-      el.textContent = text;
-      el.className = "badge" + (kind ? " " + kind : "");
+    async function getJSON(url) {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
     }
+
+    function fmtPrice(item) {
+      const v = item.price;
+      if (v === null || v === undefined) return "—";
+      const digits = item.asset_class === "fx" ? (v < 10 ? 4 : 3) : (v >= 1000 ? 1 : 2);
+      return Number(v).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    }
+    function fmtPct(v) {
+      if (v === null || v === undefined) return "—";
+      const cls = v > 0 ? "up" : v < 0 ? "down" : "flat";
+      return `<span class="${cls}">${v > 0 ? "+" : ""}${Number(v).toFixed(2)}%</span>`;
+    }
+    function fmtTime(iso, withDate) {
+      if (!iso) return "—";
+      const d = new Date(iso);
+      const opts = withDate
+        ? { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }
+        : { hour: "2-digit", minute: "2-digit", hour12: false };
+      return d.toLocaleString("zh-CN", opts).replace(/\//g, "-");
+    }
+    function staleBadge(sec, delay) {
+      if (sec === null || sec === undefined) return "";
+      if (delay >= 600) return `<span class="badge">延迟 ${Math.round(delay / 60)}m</span>`;
+      if (sec > 1800) return `<span class="badge warn">旧数据</span>`;
+      return `<span class="badge ok">实时</span>`;
+    }
+
+    const GROUP_NAMES = { metal: "贵金属 / 工业金属", energy: "能源", black: "黑色系", agri: "农产品", fx: "汇率", equity: "股指 / 个股", rate: "利率" };
 
     async function loadHealth() {
       try {
-        const res = await fetch("/api/system/health", { cache: "no-store" });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const h = await res.json();
-        setBadge($("status"), h.status === "ok" ? "运行中" : "降级", h.status === "ok" ? "ok" : "bad");
+        const h = await getJSON("/api/system/health");
+        $("status").className = "badge " + (h.status === "ok" ? "ok" : "bad");
+        $("status").textContent = h.status === "ok" ? "运行中" : "降级";
         $("health").textContent = h.status === "ok" ? "正常" : "异常";
         $("version").textContent = fmt(h.version);
         $("env").textContent = fmt(h.env);
         $("local-time").textContent = (h.time_local || "").slice(0, 19).replace("T", " ");
-        $("db-state").textContent = h.database.ok ? "正常" : "异常";
-        $("db-engine").textContent = fmt(h.database.engine);
         const c = h.counts || {};
         $("count-instruments").textContent = fmt(c.instruments);
         $("count-bars").textContent = fmt(c.market_bars);
+        $("count-quotes").textContent = fmt(c.quotes);
+        $("count-macro").textContent = fmt(c.macro_observations);
         $("count-docs").textContent = fmt(c.documents);
-        $("count-claims").textContent = fmt(c.claims);
         $("sched-state").textContent = h.scheduler.running ? "运行中" : "停止";
-        $("sched-jobs").textContent = (h.scheduler.jobs || []).map((j) => j.id).join(", ") || "—";
+        const jobs = h.scheduler.jobs || [];
+        $("sched-jobs").textContent = jobs.length;
+        $("sched-next").textContent = jobs.length ? fmtTime(jobs[0].next_run) : "—";
       } catch (err) {
-        setBadge($("status"), "连接失败", "bad");
+        $("status").className = "badge bad";
+        $("status").textContent = "连接失败";
         $("health").textContent = "无法连接后端";
-        $("mainline").innerHTML = '<span class="err">' + String(err) + "</span>";
+      }
+    }
+
+    async function loadQuotes() {
+      try {
+        const payload = await getJSON("/api/market/snapshot");
+        const rows = payload.data || [];
+        const groups = {};
+        for (const item of rows) (groups[item.asset_class] ||= []).push(item);
+        let html = "";
+        for (const key of ["metal", "energy", "black", "agri", "fx", "equity", "rate"]) {
+          if (!groups[key]) continue;
+          html += `<tr class="group"><td colspan="6">${GROUP_NAMES[key] || key}</td></tr>`;
+          for (const item of groups[key]) {
+            html += `<tr>
+              <td class="sym">${esc(item.symbol)}</td>
+              <td>${esc(item.name)}</td>
+              <td class="num">${fmtPrice(item)}</td>
+              <td class="num">${fmtPct(item.change_pct)}</td>
+              <td>${esc(item.source || "—")} ${staleBadge(item.stale_sec, item.delay_sec || 0)}</td>
+              <td class="muted">${fmtTime(item.ts)}</td>
+            </tr>`;
+          }
+        }
+        $("quotes").innerHTML = html || '<tr><td colspan="6">暂无行情，等待采集任务…</td></tr>';
+        $("quoted").innerHTML = `${payload.meta.with_quote}<small>个标的 / 共 ${payload.meta.count}</small>`;
+        $("snapshot-asof").textContent = fmtTime(payload.meta.asof);
+      } catch (err) {
+        $("quotes").innerHTML = `<tr><td colspan="6" class="err">${esc(err.message)}</td></tr>`;
+      }
+    }
+
+    const MACRO_ORDER = ["US10Y", "US10Y_REAL", "US10Y_BE", "US2Y", "US5Y", "US30Y", "US5Y_REAL", "US5Y_BE"];
+
+    async function loadMacro() {
+      try {
+        const payload = await getJSON("/api/macro/latest");
+        const map = Object.fromEntries((payload.data || []).map((row) => [row.code, row]));
+        let html = "";
+        for (const code of MACRO_ORDER) {
+          const row = map[code];
+          if (!row) continue;
+          html += `<div class="macro">
+            <div class="name">${esc(row.name)} <span class="muted">${esc(code)}</span></div>
+            <div class="value">${Number(row.value).toFixed(2)}<small>${esc(row.unit || "")}</small></div>
+            <div class="ts">${fmtTime(row.ts, true)}</div>
+          </div>`;
+        }
+        $("macro").innerHTML = html || '<div class="placeholder">暂无利率数据，等待 collect_rates 任务…</div>';
+      } catch (err) {
+        $("macro").innerHTML = `<div class="err">${esc(err.message)}</div>`;
+      }
+    }
+
+    async function loadNews() {
+      try {
+        const payload = await getJSON("/api/news?limit=12");
+        const rows = payload.data || [];
+        $("news").innerHTML = rows.map((item) => `
+          <li>
+            <div class="meta">${esc(item.source || "")} · ${esc(item.tier || "")} · ${fmtTime(item.published_at, true)}</div>
+            <a href="${esc(item.url)}" target="_blank" rel="noopener">${esc(item.title)}</a>
+          </li>`).join("") || "<li>暂无新闻，等待采集任务…</li>";
+      } catch (err) {
+        $("news").innerHTML = `<li class="err">${esc(err.message)}</li>`;
+      }
+    }
+
+    async function loadSources() {
+      try {
+        const payload = await getJSON("/api/system/sources");
+        const rows = payload.data || [];
+        $("sources").innerHTML = rows.map((s) => `
+          <tr>
+            <td>${s.last_ok === true ? '<span class="dot ok"></span>' : s.last_ok === false ? '<span class="dot bad"></span>' : '<span class="dot"></span>'}${esc(s.name)}</td>
+            <td>${esc(s.kind)}</td>
+            <td>${esc(s.tier || "—")}</td>
+            <td class="num">${s.documents || 0}</td>
+            <td>${s.last_ok === true ? "正常" : s.last_ok === false ? "失败" : "未检查"}</td>
+            <td class="muted">${fmtTime(s.last_check, true)}</td>
+          </tr>`).join("") || '<tr><td colspan="6">暂无数据源</td></tr>';
+      } catch (err) {
+        $("sources").innerHTML = `<tr><td colspan="6" class="err">${esc(err.message)}</td></tr>`;
       }
     }
 
     async function loadJobs() {
       try {
-        const res = await fetch("/api/system/jobs", { cache: "no-store" });
-        const data = await res.json();
-        const rows = (data.data || []).map((j) =>
-          `<tr><td>${j.name}</td><td>${fmt(j.cron)}</td><td>${fmt(j.last_status)}</td><td>${fmt(j.last_run_at || "").slice(0, 19).replace("T", " ")}</td></tr>`
-        );
-        $("jobs").innerHTML = rows.length ? rows.join("") : '<tr><td colspan="4">暂无任务</td></tr>';
+        const payload = await getJSON("/api/system/jobs");
+        const rows = payload.data || [];
+        $("jobs").innerHTML = rows.map((j) => `
+          <tr>
+            <td class="sym">${esc(j.name)}</td>
+            <td>${esc(j.cron)}</td>
+            <td>${j.enabled ? "是" : "否"}</td>
+            <td>${esc(j.last_status || "—")}</td>
+            <td class="muted">${fmtTime(j.last_run_at, true)}</td>
+          </tr>`).join("") || '<tr><td colspan="5">暂无任务</td></tr>';
+        const failed = rows.filter((j) => j.last_status === "error").length;
+        $("job-errors").textContent = failed ? `${failed} 个` : "0";
       } catch (err) {
-        $("jobs").innerHTML = '<tr><td colspan="4" class="err">' + String(err) + "</td></tr>";
+        $("jobs").innerHTML = `<tr><td colspan="5" class="err">${esc(err.message)}</td></tr>`;
       }
     }
 
@@ -186,10 +321,10 @@
     }
 
     tick();
-    loadHealth();
-    loadJobs();
+    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs();
     setInterval(tick, 1000);
-    setInterval(() => { loadHealth(); loadJobs(); }, 15000);
+    setInterval(() => { loadHealth(); loadQuotes(); loadJobs(); }, 15000);
+    setInterval(() => { loadMacro(); loadNews(); loadSources(); }, 60000);
   </script>
 </body>
 </html>

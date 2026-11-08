@@ -26,6 +26,9 @@ def _create_engine():
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.execute("PRAGMA busy_timeout=5000")
+            # 多行 UPSERT 会触发 SQLite 临时文件；在 Windows + 受限环境下列表目录
+            # 探测可能失败（SQLITE_CANTOPEN），改为内存临时存储最稳妥。
+            cursor.execute("PRAGMA temp_store=MEMORY")
             cursor.close()
 
     return engine
