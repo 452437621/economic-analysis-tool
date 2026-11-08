@@ -111,6 +111,21 @@ def _register_collectors() -> None:
         coalesce=True,
     )
     scheduler.add_job(
+        _collector("analyze"),
+        trigger=CronTrigger(hour=16, minute=10, timezone=CST),
+        id="analyze_daily",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _collector("analyze"),
+        trigger=DateTrigger(run_date=now + timedelta(seconds=240)),
+        id="analyze_bootstrap",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
         _collector("brief_premarket"),
         trigger=CronTrigger(hour=7, minute=30, timezone=CST),
         id="brief_premarket",

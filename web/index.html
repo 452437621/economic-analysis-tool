@@ -69,6 +69,11 @@
     .brief-table { width: 100%; margin: 6px 0 10px; border-collapse: collapse; font-size: 12px; }
     .brief-table th, .brief-table td { padding: 4px 8px; border-bottom: 1px solid var(--line); }
     .brief-table th { color: var(--muted); font-weight: 600; }
+    .two-col { grid-template-columns: repeat(auto-fit, minmax(430px, 1fr)); }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+    .panel h3 { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+    .panel table th, .panel table td { font-size: 12px; padding: 6px 8px; }
+    .mini { color: var(--muted); font-size: 11px; line-height: 1.6; }
     .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .72); display: none; align-items: flex-start; justify-content: center; padding: 40px 16px; z-index: 20; }
     .modal.open { display: flex; }
     .modal-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; width: min(980px, 100%); max-height: 84vh; display: flex; flex-direction: column; }
@@ -142,6 +147,29 @@
     <section>
       <h2>每日简报 <span class="hint" id="brief-meta"></span></h2>
       <div class="brief" id="brief">加载中…</div>
+    </section>
+
+    <section>
+      <h2>分析引擎 <span class="hint">市场隐含周期 · 定价归因 · 风向 · 历史类比（v0，免费数据）</span></h2>
+      <div class="grid cards" id="analytics-cards"><div class="card muted">加载中…</div></div>
+      <div class="grid two-col" style="margin-top: 14px;">
+        <div class="panel">
+          <h3>定价归因（近 20 日贡献，%）</h3>
+          <table>
+            <thead><tr><th>资产</th><th>实际</th><th>R²</th><th>实际利率</th><th>盈亏平衡</th><th>曲线</th><th>残差</th></tr></thead>
+            <tbody id="attribution"><tr><td colspan="7">加载中…</td></tr></tbody>
+          </table>
+          <div class="mini" id="attribution-note"></div>
+        </div>
+        <div class="panel">
+          <h3>历史类比（相似度 Top 5，未来收益 %）</h3>
+          <table>
+            <thead><tr><th>日期</th><th>距离</th><th>黄金20d</th><th>铜20d</th><th>原油20d</th><th>沪深300 20d</th></tr></thead>
+            <tbody id="analogs"><tr><td colspan="6">加载中…</td></tr></tbody>
+          </table>
+          <div class="mini" id="analogs-note"></div>
+        </div>
+      </div>
     </section>
 
     <section>
@@ -374,6 +402,69 @@
       return html;
     }
 
+    function pctCell(value) {
+      if (value === null || value === undefined) return "—";
+      const cls = value > 0 ? "up" : value < 0 ? "down" : "flat";
+      return `<span class="${cls}">${value > 0 ? "+" : ""}${Number(value).toFixed(2)}</span>`;
+    }
+
+    async function loadAnalytics() {
+      try {
+        const a = await getJSON("/api/analytics/overview");
+        const cards = [];
+        if (a.wind) {
+          const w = a.wind;
+          cards.push(`<div class="card"><h3>市场风向</h3>
+            <div class="metric">${esc(w.label)} <small>${w.score}</small></div>
+            <div class="kv"><span>MA60 上方占比</span><span>${(w.components.breadth_above_ma60 * 100).toFixed(0)}%</span></div>
+            <div class="kv"><span>20日平均动量</span><span>${w.components.momentum_20d_avg_pct}%</span></div>
+            <div class="kv"><span>10Y 20日变动</span><span>${w.components.us10y_change_20d_pp ?? "—"} pp</span></div></div>`);
+        }
+        for (const [key, label] of [["US", "美国"], ["CN", "中国"]]) {
+          const r = a.regimes ? a.regimes[key] : null;
+          if (!r) continue;
+          cards.push(`<div class="card"><h3>${label}周期（市场隐含）</h3>
+            <div class="metric">${esc(r.quadrant)} <small>置信 ${Math.round(r.confidence * 100)}%</small></div>
+            <div class="kv"><span>增长</span><span>${r.growth_score} / z ${r.growth_z}</span></div>
+            <div class="kv"><span>通胀</span><span>${r.inflation_score} / z ${r.inflation_z}</span></div>
+            <div class="kv"><span>流动性</span><span>${r.liquidity_score}</span></div></div>`);
+        }
+        if (a.correlation) {
+          const c = a.correlation;
+          const pair = (c.top_pairs || [])[0];
+          cards.push(`<div class="card"><h3>跨资产相关性</h3>
+            <div class="metric">${c.avg_abs_corr}<small>平均 |ρ| · ${c.window}日</small></div>
+            <div class="kv"><span>最强联动</span><span>${pair ? `${esc(pair.a)}/${esc(pair.b)} ${pair.corr}` : "—"}</span></div>
+            ${(c.top_pairs || []).slice(0, 2).map((p) => `<div class="kv"><span>${esc(p.a)} / ${esc(p.b)}</span><span>${p.corr}</span></div>`).join("")}</div>`);
+        }
+        $("analytics-cards").innerHTML = cards.join("") || '<div class="card muted">等待 analyze 任务…</div>';
+
+        const order = ["AU", "CU", "SC", "AG", "603993", "000300"];
+        const attrRows = order.filter((symbol) => a.attribution && a.attribution[symbol]).map((symbol) => {
+          const p = a.attribution[symbol];
+          const c = p.contributions_pct || {};
+          return `<tr><td class="sym">${symbol}</td><td class="num">${pctCell(p.actual_pct)}</td><td class="num">${p.r2}</td>
+            <td class="num">${pctCell(c.real_yield_chg)}</td><td class="num">${pctCell(c.breakeven_chg)}</td>
+            <td class="num">${pctCell(c.curve_chg)}</td><td class="num">${pctCell(p.residual_pct)}</td></tr>`;
+        });
+        $("attribution").innerHTML = attrRows.join("") || '<tr><td colspan="7">暂无归因结果</td></tr>';
+        $("attribution-note").textContent = "回归窗口 120 日，驱动为美国利率变化；R² 低说明价格主要由其他因素驱动（仓位/地缘/国内供需），需结合 M2 证据链判断。";
+
+        const analogs = a.analogs;
+        if (analogs) {
+          const rows = (analogs.matches || []).map((m) => {
+            const f = m.forward || {};
+            return `<tr><td>${esc(m.date)}</td><td class="num">${m.distance}</td><td class="num">${pctCell(f.AU_20d)}</td>
+              <td class="num">${pctCell(f.CU_20d)}</td><td class="num">${pctCell(f.SC_20d)}</td><td class="num">${pctCell(f["000300_20d"])}</td></tr>`;
+          });
+          $("analogs").innerHTML = rows.join("") || '<tr><td colspan="6">暂无类比结果</td></tr>';
+          $("analogs-note").textContent = analogs.note || "";
+        }
+      } catch (err) {
+        $("analytics-cards").innerHTML = `<div class="card err">${esc(err.message)}</div>`;
+      }
+    }
+
     async function openDoc(id) {
       $("modal").classList.add("open");
       $("doc-title").textContent = "加载中…";
@@ -464,12 +555,13 @@
     }
 
     tick();
-    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief();
+    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics();
     const docParam = new URLSearchParams(location.search).get("doc");
     if (docParam) openDoc(docParam);
     setInterval(tick, 1000);
     setInterval(() => { loadHealth(); loadQuotes(); loadJobs(); }, 15000);
     setInterval(() => { loadMacro(); loadNews(); loadSources(); loadBrief(); }, 60000);
+    setInterval(loadAnalytics, 120000);
   </script>
 </body>
 </html>

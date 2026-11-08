@@ -16,6 +16,7 @@ import time
 
 from sqlalchemy import select
 
+from app.analytics.runner import run_analytics
 from app.ingest import pipeline
 from app.models.base import utcnow
 from app.models.core import Job, JobRun
@@ -34,6 +35,7 @@ JOBS = {
     "collect_bodies": pipeline.collect_bodies,
     "extract_claims": pipeline.extract_claims,
     "check_data_quality": pipeline.check_data_quality,
+    "analyze": run_analytics,
     "brief_premarket": lambda: brief_mod.generate("premarket"),
     "brief_postmarket": lambda: brief_mod.generate("postmarket"),
     "brief_manual": lambda: brief_mod.generate("manual"),

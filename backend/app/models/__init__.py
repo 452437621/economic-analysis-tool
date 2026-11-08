@@ -2,6 +2,7 @@
 
 from app.models.base import Base, new_id, utcnow
 from app.models.core import (
+    AnalyticsResult,
     AuditLog,
     Brief,
     Claim,
@@ -36,6 +37,7 @@ __all__ = [
     "Base",
     "new_id",
     "utcnow",
+    "AnalyticsResult",
     "AuditLog",
     "Brief",
     "Claim",

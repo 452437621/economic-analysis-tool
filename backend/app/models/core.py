@@ -413,3 +413,19 @@ class Brief(Base):
     meta: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+
+class AnalyticsResult(Base):
+    __tablename__ = "analytics_results"
+    __table_args__ = (
+        UniqueConstraint("kind", "subject", "asof", name="uq_analytics"),
+        Index("ix_analytics_kind_asof", "kind", "asof"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    subject: Mapped[str] = mapped_column(String(60), nullable=False, default="all")
+    asof: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload: Mapped[dict | None] = mapped_column(JSON)
+    code_version: Mapped[str] = mapped_column(String(20), default="m3.0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
