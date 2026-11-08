@@ -1,0 +1,158 @@
+"""Knowledge APIs: documents, claims and briefs."""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models.core import Brief, Claim, Document, DocumentBody, DocumentSpan, Source
+from app.platform.db import get_session
+
+router = APIRouter(prefix="/api", tags=["knowledge"])
+
+
+def _iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+@router.get("/documents/{document_id}")
+def document_detail(document_id: str, session: Session = Depends(get_session)) -> dict:
+    document = session.get(Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="document not found")
+    source = session.get(Source, document.source_id) if document.source_id else None
+    body = session.scalar(select(DocumentBody).where(DocumentBody.document_id == document.id))
+    rows = session.execute(
+        select(Claim, DocumentSpan)
+        .join(DocumentSpan, DocumentSpan.claim_id == Claim.id, isouter=True)
+        .where(Claim.document_id == document.id)
+    ).all()
+    return {
+        "id": document.id,
+        "title": document.title,
+        "url": document.url,
+        "published_at": _iso(document.published_at or document.fetched_at),
+        "source": {"name": source.name, "tier": source.tier} if source else None,
+        "status": document.body_status,
+        "body": {
+            "text": body.text if body else None,
+            "sha256": body.sha256 if body else None,
+            "word_count": body.word_count if body else None,
+            "extracted_at": _iso(body.extracted_at) if body else None,
+        },
+        "claims": [
+            {
+                "id": claim.id,
+                "type": claim.type,
+                "subject": claim.subject,
+                "predicate": claim.predicate,
+                "value": claim.value,
+                "unit": claim.unit,
+                "confidence": claim.confidence,
+                "span": {
+                    "start": span.start if span else None,
+                    "end": span.end if span else None,
+                    "quote": span.quote if span else None,
+                },
+            }
+            for claim, span in rows
+        ],
+    }
+
+
+@router.get("/claims")
+def claims(
+    limit: int = Query(30, ge=1, le=200),
+    subject: str | None = Query(None),
+    min_confidence: float = Query(0.0, ge=0.0, le=1.0),
+    session: Session = Depends(get_session),
+) -> dict:
+    stmt = (
+        select(Claim, Document)
+        .join(Document, Document.id == Claim.document_id)
+        .where(Claim.confidence >= min_confidence)
+        .order_by(Claim.created_at.desc())
+        .limit(limit)
+    )
+    if subject:
+        stmt = stmt.where(Claim.subject == subject)
+    rows = session.execute(stmt).all()
+    return {
+        "data": [
+            {
+                "id": claim.id,
+                "document_id": document.id,
+                "document_title": document.title,
+                "subject": claim.subject,
+                "predicate": claim.predicate,
+                "value": claim.value,
+                "unit": claim.unit,
+                "confidence": claim.confidence,
+                "created_at": _iso(claim.created_at),
+            }
+            for claim, document in rows
+        ]
+    }
+
+
+@router.get("/briefs")
+def list_briefs(
+    limit: int = Query(10, ge=1, le=50),
+    session: Session = Depends(get_session),
+) -> dict:
+    rows = session.scalars(select(Brief).order_by(Brief.created_at.desc()).limit(limit)).all()
+    return {
+        "data": [
+            {
+                "id": row.id,
+                "kind": row.kind,
+                "trade_date": row.trade_date.isoformat(),
+                "created_at": _iso(row.created_at),
+                "chars": len(row.markdown),
+            }
+            for row in rows
+        ]
+    }
+
+
+@router.get("/briefs/latest")
+def latest_brief(
+    kind: str | None = Query(None),
+    session: Session = Depends(get_session),
+) -> dict:
+    stmt = select(Brief).order_by(Brief.created_at.desc()).limit(1)
+    if kind:
+        stmt = select(Brief).where(Brief.kind == kind).order_by(Brief.created_at.desc()).limit(1)
+    brief = session.scalar(stmt)
+    if brief is None:
+        return {"data": None}
+    return {
+        "data": {
+            "id": brief.id,
+            "kind": brief.kind,
+            "trade_date": brief.trade_date.isoformat(),
+            "created_at": _iso(brief.created_at),
+            "markdown": brief.markdown,
+            "meta": brief.meta,
+        }
+    }
+
+
+@router.get("/briefs/{brief_id}")
+def get_brief(brief_id: str, session: Session = Depends(get_session)) -> dict:
+    brief = session.get(Brief, brief_id)
+    if brief is None:
+        raise HTTPException(status_code=404, detail="brief not found")
+    return {
+        "id": brief.id,
+        "kind": brief.kind,
+        "trade_date": brief.trade_date.isoformat(),
+        "created_at": _iso(brief.created_at),
+        "markdown": brief.markdown,
+        "meta": brief.meta,
+    }

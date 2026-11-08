@@ -2,9 +2,9 @@
 
 > **Economic Positioning, Intelligence & Cycles** —— 本地运行、以证据为中心的个人宏观—市场—交易决策工作台。
 >
-> 状态：**M0 完成 · M1 数据地基核心完成**（2026-11-09）。已接入国内外行情、美债利率与官方新闻，看板可实时查看；下一步 M2 证据链与每日简报。
+> 状态：**M0 完成 · M1 数据地基完成 · M2 证据链与简报 v1 基础完成**（2026-11-09，LLM 待 API Key 接入）。已接入国内外行情、美债利率、官方新闻，支持证据链弹窗与每日简报自动生成。
 
-![M1 看板](docs/assets/m1-dashboard.png)
+![M2 看板](docs/assets/m2-dashboard.png)
 
 ---
 
@@ -21,7 +21,9 @@ powershell -File .\scripts\start.ps1
 浏览器打开 **http://127.0.0.1:8765**。
 
 - 首次启动 30 秒内完成行情/利率/新闻的自动回补与入库（约 2.7 万根日线、9 千条利率观测）。
-- 手动跑任务：`.\.venv\Scripts\python.exe -m app.jobs.runner --list` / `--job collect_quotes` / `--all`
+- 手动跑任务：`.\.venv\Scripts\python.exe -m app.jobs.runner --list` / `--job collect_quotes` / `--job brief_manual` / `--all`
+- 生成简报：`--job brief_manual`，然后打开看板「每日简报」，或调用 `/api/briefs/latest`
+- 证据链：点击任意新闻 → 正文弹窗 + 数字断言高亮；也可用 `http://127.0.0.1:8765/?doc=<document_id>` 深链
 - 开发模式：`.\scripts\start.ps1 -Reload`
 - 备份：`.\scripts\backup.ps1` → `data/backup/<时间戳>/`
 - 测试：`.\.venv\Scripts\python.exe -m pytest -q`
@@ -98,9 +100,9 @@ FastAPI (api / SSE / 导出)
 | 阶段 | 交付 | 状态 |
 |---|---|---|
 | M0 | 环境、骨架、数据库、调度器、健康检查、看板 | ✅ 完成 |
-| M1 | 行情/宏观/新闻接入 + 多源降级 + 数据看板 | ✅ 核心完成（剩余：CZCE 对账、数据质量报告、经济日历） |
-| M2 | 证据链、可信度、每日简报 v1 | 🚧 下一步 |
-| M3 | 周期/定价/关联/类比/参与者分析 | 待开始 |
+| M1 | 行情/宏观/新闻接入 + 多源降级 + 数据看板 | ✅ 完成（CZCE 对账、数据质量已补；经济日历待补） |
+| M2 | 证据链、可信度、每日简报 v1 | ✅ 基础完成（规则抽取 + 证据链 UI + 简报 v1；LLM 抽取待 Key） |
+| M3 | 周期/定价/关联/类比/参与者分析 | 🚧 下一步 |
 | M4 | 信号、情景、交易计划、风控、回测、预测账本 | 待开始 |
 | M5 | 告警、导出、系统页、性能、文档、安全 | 待开始 |
 | M6 | 两周试运行与校准 | 待开始 |

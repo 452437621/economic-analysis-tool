@@ -62,6 +62,26 @@
     .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
     .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); }
     .placeholder { border: 1px dashed var(--line); border-radius: 8px; padding: 14px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+    .brief { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; white-space: pre-wrap; font-size: 12.5px; line-height: 1.75; max-height: 460px; overflow: auto; }
+    .brief a { color: var(--accent); }
+    .brief .brief-h { font-weight: 700; color: var(--text); margin: 10px 0 6px; font-size: 13.5px; }
+    .brief .brief-li { color: var(--muted); margin: 2px 0; }
+    .brief-table { width: 100%; margin: 6px 0 10px; border-collapse: collapse; font-size: 12px; }
+    .brief-table th, .brief-table td { padding: 4px 8px; border-bottom: 1px solid var(--line); }
+    .brief-table th { color: var(--muted); font-weight: 600; }
+    .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .72); display: none; align-items: flex-start; justify-content: center; padding: 40px 16px; z-index: 20; }
+    .modal.open { display: flex; }
+    .modal-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; width: min(980px, 100%); max-height: 84vh; display: flex; flex-direction: column; }
+    .modal-head { display: flex; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); align-items: flex-start; }
+    .modal-head h3 { margin: 0; font-size: 15px; line-height: 1.5; }
+    .modal-close { margin-left: auto; background: none; border: 1px solid var(--line); color: var(--text); border-radius: 6px; cursor: pointer; padding: 2px 10px; font-size: 14px; }
+    .modal-body { padding: 16px 18px; overflow: auto; line-height: 1.85; font-size: 13px; }
+    .modal-body mark { background: rgba(76, 194, 255, .22); color: var(--text); padding: 0 2px; border-radius: 3px; }
+    .claims { padding: 0 18px 16px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .claim { font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; color: var(--muted); }
+    .claim b { color: var(--text); }
+    li.doc { cursor: pointer; }
+    li.doc:hover { background: var(--panel-2); }
     footer { color: var(--muted); font-size: 12px; text-align: center; padding: 30px 0 18px; }
     .err { color: var(--bad); font-family: var(--mono); font-size: 12px; }
     @media (max-width: 760px) { main { padding: 14px; } th, td { padding: 6px 7px; } }
@@ -100,6 +120,7 @@
         <div class="kv"><span>行情快照</span><span id="count-quotes">—</span></div>
         <div class="kv"><span>利率观测</span><span id="count-macro">—</span></div>
         <div class="kv"><span>新闻条目</span><span id="count-docs">—</span></div>
+        <div class="kv"><span>原文 / 断言</span><span id="count-bodies">—</span></div>
       </div>
       <div class="card">
         <h3>调度器</h3>
@@ -116,6 +137,11 @@
         <thead><tr><th>品种</th><th>名称</th><th>最新</th><th>涨跌幅</th><th>数据源</th><th>时点</th></tr></thead>
         <tbody id="quotes"><tr><td colspan="6">加载中…</td></tr></tbody>
       </table>
+    </section>
+
+    <section>
+      <h2>每日简报 <span class="hint" id="brief-meta"></span></h2>
+      <div class="brief" id="brief">加载中…</div>
     </section>
 
     <section>
@@ -144,7 +170,21 @@
       </table>
     </section>
 
-    <footer>仅供个人研究，不构成投资建议 · <span id="footer-time"></span></footer>
+    <div class="modal" id="modal" onclick="if (event.target === this) closeDoc()">
+    <div class="modal-panel">
+      <div class="modal-head">
+        <div>
+          <h3 id="doc-title">—</h3>
+          <div class="hint" id="doc-meta"></div>
+        </div>
+        <button class="modal-close" onclick="closeDoc()">✕</button>
+      </div>
+      <div class="modal-body" id="doc-body">加载中…</div>
+      <div class="claims" id="doc-claims"></div>
+    </div>
+  </div>
+
+  <footer>仅供个人研究，不构成投资建议 · <span id="footer-time"></span></footer>
   </main>
 
   <script>
@@ -201,6 +241,7 @@
         $("count-quotes").textContent = fmt(c.quotes);
         $("count-macro").textContent = fmt(c.macro_observations);
         $("count-docs").textContent = fmt(c.documents);
+        $("count-bodies").textContent = `${fmt(c.document_bodies)} / ${fmt(c.claims)}`;
         $("sched-state").textContent = h.scheduler.running ? "运行中" : "停止";
         const jobs = h.scheduler.jobs || [];
         $("sched-jobs").textContent = jobs.length;
@@ -268,13 +309,115 @@
         const payload = await getJSON("/api/news?limit=12");
         const rows = payload.data || [];
         $("news").innerHTML = rows.map((item) => `
-          <li>
+          <li class="doc" data-doc="${esc(item.id)}" onclick="openDoc('${esc(item.id)}')">
             <div class="meta">${esc(item.source || "")} · ${esc(item.tier || "")} · ${fmtTime(item.published_at, true)}</div>
-            <a href="${esc(item.url)}" target="_blank" rel="noopener">${esc(item.title)}</a>
+            <a href="${esc(item.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(item.title)}</a>
           </li>`).join("") || "<li>暂无新闻，等待采集任务…</li>";
       } catch (err) {
         $("news").innerHTML = `<li class="err">${esc(err.message)}</li>`;
       }
+    }
+
+    async function loadBrief() {
+      try {
+        const payload = await getJSON("/api/briefs/latest");
+        const brief = payload.data;
+        if (!brief) {
+          $("brief").textContent = "暂无简报，等待 07:30 / 21:00 定时任务，或手动运行 brief_manual。";
+          return;
+        }
+        $("brief-meta").textContent = `${brief.kind} · ${fmtTime(brief.created_at, true)}`;
+        $("brief").innerHTML = renderBriefMarkdown(brief.markdown);
+      } catch (err) {
+        $("brief").innerHTML = `<span class="err">${esc(err.message)}</span>`;
+      }
+    }
+
+    function inlineBrief(text) {
+      let html = esc(text);
+      html = html.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+      html = html.replace(/`\[D:([0-9a-f]{32})\]`/g, (_, id) =>
+        `<a href="#" onclick="openDoc('${id}');return false;">[证据]</a>`);
+      return html;
+    }
+
+    function renderBriefMarkdown(md) {
+      const lines = md.split("\n");
+      let html = "";
+      let i = 0;
+      while (i < lines.length) {
+        const line = lines[i];
+        if (/^\|/.test(line)) {
+          const block = [];
+          while (i < lines.length && /^\|/.test(lines[i])) block.push(lines[i++]);
+          const rows = block.filter((row) => !/^\|[\s\-:|]+\|$/.test(row));
+          html += '<table class="brief-table">';
+          rows.forEach((row, index) => {
+            const cells = row.replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
+            const tag = index === 0 ? "th" : "td";
+            html += "<tr>" + cells.map((cell) => `<${tag}>${inlineBrief(cell)}</${tag}>`).join("") + "</tr>";
+          });
+          html += "</table>";
+          continue;
+        }
+        if (/^#{1,3} /.test(line)) {
+          html += `<div class="brief-h">${inlineBrief(line.replace(/^#{1,3} /, ""))}</div>`;
+        } else if (/^- /.test(line)) {
+          html += `<div class="brief-li">• ${inlineBrief(line.slice(2))}</div>`;
+        } else if (line.trim() === "") {
+          html += "";
+        } else {
+          html += `<div>${inlineBrief(line)}</div>`;
+        }
+        i++;
+      }
+      return html;
+    }
+
+    async function openDoc(id) {
+      $("modal").classList.add("open");
+      $("doc-title").textContent = "加载中…";
+      $("doc-meta").textContent = "";
+      $("doc-body").textContent = "加载中…";
+      $("doc-claims").innerHTML = "";
+      try {
+        const doc = await getJSON(`/api/documents/${id}`);
+        $("doc-title").textContent = doc.title || "(无标题)";
+        $("doc-meta").textContent = `${doc.source ? doc.source.name : ""} · ${fmtTime(doc.published_at, true)} · 状态 ${doc.status}`;
+        const claims = doc.claims || [];
+        const body = doc.body && doc.body.text;
+        if (!body) {
+          $("doc-body").innerHTML = '<span class="muted">未抓取到正文（可能为 PDF/动态页面）。可打开原文链接查看。</span>';
+        } else {
+          $("doc-body").innerHTML = renderBody(body, claims);
+        }
+        $("doc-claims").innerHTML = claims.map((c) =>
+          `<span class="claim"><b>${esc(c.subject)}</b> · ${esc(c.predicate)} ${c.value === null ? "" : esc(String(c.value))}${esc(c.unit || "")} · 置信 ${(c.confidence * 100).toFixed(0)}%</span>`
+        ).join("") || '<span class="claim">暂未抽取到断言</span>';
+      } catch (err) {
+        $("doc-body").innerHTML = `<span class="err">${esc(err.message)}</span>`;
+      }
+    }
+
+    function closeDoc() { $("modal").classList.remove("open"); }
+
+    function renderBody(text, claims) {
+      const spans = claims
+        .filter((c) => c.span && c.span.start !== null && c.span.end !== null)
+        .sort((a, b) => a.span.start - b.span.start);
+      let html = "";
+      let pos = 0;
+      for (const c of spans) {
+        const start = Math.max(c.span.start, pos);
+        const end = Math.max(c.span.end, pos);
+        if (start > pos) html += esc(text.slice(pos, start));
+        if (end > start) {
+          html += `<mark title="${esc(c.subject)} ${esc(c.predicate)}">${esc(text.slice(start, end))}</mark>`;
+        }
+        pos = end;
+      }
+      html += esc(text.slice(pos));
+      return html.replace(/\n/g, "<br>");
     }
 
     async function loadSources() {
@@ -321,10 +464,12 @@
     }
 
     tick();
-    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs();
+    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief();
+    const docParam = new URLSearchParams(location.search).get("doc");
+    if (docParam) openDoc(docParam);
     setInterval(tick, 1000);
     setInterval(() => { loadHealth(); loadQuotes(); loadJobs(); }, 15000);
-    setInterval(() => { loadMacro(); loadNews(); loadSources(); }, 60000);
+    setInterval(() => { loadMacro(); loadNews(); loadSources(); loadBrief(); }, 60000);
   </script>
 </body>
 </html>

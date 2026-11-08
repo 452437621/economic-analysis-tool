@@ -3,8 +3,11 @@
 from app.models.base import Base, new_id, utcnow
 from app.models.core import (
     AuditLog,
+    Brief,
     Claim,
+    DataCheck,
     Document,
+    DocumentBody,
     DocumentSpan,
     Entity,
     Event,
@@ -34,8 +37,11 @@ __all__ = [
     "new_id",
     "utcnow",
     "AuditLog",
+    "Brief",
     "Claim",
+    "DataCheck",
     "Document",
+    "DocumentBody",
     "DocumentSpan",
     "Entity",
     "Event",

@@ -11,8 +11,11 @@ from sqlalchemy.orm import Session
 
 from app.models.base import utcnow
 from app.models.core import (
+    Brief,
     Claim,
+    DataCheck,
     Document,
+    DocumentBody,
     Instrument,
     Job,
     JobRun,
@@ -34,7 +37,9 @@ _COUNTED = {
     "market_bars": MarketBar,
     "macro_observations": MacroObs,
     "documents": Document,
+    "document_bodies": DocumentBody,
     "claims": Claim,
+    "briefs": Brief,
     "theses": Thesis,
     "trade_plans": TradePlan,
 }
@@ -121,4 +126,37 @@ def meta() -> dict:
         "llm_reasoner_model": settings.llm_reasoner_model,
         "llm_daily_budget_usd": settings.llm_daily_budget_usd,
         "data_dir": str(settings.data_dir),
+    }
+
+
+@router.get("/data-quality")
+def data_quality(session: Session = Depends(get_session)) -> dict:
+    """Latest reconciliation and freshness checks."""
+    checks = session.scalars(
+        select(DataCheck).order_by(DataCheck.check_date.desc()).limit(80)
+    ).all()
+    latest_by_dataset: dict[str, DataCheck] = {}
+    for check in checks:
+        key = f"{check.kind}:{check.dataset}"
+        latest_by_dataset.setdefault(key, check)
+    return {
+        "data": [
+            {
+                "kind": check.kind,
+                "dataset": check.dataset,
+                "symbol": check.symbol,
+                "check_date": check.check_date.isoformat(),
+                "expected": check.expected,
+                "actual": check.actual,
+                "deviation": check.deviation,
+                "passed": check.passed,
+                "detail": check.detail,
+            }
+            for check in latest_by_dataset.values()
+        ],
+        "summary": {
+            "total": len(latest_by_dataset),
+            "passed": sum(1 for check in latest_by_dataset.values() if check.passed),
+            "failed": sum(1 for check in latest_by_dataset.values() if not check.passed),
+        },
     }

@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sys
 import time
 
 from sqlalchemy import select
@@ -18,6 +19,7 @@ from sqlalchemy import select
 from app.ingest import pipeline
 from app.models.base import utcnow
 from app.models.core import Job, JobRun
+from app.narrative import brief as brief_mod
 from app.platform.config import settings
 from app.platform.db import SessionLocal
 from app.platform.logging import setup_logging
@@ -29,6 +31,12 @@ JOBS = {
     "collect_daily_bars": pipeline.collect_daily_bars,
     "collect_rates": pipeline.collect_rates,
     "collect_news": pipeline.collect_news,
+    "collect_bodies": pipeline.collect_bodies,
+    "extract_claims": pipeline.extract_claims,
+    "check_data_quality": pipeline.check_data_quality,
+    "brief_premarket": lambda: brief_mod.generate("premarket"),
+    "brief_postmarket": lambda: brief_mod.generate("postmarket"),
+    "brief_manual": lambda: brief_mod.generate("manual"),
 }
 
 
@@ -94,9 +102,14 @@ def main() -> None:
         parser.print_help()
         return
 
+    failures = 0
     for name in names:
         result = run_job(name)
         print(json.dumps(result, ensure_ascii=False, default=str))
+        if result["status"] != "ok":
+            failures += 1
+    if failures:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

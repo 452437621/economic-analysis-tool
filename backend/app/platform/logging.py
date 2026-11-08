@@ -33,4 +33,6 @@ def setup_logging(log_dir: Path, level: int = logging.INFO) -> None:
     root.addHandler(file_handler)
 
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     root._epic_configured = True  # type: ignore[attr-defined]

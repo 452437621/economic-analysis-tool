@@ -84,6 +84,48 @@ def _register_collectors() -> None:
         coalesce=True,
         next_run_time=now + timedelta(seconds=15),
     )
+    scheduler.add_job(
+        _collector("collect_bodies"),
+        trigger=IntervalTrigger(seconds=600),
+        id="collect_bodies",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        next_run_time=now + timedelta(seconds=60),
+    )
+    scheduler.add_job(
+        _collector("extract_claims"),
+        trigger=IntervalTrigger(seconds=900),
+        id="extract_claims",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        next_run_time=now + timedelta(seconds=120),
+    )
+    scheduler.add_job(
+        _collector("check_data_quality"),
+        trigger=CronTrigger(hour=15, minute=50, timezone=CST),
+        id="check_data_quality",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _collector("brief_premarket"),
+        trigger=CronTrigger(hour=7, minute=30, timezone=CST),
+        id="brief_premarket",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _collector("brief_postmarket"),
+        trigger=CronTrigger(hour=21, minute=0, timezone=CST),
+        id="brief_postmarket",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     # 首次启动回补日线，之后按收盘时点更新
     scheduler.add_job(
         _collector("collect_daily_bars"),

@@ -2,18 +2,30 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete
+from sqlalchemy import delete, func, select
 
 from app.ingest import store
 from app.ingest.contracts import Bar, MacroPoint, Quote
 from app.ingest.http import HttpClient
-from app.ingest.providers import eastmoney, rss, sina, treasury
+from app.ingest.providers import czce, eastmoney, rss, sina, treasury
+from app.ingest.providers.html_extract import extract_main_text
 from app.ingest.symbols import CN_FUTURES, EM_SECID, SINA_FX, SINA_HF, compute_dxy
-from app.models.core import Instrument, Quote as QuoteRow
+from app.knowledge.extract import extract_numeric_claims
+from app.knowledge.store import save_claims
+from app.models.core import (
+    DataCheck,
+    Document,
+    DocumentBody,
+    Instrument,
+    MacroObs,
+    MarketBar,
+    Quote as QuoteRow,
+)
 from app.platform.db import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -260,4 +272,177 @@ def collect_news() -> dict:
 
     stats["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
     logger.info("collect_news: %s", stats)
+    return stats
+
+
+def collect_bodies(limit: int = 20) -> dict:
+    """Fetch full text of official documents and keep a content hash."""
+    started = time.perf_counter()
+    stats: dict = {"fetched": 0, "skipped": 0, "failed": 0, "errors": []}
+
+    with HttpClient(min_interval=0.8) as client, SessionLocal() as session:
+        documents = session.scalars(
+            select(Document)
+            .where(Document.body_status == "metadata")
+            .order_by(func.coalesce(Document.published_at, Document.fetched_at).desc())
+            .limit(limit)
+        ).all()
+        for document in documents:
+            existing = session.scalar(
+                select(DocumentBody).where(DocumentBody.document_id == document.id)
+            )
+            if existing is not None:
+                document.body_status = "extracted"
+                stats["skipped"] += 1
+                continue
+            try:
+                resp = client.get(document.url)
+                resp.raise_for_status()
+                text = extract_main_text(resp.text)
+                if len(text) < 80:
+                    document.body_status = "no_body"
+                    stats["skipped"] += 1
+                    continue
+                session.add(
+                    DocumentBody(
+                        document_id=document.id,
+                        text=text,
+                        sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                        word_count=len(text),
+                    )
+                )
+                document.body_status = "extracted"
+                stats["fetched"] += 1
+                session.commit()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("body fetch failed %s: %s", document.id, exc)
+                document.body_status = "failed"
+                stats["failed"] += 1
+                stats["errors"].append(f"{document.id}: {exc}")
+        session.commit()
+
+    stats["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
+    logger.info("collect_bodies: %s", stats)
+    return stats
+
+
+def extract_claims(limit: int = 30) -> dict:
+    """Extract numeric claims + spans from stored bodies (rule-based v1)."""
+    started = time.perf_counter()
+    stats: dict = {"documents": 0, "claims": 0, "errors": []}
+
+    with SessionLocal() as session:
+        from app.models.core import Claim
+
+        source_names = {
+            row.id: row.name for row in session.scalars(select(store.Source)).all()
+        }
+        documents = session.scalars(
+            select(Document)
+            .where(Document.body_status == "extracted")
+            .order_by(func.coalesce(Document.published_at, Document.fetched_at).desc())
+            .limit(limit)
+        ).all()
+        for document in documents:
+            body = session.scalar(
+                select(DocumentBody).where(DocumentBody.document_id == document.id)
+            )
+            if body is None:
+                document.body_status = "no_body"
+                continue
+            existing = session.scalar(
+                select(func.count()).select_from(Claim).where(Claim.document_id == document.id)
+            )
+            if not existing:
+                claims = extract_numeric_claims(
+                    body.text, default_subject=source_names.get(document.source_id)
+                )
+                if claims:
+                    stats["claims"] += save_claims(session, document, claims, method="rule")
+            document.body_status = "claims_extracted"
+            stats["documents"] += 1
+            session.commit()
+
+    stats["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
+    logger.info("extract_claims: %s", stats)
+    return stats
+
+
+def check_data_quality() -> dict:
+    """Cross-check official CZCE daily quotes and dataset freshness."""
+    started = time.perf_counter()
+    stats: dict = {"checks": 0, "failed": 0, "errors": []}
+
+    with HttpClient(min_interval=0.8) as client, SessionLocal() as session:
+        for symbol in ("SR", "CF"):
+            instrument = session.scalar(select(Instrument).where(Instrument.symbol == symbol))
+            if instrument is None:
+                continue
+            bar = session.scalar(
+                select(MarketBar)
+                .where(MarketBar.instrument_id == instrument.id, MarketBar.timeframe == "1d")
+                .order_by(MarketBar.ts_utc.desc())
+                .limit(1)
+            )
+            if bar is None:
+                continue
+            try:
+                rows = czce.fetch_daily(client, bar.ts_utc.date())
+                main_contract = czce.main_contract(rows.get(symbol, []))
+                expected = main_contract.close if main_contract else None
+                actual = bar.close
+                deviation = abs(actual - expected) / expected if expected else None
+                passed = deviation is not None and deviation <= 0.002
+                session.add(
+                    DataCheck(
+                        kind="reconcile",
+                        dataset="CZCE官方日行情",
+                        symbol=symbol,
+                        expected=expected,
+                        actual=actual,
+                        deviation=deviation,
+                        passed=passed,
+                        detail=main_contract.code if main_contract else "未找到主力合约",
+                    )
+                )
+                stats["checks"] += 1
+                if not passed:
+                    stats["failed"] += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("quality check failed %s: %s", symbol, exc)
+                stats["errors"].append(f"{symbol}: {exc}")
+            session.commit()
+
+        now = _now()
+
+        def freshness(dataset: str, latest, max_age_days: int) -> None:
+            if latest is not None and latest.tzinfo is None:
+                latest = latest.replace(tzinfo=timezone.utc)
+            age = (now - latest).days if latest is not None else None
+            passed = age is not None and age <= max_age_days
+            session.add(
+                DataCheck(
+                    kind="freshness",
+                    dataset=dataset,
+                    check_date=now,
+                    passed=passed,
+                    detail=f"latest={latest.date() if latest else None}, age_days={age}",
+                )
+            )
+            stats["checks"] += 1
+            if not passed:
+                stats["failed"] += 1
+
+        freshness("国内期货日线", session.scalar(select(func.max(MarketBar.ts_utc))), 5)
+        freshness("美债利率", session.scalar(select(func.max(MacroObs.ts_utc))), 10)
+        freshness("行情快照", session.scalar(select(func.max(QuoteRow.ts_utc))), 1)
+        freshness(
+            "官方新闻",
+            session.scalar(select(func.max(func.coalesce(Document.published_at, Document.fetched_at)))),
+            3,
+        )
+        session.commit()
+
+    stats["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
+    logger.info("check_data_quality: %s", stats)
     return stats

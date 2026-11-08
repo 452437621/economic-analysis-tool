@@ -372,3 +372,44 @@ class GraphEdge(Base, TimestampMixin):
     regime: Mapped[str | None] = mapped_column(String(40))
     confidence: Mapped[float | None] = mapped_column(Float)
     evidence_claim_ids: Mapped[list | None] = mapped_column(JSON)
+
+
+class DocumentBody(Base):
+    __tablename__ = "document_bodies"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), unique=True
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    sha256: Mapped[str | None] = mapped_column(String(64))
+    word_count: Mapped[int | None] = mapped_column(Integer)
+    extracted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DataCheck(Base):
+    __tablename__ = "data_checks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)  # reconcile/freshness
+    dataset: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    symbol: Mapped[str | None] = mapped_column(String(40))
+    check_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expected: Mapped[float | None] = mapped_column(Float)
+    actual: Mapped[float | None] = mapped_column(Float)
+    deviation: Mapped[float | None] = mapped_column(Float)
+    passed: Mapped[bool] = mapped_column(Boolean, default=True)
+    detail: Mapped[str | None] = mapped_column(Text)
+
+
+class Brief(Base):
+    __tablename__ = "briefs"
+    __table_args__ = (UniqueConstraint("kind", "trade_date", name="uq_brief"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)  # premarket/postmarket/manual
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    markdown: Mapped[str] = mapped_column(Text, nullable=False)
+    meta: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
