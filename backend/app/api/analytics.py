@@ -141,3 +141,19 @@ def wind(session: Session = Depends(get_session)) -> dict:
     if row is None:
         return {"data": None}
     return {"data": {"asof": row.asof.isoformat(), **row.payload}}
+
+
+@router.get("/leadlag")
+def leadlag(session: Session = Depends(get_session)) -> dict:
+    row = _latest(session, "leadlag", "pairs")
+    if row is None:
+        return {"data": None}
+    return {"data": {"asof": row.asof.isoformat(), **row.payload}}
+
+
+@router.get("/events")
+def events(session: Session = Depends(get_session)) -> dict:
+    row = _latest(session, "event_study", "library")
+    if row is None:
+        return {"data": None}
+    return {"data": {"asof": row.asof.isoformat(), **row.payload}}

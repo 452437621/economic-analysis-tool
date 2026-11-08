@@ -173,6 +173,28 @@
     </section>
 
     <section>
+      <h2>交易信号与计划 <span class="hint">规则信号 · 风控校验 · 预测登记（纸面账户 100 万，单笔风险 0.25%）</span></h2>
+      <div class="grid cards" id="decision-cards"><div class="card muted">加载中…</div></div>
+      <div class="grid two-col" style="margin-top: 14px;">
+        <div class="panel">
+          <h3>当前信号（按强度）</h3>
+          <table>
+            <thead><tr><th>品种</th><th>类型</th><th>方向</th><th>强度</th><th>说明</th></tr></thead>
+            <tbody id="signals"><tr><td colspan="5">加载中…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <h3>交易计划（草稿，需人工确认）</h3>
+          <table>
+            <thead><tr><th>品种</th><th>方向</th><th>入场区</th><th>止损</th><th>T1</th><th>仓位</th><th>风控</th></tr></thead>
+            <tbody id="plans"><tr><td colspan="7">加载中…</td></tr></tbody>
+          </table>
+          <div class="mini" id="decision-note"></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
       <h2>利率与流动性 <span class="hint">美国财政部日频曲线</span></h2>
       <div class="grid macro-grid" id="macro"><div class="card muted">加载中…</div></div>
     </section>
@@ -465,6 +487,56 @@
       }
     }
 
+    function fmtNum(value, digits) {
+      if (value === null || value === undefined) return "—";
+      return Number(value).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    }
+
+    async function loadDecisions() {
+      try {
+        const d = await getJSON("/api/decisions/summary");
+        const bt = d.backtest || {};
+        const breakout = bt.breakout || {};
+        const cards = [
+          `<div class="card"><h3>当前信号</h3><div class="metric">${(d.signals || []).length}<small>条</small></div>
+            <div class="kv"><span>交易计划</span><span>${(d.plans || []).length}</span></div>
+            <div class="kv"><span>未结预测</span><span>${d.open_predictions}</span></div></div>`,
+          `<div class="card"><h3>信号回测（10 日）</h3>
+            <div class="metric">${breakout.hit_rate !== undefined ? (breakout.hit_rate * 100).toFixed(1) + "%" : "—"}<small>突破命中率</small></div>
+            <div class="kv"><span>突破均值</span><span>${breakout.avg_return_pct ?? "—"}%</span></div>
+            <div class="kv"><span>样本数</span><span>${breakout.count ?? "—"}</span></div></div>`,
+          `<div class="card"><h3>风控</h3><div class="metric">0.25%<small>单笔风险</small></div>
+            <div class="kv"><span>纸面权益</span><span>100 万</span></div>
+            <div class="kv"><span>时间止损</span><span>3 个交易日</span></div>
+            <div class="kv"><span>说明</span><span>合约乘数待接入</span></div></div>`,
+        ];
+        $("decision-cards").innerHTML = cards.join("");
+
+        const signals = (d.signals || []).slice(0, 8);
+        $("signals").innerHTML = signals.map((s) => `
+          <tr><td class="sym">${esc(s.symbol || "")}</td><td>${esc(s.type)}</td>
+          <td class="${s.direction === "long" ? "up" : "down"}">${s.direction === "long" ? "多" : "空"}</td>
+          <td class="num">${(s.strength * 100).toFixed(0)}%</td><td class="muted">${esc(s.note || "")}</td></tr>`).join("")
+          || '<tr><td colspan="5">暂无信号</td></tr>';
+
+        const plans = d.plans || [];
+        $("plans").innerHTML = plans.map((p) => {
+          const checks = p.checks || [];
+          const allPassed = checks.every((check) => check.passed);
+          return `<tr><td class="sym">${esc(p.symbol || "")}</td>
+            <td class="${p.side === "long" ? "up" : "down"}">${p.side === "long" ? "多" : "空"}</td>
+            <td class="num">${fmtNum(p.entry_low, 2)}–${fmtNum(p.entry_high, 2)}</td>
+            <td class="num">${fmtNum(p.stop, 2)}</td>
+            <td class="num">${fmtNum((p.targets || {}).T1, 2)}</td>
+            <td class="num">${fmtNum(p.size, 2)}</td>
+            <td>${allPassed ? '<span class="badge ok">通过</span>' : '<span class="badge bad">拦截</span>'}</td></tr>`;
+        }).join("") || '<tr><td colspan="7">暂无计划</td></tr>';
+        $("decision-note").textContent = "仓位按「以损定量」计算（权益 × 风险% ÷ 止损距离）；期货合约乘数尚未接入，手数需人工换算。计划为草稿，不构成投资建议。";
+      } catch (err) {
+        $("decision-cards").innerHTML = `<div class="card err">${esc(err.message)}</div>`;
+      }
+    }
+
     async function openDoc(id) {
       $("modal").classList.add("open");
       $("doc-title").textContent = "加载中…";
@@ -555,13 +627,14 @@
     }
 
     tick();
-    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics();
+    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions();
     const docParam = new URLSearchParams(location.search).get("doc");
     if (docParam) openDoc(docParam);
     setInterval(tick, 1000);
     setInterval(() => { loadHealth(); loadQuotes(); loadJobs(); }, 15000);
     setInterval(() => { loadMacro(); loadNews(); loadSources(); loadBrief(); }, 60000);
     setInterval(loadAnalytics, 120000);
+    setInterval(loadDecisions, 60000);
   </script>
 </body>
 </html>

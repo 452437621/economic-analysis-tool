@@ -429,3 +429,14 @@ class AnalyticsResult(Base):
     code_version: Mapped[str] = mapped_column(String(20), default="m3.0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+
+class PlanCheck(Base):
+    __tablename__ = "plan_checks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("trade_plans.id", ondelete="CASCADE"))
+    rule: Mapped[str] = mapped_column(String(80), nullable=False)
+    passed: Mapped[bool] = mapped_column(Boolean, default=True)
+    detail: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+

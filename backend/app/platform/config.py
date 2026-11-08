@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     llm_reasoner_model: str = "deepseek-reasoner"
     llm_daily_budget_usd: float = 5.0
 
+    # Decision system (M4): paper account equity and per-trade risk budget
+    account_equity: float = 1_000_000.0
+    risk_per_trade_pct: float = 0.25
+
     @property
     def db_url(self) -> str:
         if self.database_url:

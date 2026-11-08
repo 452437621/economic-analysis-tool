@@ -126,6 +126,21 @@ def _register_collectors() -> None:
         max_instances=1,
     )
     scheduler.add_job(
+        _collector("decide"),
+        trigger=CronTrigger(hour=16, minute=30, timezone=CST),
+        id="decide_daily",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _collector("decide"),
+        trigger=DateTrigger(run_date=now + timedelta(seconds=300)),
+        id="decide_bootstrap",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
         _collector("brief_premarket"),
         trigger=CronTrigger(hour=7, minute=30, timezone=CST),
         id="brief_premarket",

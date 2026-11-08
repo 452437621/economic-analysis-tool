@@ -11,7 +11,9 @@ from app.analytics.analogs import build_state, find_analogs
 from app.analytics.attribution import build_drivers, decompose
 from app.analytics.correlation import correlation_snapshot
 from app.analytics.data import aligned, load_frames
+from app.analytics.events import build_event_study
 from app.analytics.indicators import compute_indicators
+from app.analytics.leadlag import leadlag_pairs
 from app.analytics.regime import compute_regimes
 from app.analytics.wind import compute_wind
 from app.models.core import AnalyticsResult
@@ -53,8 +55,16 @@ def run_analytics() -> dict:
         raise RuntimeError("no daily bars or macro data available for analytics")
 
     asof = _asof(closes)
-    counts = {"indicators": 0, "regimes": 0, "attribution": 0, "correlation": 0, "wind": 0, "analogs": 0}
-
+    counts = {
+        "indicators": 0,
+        "regimes": 0,
+        "attribution": 0,
+        "correlation": 0,
+        "wind": 0,
+        "analogs": 0,
+        "leadlag": 0,
+        "events": 0,
+    }
     with SessionLocal() as session:
         for symbol in closes.columns:
             oi = frames.open_interest[symbol] if symbol in frames.open_interest.columns else None
@@ -92,6 +102,16 @@ def run_analytics() -> dict:
         if analogs:
             _save(session, "analogs", "current", asof, analogs)
             counts["analogs"] = 1
+
+        leadlag = leadlag_pairs(closes)
+        if leadlag:
+            _save(session, "leadlag", "pairs", asof, leadlag)
+            counts["leadlag"] = 1
+
+        events = build_event_study(closes)
+        if events:
+            _save(session, "event_study", "library", asof, events)
+            counts["events"] = 1
 
         session.commit()
 
