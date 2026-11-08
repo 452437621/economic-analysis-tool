@@ -158,6 +158,7 @@ def scan_alerts() -> dict:
             ).all()
         ]
 
+        created_alerts: list[dict] = []
         for alert in compute_alerts(quotes, data_checks, plan_checks):
             if _recent_exists(session, alert["kind"], alert["title"], since):
                 skipped += 1
@@ -170,8 +171,19 @@ def scan_alerts() -> dict:
                     message=alert["message"],
                 )
             )
+            created_alerts.append(alert)
             created += 1
         session.commit()
 
+    if created_alerts:
+        from app.notify import send_alert
+
+        for alert in created_alerts:
+            if alert["level"] != "critical":
+                continue
+            for result in send_alert(alert):
+                if not result.ok:
+                    logger.warning("notify %s failed: %s", result.channel, result.detail)
+
     logger.info("scan_alerts: created=%s skipped=%s", created, skipped)
-    return {"created": created, "skipped": skipped}
+    return {"created": created, "skipped": skipped, "notified": len(created_alerts)}

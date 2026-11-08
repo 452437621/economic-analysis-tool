@@ -37,6 +37,7 @@ JOBS = {
     "collect_news": pipeline.collect_news,
     "collect_bodies": pipeline.collect_bodies,
     "extract_claims": pipeline.extract_claims,
+    "extract_claims_llm": pipeline.extract_claims_llm,
     "check_data_quality": pipeline.check_data_quality,
     "analyze": run_analytics,
     "decide": run_decision,

@@ -368,6 +368,55 @@ def extract_claims(limit: int = 30) -> dict:
     return stats
 
 
+def extract_claims_llm(limit: int = 8) -> dict:
+    """LLM claim extraction (requires DEEPSEEK_API_KEY). Falls back cleanly."""
+    from app.knowledge.llm_extract import extract_claims_with_llm
+    from app.llm.client import LLMClient
+    from app.models.core import Source
+
+    client = LLMClient()
+    if not client.available:
+        return {"skipped": "no_api_key"}
+    stats: dict = {"documents": 0, "claims": 0, "errors": []}
+
+    with SessionLocal() as session:
+        source_names = {row.id: row.name for row in session.scalars(select(Source)).all()}
+        documents = session.scalars(
+            select(Document)
+            .where(Document.body_status.in_(["extracted", "claims_extracted"]))
+            .order_by(func.coalesce(Document.published_at, Document.fetched_at).desc())
+            .limit(limit * 3)
+        ).all()
+        processed = 0
+        for document in documents:
+            if processed >= limit:
+                break
+            meta = dict(document.meta or {})
+            if meta.get("llm_extracted"):
+                continue
+            body = session.scalar(
+                select(DocumentBody).where(DocumentBody.document_id == document.id)
+            )
+            if body is None:
+                continue
+            try:
+                claims = extract_claims_with_llm(
+                    client, body.text, default_subject=source_names.get(document.source_id)
+                )
+                if claims:
+                    stats["claims"] += save_claims(session, document, claims, method="llm")
+                meta["llm_extracted"] = True
+                document.meta = meta
+                session.commit()
+                stats["documents"] += 1
+                processed += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("llm extraction failed for %s: %s", document.id, exc)
+                session.rollback()
+                stats["errors"].append(f"{document.id}: {exc}")
+    return stats
+
+
 def check_data_quality() -> dict:
     """Cross-check official CZCE daily quotes and dataset freshness."""
     started = time.perf_counter()

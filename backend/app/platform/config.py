@@ -5,6 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
@@ -32,10 +33,16 @@ class Settings(BaseSettings):
     llm_model: str = "deepseek-chat"
     llm_reasoner_model: str = "deepseek-reasoner"
     llm_daily_budget_usd: float = 5.0
+    llm_base_url: str = "https://api.deepseek.com"
+    deepseek_api_key: str | None = Field(default=None, validation_alias="DEEPSEEK_API_KEY")
 
     # Decision system (M4): paper account equity and per-trade risk budget
     account_equity: float = 1_000_000.0
     risk_per_trade_pct: float = 0.25
+
+    @property
+    def llm_available(self) -> bool:
+        return bool(self.deepseek_api_key)
 
     @property
     def db_url(self) -> str:

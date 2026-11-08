@@ -15,6 +15,7 @@ from app.models.core import (
     Signal,
     TradePlan,
 )
+from app.decision.review import review as review_predictions
 from app.platform.db import get_session
 
 router = APIRouter(prefix="/api/decisions", tags=["decisions"])
@@ -195,3 +196,9 @@ def predictions(
             for row in rows
         ]
     }
+
+
+@router.get("/review")
+def review() -> dict:
+    """Prediction ledger review: Brier score, hit rate, calibration buckets."""
+    return {"data": review_predictions()}

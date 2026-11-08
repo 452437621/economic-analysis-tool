@@ -24,6 +24,7 @@ from app.models.core import (
     Quote,
     Source,
 )
+from app.platform.config import settings
 from app.platform.db import SessionLocal
 
 KIND_LABEL = {"premarket": "盘前简报", "postmarket": "盘后简报", "manual": "手动简报"}
@@ -199,6 +200,11 @@ def generate(kind: str = "manual", now: datetime | None = None) -> dict:
     trade_date = local.date()
     with SessionLocal() as session:
         markdown, meta = build_markdown(session, kind, now)
+        if settings.llm_available:
+            from app.narrative.llm_edit import enhance_brief
+
+            markdown, llm_meta = enhance_brief(markdown)
+            meta["llm"] = llm_meta
         session.execute(
             delete(Brief).where(Brief.kind == kind, Brief.trade_date == trade_date)
         )

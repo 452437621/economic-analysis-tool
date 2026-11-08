@@ -150,7 +150,7 @@
     </section>
 
     <section>
-      <h2>每日简报 <span class="hint" id="brief-meta"></span> <a id="brief-export" class="hint" href="#" download style="margin-left: auto; color: var(--accent);">导出 Markdown</a></h2>
+      <h2>每日简报 <span class="hint" id="brief-meta"></span> <a id="brief-print" class="hint" href="#" target="_blank" style="margin-left: auto; color: var(--accent);">打印 / PDF</a> <a id="brief-export" class="hint" href="#" download style="color: var(--accent);">导出 Markdown</a></h2>
       <div class="brief" id="brief">加载中…</div>
     </section>
 
@@ -391,6 +391,7 @@
         }
         $("brief-meta").textContent = `${brief.kind} · ${fmtTime(brief.created_at, true)}`;
         $("brief-export").href = `/api/briefs/${brief.id}/markdown`;
+        $("brief-print").href = `/api/briefs/${brief.id}/print`;
         $("brief").innerHTML = renderBriefMarkdown(brief.markdown);
       } catch (err) {
         $("brief").innerHTML = `<span class="err">${esc(err.message)}</span>`;
@@ -509,6 +510,11 @@
     async function loadDecisions() {
       try {
         const d = await getJSON("/api/decisions/summary");
+        let reviewData = { count: 0 };
+        try {
+          const reviewPayload = await getJSON("/api/decisions/review");
+          reviewData = reviewPayload.data || { count: 0 };
+        } catch (err) { /* review is optional */ }
         const bt = d.backtest || {};
         const breakout = bt.breakout || {};
         const cards = [
@@ -522,7 +528,11 @@
           `<div class="card"><h3>风控</h3><div class="metric">0.25%<small>单笔风险</small></div>
             <div class="kv"><span>纸面权益</span><span>100 万</span></div>
             <div class="kv"><span>时间止损</span><span>3 个交易日</span></div>
-            <div class="kv"><span>说明</span><span>合约乘数待接入</span></div></div>`,
+            <div class="kv"><span>说明</span><span>合约乘数已接入</span></div></div>`,
+          `<div class="card"><h3>预测校准</h3>
+            <div class="metric">${reviewData.count || 0}<small>已结算</small></div>
+            <div class="kv"><span>Brier</span><span>${reviewData.brier ?? "—"}</span></div>
+            <div class="kv"><span>命中率</span><span>${reviewData.hit_rate !== null && reviewData.hit_rate !== undefined ? (reviewData.hit_rate * 100).toFixed(1) + "%" : "—"}</span></div></div>`,
         ];
         $("decision-cards").innerHTML = cards.join("");
 

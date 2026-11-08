@@ -102,6 +102,16 @@ def _register_collectors() -> None:
         coalesce=True,
         next_run_time=now + timedelta(seconds=120),
     )
+    if settings.llm_available:
+        scheduler.add_job(
+            _collector("extract_claims_llm"),
+            trigger=IntervalTrigger(seconds=1200),
+            id="extract_claims_llm",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            next_run_time=now + timedelta(seconds=180),
+        )
     scheduler.add_job(
         _collector("check_data_quality"),
         trigger=CronTrigger(hour=15, minute=50, timezone=CST),

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -157,6 +157,34 @@ def get_brief(brief_id: str, session: Session = Depends(get_session)) -> dict:
         "markdown": brief.markdown,
         "meta": brief.meta,
     }
+
+
+@router.get("/briefs/{brief_id}/print", response_class=HTMLResponse)
+def print_brief(brief_id: str, session: Session = Depends(get_session)) -> HTMLResponse:
+    from app.narrative.render import markdown_to_html
+
+    brief = session.get(Brief, brief_id)
+    if brief is None:
+        raise HTTPException(status_code=404, detail="brief not found")
+    body = markdown_to_html(brief.markdown)
+    page = f"""<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>EPIC 简报 {brief.trade_date.isoformat()}</title>
+<style>
+body {{ font-family: "Segoe UI", "Microsoft YaHei", sans-serif; max-width: 900px; margin: 32px auto; padding: 0 18px; color: #111; line-height: 1.7; }}
+h1,h2,h3 {{ line-height: 1.35; }}
+table {{ border-collapse: collapse; width: 100%; margin: 12px 0; }}
+th, td {{ border: 1px solid #ccc; padding: 6px 8px; font-size: 13px; text-align: left; }}
+th {{ background: #f2f2f2; }}
+code {{ background: #f4f4f4; padding: 1px 4px; border-radius: 3px; }}
+@media print {{ body {{ margin: 0; }} }}
+</style></head>
+<body>
+<p style="color:#666;font-size:12px;">EPIC · {brief.kind} · {brief.trade_date.isoformat()} · 生成于 {brief.created_at.isoformat()[:16].replace('T', ' ')}</p>
+{body}
+<p style="color:#999;font-size:11px;margin-top:32px;">仅供个人研究，不构成投资建议。</p>
+</body></html>"""
+    return HTMLResponse(page)
 
 
 @router.get("/briefs/{brief_id}/markdown")
