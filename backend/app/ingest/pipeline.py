@@ -12,7 +12,7 @@ from sqlalchemy import delete, func, select
 from app.ingest import store
 from app.ingest.contracts import Bar, MacroPoint, Quote
 from app.ingest.http import HttpClient
-from app.ingest.providers import czce, eastmoney, rss, sina, treasury
+from app.ingest.providers import czce, eastmoney, ecb, jgb, rss, sina, treasury
 from app.ingest.providers.html_extract import extract_main_text
 from app.ingest.symbols import (
     CN_FUTURES,
@@ -47,6 +47,12 @@ SOURCE_EM = dict(
 SOURCE_TREASURY = dict(
     name="美国财政部", kind="official", tier="S1", reliability=0.95, base_url="https://home.treasury.gov"
 )
+SOURCE_JGB = dict(
+    name="日本财务省", kind="official", tier="S1", reliability=0.95, base_url="https://www.mof.go.jp"
+)
+SOURCE_ECB = dict(
+    name="欧洲央行", kind="official", tier="S1", reliability=0.95, base_url="https://data.ecb.europa.eu"
+)
 
 NEWS_FEEDS = [
     dict(name="美联储", url="https://www.federalreserve.gov/feeds/press_all.xml", kind="rss", tier="S1"),
@@ -63,6 +69,11 @@ MACRO_SERIES_META: dict[str, dict] = {
     "US10Y_REAL": {"name": "美债10年实际利率", "unit": "%", "country": "US"},
     "US5Y_BE": {"name": "5年盈亏平衡通胀", "unit": "%", "country": "US"},
     "US10Y_BE": {"name": "10年盈亏平衡通胀", "unit": "%", "country": "US"},
+    "JP2Y": {"name": "日本国债2年", "unit": "%", "country": "JP"},
+    "JP10Y": {"name": "日本国债10年", "unit": "%", "country": "JP"},
+    "JP30Y": {"name": "日本国债30年", "unit": "%", "country": "JP"},
+    "DE2Y": {"name": "德国国债2年", "unit": "%", "country": "DE"},
+    "DE10Y": {"name": "德国国债10年", "unit": "%", "country": "DE"},
 }
 
 
@@ -250,6 +261,52 @@ def collect_rates() -> dict:
             logger.exception("treasury rates failed")
             store.record_health(session, treasury_source.id, ok=False, error=str(exc))
             stats["errors"].append(str(exc))
+
+        # Japan MOF JGB yields
+        jgb_source = store.get_source(session, **SOURCE_JGB)
+        try:
+            curves = jgb.fetch_rates(client, start_year=current_year - 4)
+            for code, points in curves.items():
+                meta = MACRO_SERIES_META.get(code, {})
+                n = store.upsert_macro(
+                    session,
+                    code,
+                    points,
+                    source_id=jgb_source.id,
+                    name=meta.get("name"),
+                    unit=meta.get("unit"),
+                    country=meta.get("country"),
+                )
+                stats["points"] += n
+                stats["series"] += 1
+            store.record_health(session, jgb_source.id, ok=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("jgb rates failed")
+            store.record_health(session, jgb_source.id, ok=False, error=str(exc))
+            stats["errors"].append(f"jgb: {exc}")
+
+        # ECB Germany benchmark yields
+        ecb_source = store.get_source(session, **SOURCE_ECB)
+        try:
+            curves = ecb.fetch_rates(client, start_year=current_year - 4)
+            for code, points in curves.items():
+                meta = MACRO_SERIES_META.get(code, {})
+                n = store.upsert_macro(
+                    session,
+                    code,
+                    points,
+                    source_id=ecb_source.id,
+                    name=meta.get("name"),
+                    unit=meta.get("unit"),
+                    country=meta.get("country"),
+                )
+                stats["points"] += n
+                stats["series"] += 1
+            store.record_health(session, ecb_source.id, ok=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("ecb rates failed")
+            store.record_health(session, ecb_source.id, ok=False, error=str(exc))
+            stats["errors"].append(f"ecb: {exc}")
         session.commit()
 
     stats["elapsed_ms"] = int((time.perf_counter() - started) * 1000)

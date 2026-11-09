@@ -60,6 +60,11 @@ macro:
     - {code: US10Y_REAL, name: 美债10年实际利率, unit: "%", freq: d, country: US}
     - {code: US5Y_BE, name: 5年盈亏平衡通胀, unit: "%", freq: d, country: US}
     - {code: US10Y_BE, name: 10年盈亏平衡通胀, unit: "%", freq: d, country: US}
+    - {code: JP2Y, name: 日本国债2年, unit: "%", freq: d, country: JP}
+    - {code: JP10Y, name: 日本国债10年, unit: "%", freq: d, country: JP}
+    - {code: JP30Y, name: 日本国债30年, unit: "%", freq: d, country: JP}
+    - {code: DE2Y, name: 德国国债2年, unit: "%", freq: d, country: DE}
+    - {code: DE10Y, name: 德国国债10年, unit: "%", freq: d, country: DE}
 
 news:
   feeds:
