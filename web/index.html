@@ -223,6 +223,14 @@
           <div class="mini" id="decision-note"></div>
         </div>
       </div>
+      <div class="panel" style="margin-top: 14px;">
+        <h3>信号回测（10 日，含 0.06% 成本，walk-forward 2024 分界）</h3>
+        <table>
+          <thead><tr><th>规则</th><th>命中率</th><th>均值</th><th>样本</th><th>训练命中</th><th>测试命中</th></tr></thead>
+          <tbody id="backtest"><tr><td colspan="6">加载中…</td></tr></tbody>
+        </table>
+        <div class="mini">回测仅用于评估规则边际，不构成收益预期；当前为日线简化模型。</div>
+      </div>
     </section>
 
     <section>
@@ -661,6 +669,19 @@
             <td>${allPassed ? '<span class="badge ok">通过</span>' : '<span class="badge bad">拦截</span>'}</td></tr>`;
         }).join("") || '<tr><td colspan="9">暂无计划</td></tr>';
         $("decision-note").textContent = "仓位按「以损定量」计算（权益 × 风险% ÷ 止损距离 ÷ 合约乘数），手数为整数；保证金与手续费按交易所标准近似，实际以期货公司为准。计划为草稿，不构成投资建议。";
+
+        const btRows = Object.entries(bt).map(([rule, value]) => {
+          const wf = value.walk_forward || {};
+          const train = wf.train || {};
+          const test = wf.test || {};
+          return `<tr><td>${esc(rule)}</td>
+            <td class="num">${value.hit_rate !== undefined ? (value.hit_rate * 100).toFixed(1) + "%" : "—"}</td>
+            <td class="num">${value.avg_return_pct ?? "—"}%</td>
+            <td class="num">${value.count ?? "—"}</td>
+            <td class="num">${train.hit_rate !== undefined ? (train.hit_rate * 100).toFixed(1) + "%" : "—"}</td>
+            <td class="num">${test.hit_rate !== undefined ? (test.hit_rate * 100).toFixed(1) + "%" : "—"}</td></tr>`;
+        });
+        $("backtest").innerHTML = btRows.join("") || '<tr><td colspan="6">暂无回测结果</td></tr>';
       } catch (err) {
         $("decision-cards").innerHTML = `<div class="card err">${esc(err.message)}</div>`;
       }
