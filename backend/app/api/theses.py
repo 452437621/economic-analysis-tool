@@ -77,6 +77,13 @@ def update_status(
     return {"id": thesis.id, "status": thesis.status}
 
 
+@router.get("/review")
+def review() -> dict:
+    from app.decision.thesis_review import review_theses
+
+    return {"data": review_theses()}
+
+
 @router.get("/{thesis_id}")
 def thesis_detail(thesis_id: str, session: Session = Depends(get_session)) -> dict:
     thesis = session.get(Thesis, thesis_id)

@@ -215,6 +215,14 @@ def _register_collectors() -> None:
         max_instances=1,
         coalesce=True,
     )
+    scheduler.add_job(
+        _collector("monthly_review"),
+        trigger=CronTrigger(day=1, hour=10, minute=0, timezone=CST),
+        id="monthly_review",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     # 首次启动回补日线，之后按收盘时点更新
     scheduler.add_job(
         _collector("collect_daily_bars"),

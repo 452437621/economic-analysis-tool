@@ -156,6 +156,7 @@
         <span style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
           <button class="modal-close" onclick="loadBrief()">日常</button>
           <button class="modal-close" onclick="loadBrief('weekly')">周报</button>
+          <button class="modal-close" onclick="loadBrief('monthly')">月报</button>
           <a id="brief-print" class="hint" href="#" target="_blank" style="color: var(--accent);">打印 / PDF</a>
           <a id="brief-export" class="hint" href="#" download style="color: var(--accent);">导出 Markdown</a>
         </span>
@@ -220,6 +221,7 @@
     <section>
       <h2>论点与情景 <span class="hint">由信号生成的可证伪论点 · 证据权重 · 情景概率（草稿，需人工确认）</span></h2>
       <div class="grid two-col" id="theses"><div class="card muted">加载中…</div></div>
+      <div class="mini" id="thesis-review"></div>
     </section>
 
     <section>
@@ -701,6 +703,13 @@
             <div class="mini">失效条件：${esc(thesis.invalidation || "")}</div>
           </div>`;
         }).join("") || '<div class="card muted">暂无论点，运行 --job theses 生成。</div>';
+        try {
+          const reviewPayload = await getJSON("/api/theses/review");
+          const review = reviewPayload.data || {};
+          $("thesis-review").textContent = review.scored
+            ? `论点复核：${review.scored} 条可评分，方向命中率 ${(review.hit_rate * 100).toFixed(0)}%，平均收益 ${review.avg_return_pct}%（按创建日至最新收盘，多空方向调整）。`
+            : "论点复核：暂无足够行情样本（需论点创建后的日线）。";
+        } catch (err) { /* optional */ }
       } catch (err) {
         $("theses").innerHTML = `<div class="card err">${esc(err.message)}</div>`;
       }
