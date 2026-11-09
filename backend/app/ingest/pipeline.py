@@ -23,6 +23,7 @@ from app.ingest.providers import (
     rss,
     shfe_positions,
     sina,
+    sina_positions,
     treasury,
 )
 from app.ingest.providers.html_extract import extract_main_text
@@ -377,6 +378,7 @@ def collect_positions() -> dict:
         for label, fetcher, source_conf in (
             ("shfe", shfe_positions.fetch_latest, SOURCE_SHFE),
             ("czce", czce_positions.fetch_latest, SOURCE_CZCE),
+            ("sina", sina_positions.fetch_latest, SOURCE_SINA),
         ):
             source = store.get_source(session, **source_conf)
             try:

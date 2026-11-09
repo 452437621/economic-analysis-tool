@@ -57,6 +57,9 @@ POSITION_SYMBOLS = {
     "ni": "NI",
     "cf": "CF",
     "sr": "SR",
+    "m": "M",
+    "p": "P",
+    "i": "I",
 }
 
 
