@@ -14,6 +14,7 @@ from app.ingest.contracts import Bar, MacroPoint, Quote
 from app.ingest.http import HttpClient
 from app.ingest.providers import (
     czce,
+    czce_positions,
     eastmoney,
     eastmoney_calendar,
     eastmoney_yield,
@@ -68,6 +69,9 @@ SOURCE_ECB = dict(
 )
 SOURCE_SHFE = dict(
     name="上海期货交易所", kind="official", tier="S1", reliability=0.95, base_url="https://www.shfe.com.cn"
+)
+SOURCE_CZCE = dict(
+    name="郑州商品交易所", kind="official", tier="S1", reliability=0.95, base_url="https://www.czce.com.cn"
 )
 
 NEWS_FEEDS = [
@@ -359,40 +363,49 @@ def collect_rates() -> dict:
 
 
 def collect_positions() -> dict:
-    """Fetch SHFE member position ranking (aggregate long/short by product)."""
+    """Fetch SHFE + CZCE member position rankings (top-20 long/short)."""
     started = time.perf_counter()
     stats: dict = {"trade_date": None, "products": 0, "errors": []}
     with HttpClient(min_interval=0.5) as client, SessionLocal() as session:
-        source = store.get_source(session, **SOURCE_SHFE)
-        try:
-            report_date, rows = shfe_positions.fetch_latest(client)
-            if not report_date or not rows:
-                raise RuntimeError("no position report available")
-            session.execute(
-                delete(PositionSnapshot).where(PositionSnapshot.trade_date == report_date)
-            )
-            for item in rows:
-                session.add(
-                    PositionSnapshot(
-                        trade_date=report_date,
-                        product=item["product"],
-                        name=item["name"],
-                        long_pos=item["long_pos"],
-                        short_pos=item["short_pos"],
-                        net_pos=item["net_pos"],
-                        net_ratio=item["net_ratio"],
-                        long_chg=item["long_chg"],
-                        short_chg=item["short_chg"],
+        for label, fetcher, source_conf in (
+            ("shfe", shfe_positions.fetch_latest, SOURCE_SHFE),
+            ("czce", czce_positions.fetch_latest, SOURCE_CZCE),
+        ):
+            source = store.get_source(session, **source_conf)
+            try:
+                report_date, rows = fetcher(client)
+                if not report_date or not rows:
+                    raise RuntimeError(f"no {label} position report available")
+                for item in rows:
+                    existing = session.scalar(
+                        select(PositionSnapshot).where(
+                            PositionSnapshot.trade_date == report_date,
+                            PositionSnapshot.product == item["product"],
+                        )
                     )
-                )
-            session.commit()
-            stats["trade_date"] = report_date.isoformat()
-            stats["products"] = len(rows)
-            store.record_health(session, source.id, ok=True)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("positions failed")
-            store.record_health(session, source.id, ok=False, error=str(exc))
-            stats["errors"].append(str(exc))
+                    if existing is None:
+                        existing = PositionSnapshot(
+                            trade_date=report_date,
+                            product=item["product"],
+                            name=item["name"],
+                        )
+                        session.add(existing)
+                    existing.name = item["name"]
+                    existing.long_pos = item["long_pos"]
+                    existing.short_pos = item["short_pos"]
+                    existing.net_pos = item["net_pos"]
+                    existing.net_ratio = item["net_ratio"]
+                    existing.long_chg = item["long_chg"]
+                    existing.short_chg = item["short_chg"]
+                session.commit()
+                stats["products"] += len(rows)
+                date_str = report_date.isoformat()
+                stats["trade_date"] = max(stats["trade_date"], date_str) if stats["trade_date"] else date_str
+                store.record_health(session, source.id, ok=True)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("%s positions failed", label)
+                store.record_health(session, source.id, ok=False, error=str(exc))
+                stats["errors"].append(f"{label}: {exc}")
     stats["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
     logger.info("collect_positions: %s", stats)
     return stats

@@ -21,6 +21,7 @@ from app.models.core import (
     Instrument,
     MacroObs,
     MacroSeries,
+    PositionSnapshot,
     Quote,
     Source,
 )
@@ -166,20 +167,48 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
         lines.append(f"| {row['name']}（{row['code']}） | {row['value']:.2f}% | {ts} |")
     lines.append("")
 
-    lines.append("## 3. 新闻与政策（官方来源）")
+    lines.append("## 3. 会员持仓（Top20，净持仓 = 多 − 空）")
+    latest_position_date = session.scalar(select(func.max(PositionSnapshot.trade_date)))
+    positions = []
+    if latest_position_date is not None:
+        positions = session.scalars(
+            select(PositionSnapshot).where(PositionSnapshot.trade_date == latest_position_date)
+        ).all()
+    if positions:
+        ranked = sorted(
+            (row for row in positions if row.net_ratio is not None),
+            key=lambda row: row.net_ratio,
+            reverse=True,
+        )
+        picks = ranked[:3] + ranked[-3:] if len(ranked) > 3 else ranked
+        seen = set()
+        for row in picks:
+            if row.product in seen:
+                continue
+            seen.add(row.product)
+            lines.append(
+                f"- {row.name}：净持仓 {row.net_pos:+,} 手，净占比 {row.net_ratio * 100:+.1f}%"
+                f"（多 {row.long_pos:,} / 空 {row.short_pos:,}）"
+            )
+        lines.append(f"- 数据日期：{latest_position_date.isoformat()}（上期所/郑商所）")
+    else:
+        lines.append("- 暂无会员持仓数据")
+    lines.append("")
+
+    lines.append("## 4. 新闻与政策（官方来源）")
     for item in news:
         doc_id = item["id"]
         lines.append(f"- [{item['source']}] {item['title']}（{item['published_at'][:16].replace('T', ' ')}）`[D:{doc_id}]`")
     lines.append("")
 
-    lines.append("## 4. 数据与信息缺口")
+    lines.append("## 5. 数据与信息缺口")
     lines.append(f"- 已入库原文 {bodies_count} 篇、断言 {claims_count} 条；新闻条目 {len(news)} 条（Top 10 展示）")
     for check in _freshness(session):
         status = "正常" if check["passed"] else "异常"
         lines.append(f"- 数据检查：{check['dataset']} = {status}（{check['detail'] or ''}）")
     lines.append("")
 
-    lines.append("## 5. 免责声明")
+    lines.append("## 6. 免责声明")
     lines.append("- 本简报由系统基于公开数据自动生成，仅供个人研究，不构成投资建议。")
     lines.append("- 外盘数据存在约 15 分钟延迟，国内期货盘后数据为最近收盘；引用前请核对时点。")
 

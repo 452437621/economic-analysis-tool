@@ -6,9 +6,18 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from app.models.core import Alert, DataCheck, EconomicEvent, PlanCheck, Quote, TradePlan
+from app.models.core import (
+    Alert,
+    AnalyticsResult,
+    DataCheck,
+    EconomicEvent,
+    PlanCheck,
+    PositionSnapshot,
+    Quote,
+    TradePlan,
+)
 from app.platform.db import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -34,6 +43,43 @@ def _should_check_stale(asset_class: str | None, now: datetime) -> bool:
     if asset_class in {"metal", "energy", "black", "agri"}:
         return _cn_futures_open(now)
     return True
+
+
+POSITION_SYMBOLS = {
+    "au": "AU",
+    "ag": "AG",
+    "cu": "CU",
+    "al": "AL",
+    "zn": "ZN",
+    "ni": "NI",
+    "cf": "CF",
+    "sr": "SR",
+}
+
+
+def position_divergence_alerts(positions: list[dict], trend_changes: dict[str, float]) -> list[dict]:
+    """Member net positioning vs 20-day price trend divergence."""
+    alerts: list[dict] = []
+    for position in positions:
+        symbol = POSITION_SYMBOLS.get(str(position.get("product") or "").lower())
+        ratio = position.get("net_ratio")
+        change = trend_changes.get(symbol) if symbol else None
+        if ratio is None or change is None or abs(ratio) < 0.05 or abs(change) < 1.0:
+            continue
+        if (ratio > 0 and change < 0) or (ratio < 0 and change > 0):
+            side = "净多" if ratio > 0 else "净空"
+            alerts.append(
+                {
+                    "level": "warn",
+                    "kind": "position_divergence",
+                    "title": f"持仓背离：{position.get('name') or symbol}",
+                    "message": (
+                        f"会员 Top20 {side} {abs(ratio) * 100:.1f}%，"
+                        f"但 20 日价格动量 {change:+.2f}%"
+                    ),
+                }
+            )
+    return alerts
 
 
 def calendar_alerts(events: list[dict], now: datetime | None = None) -> list[dict]:
@@ -224,9 +270,32 @@ def scan_alerts() -> dict:
             }
             for row in upcoming
         ]
+
+        latest_position_date = session.scalar(select(func.max(PositionSnapshot.trade_date)))
+        position_rows = []
+        if latest_position_date is not None:
+            position_rows = [
+                {
+                    "product": row.product,
+                    "name": row.name,
+                    "net_ratio": row.net_ratio,
+                }
+                for row in session.scalars(
+                    select(PositionSnapshot).where(
+                        PositionSnapshot.trade_date == latest_position_date
+                    )
+                ).all()
+            ]
+        trend_changes = {
+            row.subject: (row.payload or {}).get("change_20d")
+            for row in session.scalars(
+                select(AnalyticsResult).where(AnalyticsResult.kind == "indicator")
+            ).all()
+            if (row.payload or {}).get("change_20d") is not None
+        }
         for alert in compute_alerts(
             quotes, data_checks, plan_checks, now=now, calendar_events=calendar_events
-        ):
+        ) + position_divergence_alerts(position_rows, trend_changes):
             if _recent_exists(session, alert["kind"], alert["title"], since):
                 skipped += 1
                 continue
