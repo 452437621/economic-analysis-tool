@@ -141,6 +141,15 @@ def _register_collectors() -> None:
         coalesce=True,
         next_run_time=now + timedelta(seconds=120),
     )
+    scheduler.add_job(
+        _collector("extract_events"),
+        trigger=IntervalTrigger(seconds=1800),
+        id="extract_events",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        next_run_time=now + timedelta(seconds=130),
+    )
     if settings.llm_available:
         scheduler.add_job(
             _collector("extract_claims_llm"),

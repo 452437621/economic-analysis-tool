@@ -13,6 +13,9 @@ from app.models.core import (
     AnalyticsResult,
     DataCheck,
     EconomicEvent,
+    Event,
+    EventInstrument,
+    Instrument,
     PlanCheck,
     PositionSnapshot,
     Quote,
@@ -55,6 +58,25 @@ POSITION_SYMBOLS = {
     "cf": "CF",
     "sr": "SR",
 }
+
+
+def event_alerts(events: list[dict]) -> list[dict]:
+    """Recent high-impact detected events (trade/geopolitical/policy)."""
+    alerts: list[dict] = []
+    for event in events:
+        event_type = str(event.get("type") or "")
+        if event_type not in ("trade", "geopolitical", "monetary_policy"):
+            continue
+        symbols = ", ".join(event.get("instruments") or []) or "—"
+        alerts.append(
+            {
+                "level": "warn" if event_type in ("trade", "geopolitical") else "info",
+                "kind": "event",
+                "title": f"事件：{str(event.get('title') or '')[:60]}",
+                "message": f"{event_type} · 关联 {symbols}",
+            }
+        )
+    return alerts
 
 
 def position_divergence_alerts(positions: list[dict], trend_changes: dict[str, float]) -> list[dict]:
@@ -293,9 +315,32 @@ def scan_alerts() -> dict:
             ).all()
             if (row.payload or {}).get("change_20d") is not None
         }
+        recent_events = session.scalars(
+            select(Event)
+            .where(Event.event_date >= now_naive - timedelta(hours=24))
+            .order_by(Event.event_date.desc())
+            .limit(20)
+        ).all()
+        event_links: dict[str, list[str]] = {}
+        if recent_events:
+            rows = session.execute(
+                select(EventInstrument.event_id, Instrument.symbol)
+                .join(Instrument, Instrument.id == EventInstrument.instrument_id)
+                .where(EventInstrument.event_id.in_([row.id for row in recent_events]))
+            ).all()
+            for event_id, symbol in rows:
+                event_links.setdefault(event_id, []).append(symbol)
+        event_rows = [
+            {
+                "type": row.type,
+                "title": row.title,
+                "instruments": event_links.get(row.id, []),
+            }
+            for row in recent_events
+        ]
         for alert in compute_alerts(
             quotes, data_checks, plan_checks, now=now, calendar_events=calendar_events
-        ) + position_divergence_alerts(position_rows, trend_changes):
+        ) + position_divergence_alerts(position_rows, trend_changes) + event_alerts(event_rows):
             if _recent_exists(session, alert["kind"], alert["title"], since):
                 skipped += 1
                 continue

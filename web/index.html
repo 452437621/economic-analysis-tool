@@ -256,6 +256,11 @@
     </section>
 
     <section>
+      <h2>事件驱动 <span class="hint">规则识别 · 关税/地缘/货币政策/供给/数据</span></h2>
+      <ul class="news" id="events"><li>加载中…</li></ul>
+    </section>
+
+    <section>
       <h2>新闻与政策 <span class="hint">官方来源 · 仅标题与元数据</span></h2>
       <ul class="news" id="news"><li>加载中…</li></ul>
     </section>
@@ -745,6 +750,19 @@
       }
     }
 
+    async function loadEvents() {
+      try {
+        const payload = await getJSON("/api/events?limit=12");
+        const rows = payload.data || [];
+        $("events").innerHTML = rows.map((event) => `
+          <li><div class="meta">${fmtTime(event.event_date, true)} · <span class="badge">${esc(event.type)}</span> · ${esc((event.instruments || []).join("/") || "—")}</div>
+          <div>${esc(event.title)}</div></li>`).join("")
+          || "<li>暂无识别事件，等待 extract_events 任务。</li>";
+      } catch (err) {
+        $("events").innerHTML = `<li class="err">${esc(err.message)}</li>`;
+      }
+    }
+
     async function loadJournal() {
       try {
         const payload = await getJSON("/api/journal?limit=5");
@@ -867,7 +885,7 @@
     }
 
     tick();
-    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadTheses(); loadAlerts(); loadQuality(); loadJournal(); loadCalendar(); loadPositions();
+    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadTheses(); loadAlerts(); loadQuality(); loadJournal(); loadCalendar(); loadPositions(); loadEvents();
     const docParam = new URLSearchParams(location.search).get("doc");
     if (docParam) openDoc(docParam);
     setInterval(tick, 1000);
@@ -880,6 +898,7 @@
     setInterval(loadJournal, 120000);
     setInterval(loadCalendar, 300000);
     setInterval(loadPositions, 300000);
+    setInterval(loadEvents, 60000);
   </script>
 </body>
 </html>

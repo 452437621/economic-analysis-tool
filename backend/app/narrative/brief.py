@@ -7,7 +7,7 @@ brief is the baseline that the LLM editor will polish once an API key exists.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
@@ -18,6 +18,8 @@ from app.models.core import (
     DataCheck,
     Document,
     DocumentBody,
+    Event,
+    EventInstrument,
     Instrument,
     MacroObs,
     MacroSeries,
@@ -195,20 +197,44 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
         lines.append("- 暂无会员持仓数据")
     lines.append("")
 
-    lines.append("## 4. 新闻与政策（官方来源）")
+    lines.append("## 4. 事件驱动（近 3 天）")
+    recent_events = session.scalars(
+        select(Event)
+        .where(Event.event_date >= now.replace(tzinfo=None) - timedelta(days=3))
+        .order_by(Event.event_date.desc())
+        .limit(5)
+    ).all()
+    if recent_events:
+        event_ids = [row.id for row in recent_events]
+        link_rows = session.execute(
+            select(EventInstrument.event_id, Instrument.symbol)
+            .join(Instrument, Instrument.id == EventInstrument.instrument_id)
+            .where(EventInstrument.event_id.in_(event_ids))
+        ).all()
+        symbols_by_event: dict[str, list[str]] = {}
+        for event_id, symbol in link_rows:
+            symbols_by_event.setdefault(event_id, []).append(symbol)
+        for row in recent_events:
+            symbols = "/".join(symbols_by_event.get(row.id, [])) or "—"
+            lines.append(f"- [{row.type}] {row.title[:90]}（关联 {symbols}）")
+    else:
+        lines.append("- 暂无规则识别事件")
+    lines.append("")
+
+    lines.append("## 5. 新闻与政策（官方来源）")
     for item in news:
         doc_id = item["id"]
         lines.append(f"- [{item['source']}] {item['title']}（{item['published_at'][:16].replace('T', ' ')}）`[D:{doc_id}]`")
     lines.append("")
 
-    lines.append("## 5. 数据与信息缺口")
+    lines.append("## 6. 数据与信息缺口")
     lines.append(f"- 已入库原文 {bodies_count} 篇、断言 {claims_count} 条；新闻条目 {len(news)} 条（Top 10 展示）")
     for check in _freshness(session):
         status = "正常" if check["passed"] else "异常"
         lines.append(f"- 数据检查：{check['dataset']} = {status}（{check['detail'] or ''}）")
     lines.append("")
 
-    lines.append("## 6. 免责声明")
+    lines.append("## 7. 免责声明")
     lines.append("- 本简报由系统基于公开数据自动生成，仅供个人研究，不构成投资建议。")
     lines.append("- 外盘数据存在约 15 分钟延迟，国内期货盘后数据为最近收盘；引用前请核对时点。")
 

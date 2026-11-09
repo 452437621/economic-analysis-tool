@@ -20,6 +20,7 @@ from app.alerts import scan_alerts
 from app.analytics.runner import run_analytics
 from app.decision.runner import run_decision
 from app.decision.scoring import score_predictions
+from app.knowledge import events as event_mod
 from app.decision.theses import generate_theses
 from app.ingest import pipeline
 from app.models.base import utcnow
@@ -43,6 +44,7 @@ JOBS = {
     "collect_news_slow": lambda: pipeline.collect_news(slow=True),
     "collect_bodies": pipeline.collect_bodies,
     "extract_claims": pipeline.extract_claims,
+    "extract_events": event_mod.extract_events,
     "extract_claims_llm": pipeline.extract_claims_llm,
     "check_data_quality": pipeline.check_data_quality,
     "analyze": run_analytics,
