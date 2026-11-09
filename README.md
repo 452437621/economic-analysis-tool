@@ -2,7 +2,7 @@
 
 > **Economic Positioning, Intelligence & Cycles** —— 本地运行、以证据为中心的个人宏观—市场—交易决策工作台。
 >
-> 状态：**M0–M5 完成（v0.17）；M6 试运行支持工具就绪，等待真实使用与校准**（2026-11-09）。35 标的、3.9 万根日线、1.8 万条宏观观测、2,500+ 财经日历、13 品种会员持仓、194 篇官方新闻/1,203 条断言/规则事件库+事件论点；M4 收尾（论点/情景/复核）；持仓背离/事件告警、月报/周报/交易日志、日历告警/事件研究、验收自动化；LLM 待 Key。
+> 状态：**V1.0-rc 代码与文档完成；M6 试运行待真实使用与校准**（2026-11-09）。35 标的、3.9 万根日线、1.8 万条宏观观测、2,500+ 财经日历、13 品种会员持仓、194 篇官方新闻/3,400+ 条断言；M4 收尾（论点/情景/复核）；事件/持仓/日历/价格告警、月报/周报/交易日志、验收与自检脚本；LLM 待 Key。
 
 ![M21 看板](docs/assets/m21-dashboard.png)
 
@@ -20,12 +20,13 @@ powershell -File .\scripts\start.ps1
 
 浏览器打开 **http://127.0.0.1:8765**。
 
-- 首次启动 30 秒内完成行情/利率/新闻的自动回补与入库（约 2.7 万根日线、9 千条利率观测）。
+- 首次启动 30 秒内完成行情/利率/新闻的自动回补与入库（约 4 万根日线、1.8 万条宏观观测、13 品种会员持仓）。
 - 手动跑任务：`.\.venv\Scripts\python.exe -m app.jobs.runner --list` / `--job collect_quotes` / `--job brief_manual` / `--all`
 - 生成简报：`--job brief_manual`，然后打开看板「每日简报」，或调用 `/api/briefs/latest`
 - 证据链：点击任意新闻 → 正文弹窗 + 数字断言高亮；也可用 `http://127.0.0.1:8765/?doc=<document_id>` 深链
 - 开发模式：`.\scripts\start.ps1 -Reload`
-- 验收：`powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1`（跑测试 + 12 项 DoD）
+- 自检：`powershell -ExecutionPolicy Bypass -File .\scripts\selfcheck.ps1`（测试 + 健康 + 验收 + 质检）
+- 验收：`powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1`（跑测试 + 14 项 DoD）
 - 备份：`.\scripts\backup.ps1` → `data/backup/<时间戳>/`
 - 测试：`.\.venv\Scripts\python.exe -m pytest -q`
 
@@ -84,6 +85,7 @@ powershell -File .\scripts\start.ps1
 | [07 开发进度](docs/07-开发进度.md) | 已完成、问题与修复、下一步 |
 | [08 使用手册](docs/08-使用手册.md) | 安装、每日流程、任务表、配置、API、排障、验收 |
 | [09 试运行与验收](docs/09-试运行与验收.md) | DoD 对照、M6 计划、安全合规、容量、V1.1 清单 |
+| [10 发布说明与验收](docs/10-发布说明与验收.md) | V1.0-rc 功能矩阵、数据限制、验收证据、用户待办 |
 
 ---
 
@@ -116,7 +118,7 @@ FastAPI (api / SSE / 导出)
 | M3 | 周期/定价/关联/类比/参与者分析 | ✅ v0 完成（周期/归因/相关性/风向/类比；传导图与持仓待补） |
 | M4 | 信号、情景、交易计划、风控、回测、预测账本 | ✅ 完成（v0.2：合约/手数/保证金、成本回测、预测对账、论点/情景管理） |
 | M5 | 告警、导出、系统页、性能、文档、安全 | ✅ 完成（v0.2：通知渠道、打印/PDF、LLM 接入、复核 API、验收文档） |
-| M6 | 两周试运行与校准 | 🟡 支持工具就绪（交易日志/周报/验收/日线补齐），待真实使用 |
+| M6 | 两周试运行与校准 | 🟡 支持工具就绪（日志/周报/月报/验收/自检），待真实使用 |
 
 ---
 
