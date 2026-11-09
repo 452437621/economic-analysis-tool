@@ -118,6 +118,7 @@
         <div class="metric" id="health">—</div>
         <div class="kv"><span>版本</span><span id="version">—</span></div>
         <div class="kv"><span>环境</span><span id="env">—</span></div>
+        <div class="kv"><span>LLM</span><span id="llm-status">—</span></div>
         <div class="kv"><span>本地时间</span><span id="local-time">—</span></div>
       </div>
       <div class="card">
@@ -288,6 +289,25 @@
     </section>
 
     <section>
+      <h2>验收与自检 <span class="hint">DoD 自动检查 · scripts/selfcheck.ps1</span></h2>
+      <div class="grid cards">
+        <div class="card">
+          <h3>验收结果</h3>
+          <div class="metric" id="acceptance">—</div>
+          <div class="kv"><span>自检</span><span>pytest + 健康 + 验收 + 质检</span></div>
+          <div class="kv"><span>命令</span><span>scripts\selfcheck.ps1</span></div>
+        </div>
+        <div class="card" style="grid-column: span 2;">
+          <h3>检查项</h3>
+          <table>
+            <thead><tr><th>检查项</th><th>状态</th><th>明细</th></tr></thead>
+            <tbody id="acceptance-checks"><tr><td colspan="3">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section>
       <h2>任务</h2>
       <table>
         <thead><tr><th>名称</th><th>计划</th><th>启用</th><th>最近状态</th><th>最近运行</th></tr></thead>
@@ -359,6 +379,7 @@
         $("health").textContent = h.status === "ok" ? "正常" : "异常";
         $("version").textContent = fmt(h.version);
         $("env").textContent = fmt(h.env);
+        $("llm-status").textContent = h.llm_enabled ? "已配置" : "未配置（规则模式）";
         $("local-time").textContent = (h.time_local || "").slice(0, 19).replace("T", " ");
         const c = h.counts || {};
         $("count-instruments").textContent = fmt(c.instruments);
@@ -645,6 +666,23 @@
       }
     }
 
+    async function loadAcceptance() {
+      try {
+        const payload = await getJSON("/api/system/acceptance");
+        const checks = payload.checks || [];
+        const passed = checks.filter((check) => check.passed).length;
+        $("acceptance").innerHTML = `${passed}/${checks.length}<small>${payload.passed ? "通过" : "有失败项"}</small>`;
+        $("acceptance-checks").innerHTML = checks.map((check) => `
+          <tr><td>${esc(check.name)}</td>
+          <td>${check.passed ? '<span class="badge ok">通过</span>' : '<span class="badge bad">失败</span>'}</td>
+          <td class="muted">${esc(String(check.detail ?? ""))}</td></tr>`).join("")
+          || '<tr><td colspan="3">暂无验收结果</td></tr>';
+      } catch (err) {
+        $("acceptance").textContent = "—";
+        $("acceptance-checks").innerHTML = `<tr><td colspan="3" class="err">${esc(err.message)}</td></tr>`;
+      }
+    }
+
     async function loadAlerts() {
       try {
         const payload = await getJSON("/api/alerts?limit=10");
@@ -891,7 +929,7 @@
     }
 
     tick();
-    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadTheses(); loadAlerts(); loadQuality(); loadJournal(); loadCalendar(); loadPositions(); loadEvents();
+    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadTheses(); loadAlerts(); loadQuality(); loadJournal(); loadCalendar(); loadPositions(); loadEvents(); loadAcceptance();
     const docParam = new URLSearchParams(location.search).get("doc");
     if (docParam) openDoc(docParam);
     setInterval(tick, 1000);
@@ -900,7 +938,7 @@
     setInterval(loadAnalytics, 120000);
     setInterval(loadDecisions, 60000);
     setInterval(loadTheses, 120000);
-    setInterval(() => { loadAlerts(); loadQuality(); }, 30000);
+    setInterval(() => { loadAlerts(); loadQuality(); loadAcceptance(); }, 30000);
     setInterval(loadJournal, 120000);
     setInterval(loadCalendar, 300000);
     setInterval(loadPositions, 300000);

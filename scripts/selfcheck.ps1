@@ -27,7 +27,7 @@ health = get("/api/system/health")
 acceptance = get("/api/system/acceptance")
 quality = get("/api/system/data-quality")
 print("status:", health.get("status"))
-print("counts:", {k: health["counts"].get(k) for k in ("instruments", "market_bars", "macro", "documents", "claims", "trade_plans", "theses")})
+print("counts:", {k: health["counts"].get(k) for k in ("instruments", "market_bars", "macro_observations", "documents", "claims", "trade_plans", "theses")})
 print("acceptance:", acceptance.get("passed"), f"{sum(1 for c in acceptance['checks'] if c['passed'])}/{len(acceptance['checks'])}")
 print("quality:", quality.get("summary"))
 failed = [c["name"] for c in acceptance["checks"] if not c["passed"]]

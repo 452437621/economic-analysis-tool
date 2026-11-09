@@ -80,6 +80,7 @@ def health(session: Session = Depends(get_session)) -> dict:
         },
         "scheduler": scheduler_snapshot(),
         "counts": counts,
+        "llm_enabled": settings.llm_available,
     }
 
 
