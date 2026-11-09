@@ -184,6 +184,14 @@
           <div class="mini" id="analogs-note"></div>
         </div>
       </div>
+      <div class="panel" style="margin-top: 14px;">
+        <h3>日历事件后收益（1/3/5 个交易日，均值 %）</h3>
+        <table>
+          <thead><tr><th>国家/地区</th><th>类别</th><th>样本</th><th>黄金 1d</th><th>铜 1d</th><th>沪深300 1d</th><th>黄金 3d</th><th>铜 3d</th></tr></thead>
+          <tbody id="calendar-study"><tr><td colspan="8">加载中…</td></tr></tbody>
+        </table>
+        <div class="mini" id="calendar-study-note"></div>
+      </div>
     </section>
 
     <section>
@@ -512,6 +520,21 @@
         });
         $("attribution").innerHTML = attrRows.join("") || '<tr><td colspan="8">暂无归因结果</td></tr>';
         $("attribution-note").textContent = "回归窗口 120 日，驱动为美国利率变化；R² 低说明价格主要由其他因素驱动（仓位/地缘/国内供需），需结合 M2 证据链判断。";
+
+        const cs = a.calendar_study;
+        if (cs && cs.groups) {
+          const rows = cs.groups.slice(0, 10).map((g) => {
+            const au = (g.assets || {}).AU || {};
+            const cu = (g.assets || {}).CU || {};
+            const hs = (g.assets || {})["000300"] || {};
+            return `<tr><td>${esc(g.country)}</td><td>${esc(g.category)}</td><td class="num">${g.n}</td>
+              <td class="num">${pctCell(au["1d"])}</td><td class="num">${pctCell(cu["1d"])}</td>
+              <td class="num">${pctCell(hs["1d"])}</td><td class="num">${pctCell(au["3d"])}</td>
+              <td class="num">${pctCell(cu["3d"])}</td></tr>`;
+          });
+          $("calendar-study").innerHTML = rows.join("") || '<tr><td colspan="8">暂无日历事件研究（需至少一次 collect_calendar + analyze）</td></tr>';
+          $("calendar-study-note").textContent = `样本事件 ${cs.events} 条；窗口 ${cs.window}；仅统计事件日或其后首个交易日。`;
+        }
 
         const analogs = a.analogs;
         if (analogs) {

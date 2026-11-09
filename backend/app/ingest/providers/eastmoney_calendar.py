@@ -33,21 +33,35 @@ def classify_importance(name: str) -> int:
     return 3 if any(keyword in name for keyword in HIGH_KEYWORDS) else 2
 
 
-def fetch_calendar(client: HttpClient, start: date, end: date, page_size: int = 500) -> list[dict]:
-    resp = client.get(
-        URL,
-        params={
-            "reportName": "RPT_CPH_FECALENDAR",
-            "columns": "ALL",
-            "sortColumns": "START_DATE",
-            "sortTypes": 1,
-            "pageNumber": 1,
-            "pageSize": page_size,
-            "filter": f"(START_DATE>='{start.isoformat()}')(START_DATE<='{end.isoformat()}')(FE_TYPE=\"经济数据\")",
-        },
-    )
-    resp.raise_for_status()
-    rows = ((resp.json().get("result") or {}).get("data")) or []
+def fetch_calendar(
+    client: HttpClient,
+    start: date,
+    end: date,
+    page_size: int = 500,
+    max_pages: int = 10,
+) -> list[dict]:
+    rows: list[dict] = []
+    page = 1
+    pages = 1
+    while page <= pages and page <= max_pages:
+        resp = client.get(
+            URL,
+            params={
+                "reportName": "RPT_CPH_FECALENDAR",
+                "columns": "ALL",
+                "sortColumns": "START_DATE",
+                "sortTypes": 1,
+                "pageNumber": page,
+                "pageSize": page_size,
+                "filter": f"(START_DATE>='{start.isoformat()}')(START_DATE<='{end.isoformat()}')(FE_TYPE=\"经济数据\")",
+            },
+        )
+        resp.raise_for_status()
+        result = resp.json().get("result") or {}
+        rows.extend(result.get("data") or [])
+        pages = int(result.get("pages") or 1)
+        page += 1
+
     events: list[dict] = []
     for row in rows:
         raw = (row.get("START_DATE") or "")[:19]

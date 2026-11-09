@@ -42,6 +42,7 @@ def overview(session: Session = Depends(get_session)) -> dict:
         symbol: payload for symbol, payload in _all_latest(session, "attribution").items()
     }
     indicators = _all_latest(session, "indicator")
+    calendar_study = _latest(session, "calendar_study", "market")
     names = {
         row.symbol: row.name
         for row in session.scalars(select(Instrument)).all()
@@ -79,6 +80,11 @@ def overview(session: Session = Depends(get_session)) -> dict:
         ),
         "attribution": {symbol: item["payload"] for symbol, item in attribution.items()},
         "analogs": analogs.payload if analogs else None,
+        "calendar_study": (
+            {"asof": calendar_study.asof.isoformat(), **calendar_study.payload}
+            if calendar_study
+            else None
+        ),
         "movers": movers[:8],
         "asof": indicators.get("AU", {}).get("asof") or (wind.asof.isoformat() if wind else None),
     }
@@ -154,6 +160,14 @@ def leadlag(session: Session = Depends(get_session)) -> dict:
 @router.get("/events")
 def events(session: Session = Depends(get_session)) -> dict:
     row = _latest(session, "event_study", "library")
+    if row is None:
+        return {"data": None}
+    return {"data": {"asof": row.asof.isoformat(), **row.payload}}
+
+
+@router.get("/calendar")
+def calendar(session: Session = Depends(get_session)) -> dict:
+    row = _latest(session, "calendar_study", "market")
     if row is None:
         return {"data": None}
     return {"data": {"asof": row.asof.isoformat(), **row.payload}}

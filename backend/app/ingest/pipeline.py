@@ -353,13 +353,14 @@ def collect_rates() -> dict:
     return stats
 
 
-def collect_calendar(days_ahead: int = 14) -> dict:
-    """Fetch upcoming economic calendar events (Eastmoney)."""
+def collect_calendar(days_ahead: int = 14, days_back: int = 180) -> dict:
+    """Fetch economic calendar events (past 180d for event study + next 14d)."""
     started = time.perf_counter()
     stats: dict = {"events": 0, "new": 0, "errors": []}
     now = datetime.now(timezone.utc)
-    start = (now.astimezone(timezone(timedelta(hours=8))).date()) - timedelta(days=1)
-    end = start + timedelta(days=days_ahead)
+    today = now.astimezone(timezone(timedelta(hours=8))).date()
+    start = today - timedelta(days=days_back)
+    end = today + timedelta(days=days_ahead)
 
     with HttpClient(min_interval=0.5) as client, SessionLocal() as session:
         source = store.get_source(session, **SOURCE_EM)
@@ -387,7 +388,7 @@ def collect_calendar(days_ahead: int = 14) -> dict:
                 )
                 existing.add((naive_ts, event["name"]))
                 stats["new"] += 1
-            cutoff = now.replace(tzinfo=None) - timedelta(days=30)
+            cutoff = now.replace(tzinfo=None) - timedelta(days=365)
             session.execute(delete(EconomicEvent).where(EconomicEvent.ts_utc < cutoff))
             session.execute(delete(EconomicEvent).where(EconomicEvent.name.like("%累计同比%")))
             session.commit()

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from app.models.core import Alert, DataCheck, PlanCheck, Quote, TradePlan
+from app.models.core import Alert, DataCheck, EconomicEvent, PlanCheck, Quote, TradePlan
 from app.platform.db import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -36,11 +36,38 @@ def _should_check_stale(asset_class: str | None, now: datetime) -> bool:
     return True
 
 
+def calendar_alerts(events: list[dict], now: datetime | None = None) -> list[dict]:
+    """Upcoming high-impact calendar events within 24 hours."""
+    now = now or datetime.now(timezone.utc)
+    alerts: list[dict] = []
+    for event in events:
+        ts = event.get("ts")
+        if ts is None:
+            continue
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        hours = (ts - now).total_seconds() / 3600
+        if hours < -0.1 or hours > 24 or int(event.get("importance") or 0) < 3:
+            continue
+        level = "critical" if hours <= 1.5 else "warn"
+        when = ts.astimezone(CN_MARKET_TZ).strftime("%m-%d %H:%M")
+        alerts.append(
+            {
+                "level": level,
+                "kind": "calendar",
+                "title": f"{event.get('name')} 即将发布",
+                "message": f"{when} {event.get('country') or ''}；重要性 3 星",
+            }
+        )
+    return alerts
+
+
 def compute_alerts(
     quotes: list[dict],
     data_checks: list[dict],
     plan_checks: list[dict],
     now: datetime | None = None,
+    calendar_events: list[dict] | None = None,
 ) -> list[dict]:
     """Pure alert generator (testable)."""
     now = now or datetime.now(timezone.utc)
@@ -94,6 +121,7 @@ def compute_alerts(
                     "message": str(check.get("detail") or ""),
                 }
             )
+    alerts.extend(calendar_alerts(calendar_events or [], now))
     return alerts
 
 
@@ -159,7 +187,28 @@ def scan_alerts() -> dict:
         ]
 
         created_alerts: list[dict] = []
-        for alert in compute_alerts(quotes, data_checks, plan_checks):
+        now_naive = now.replace(tzinfo=None)
+        upcoming = session.scalars(
+            select(EconomicEvent)
+            .where(
+                EconomicEvent.ts_utc >= now_naive - timedelta(minutes=10),
+                EconomicEvent.ts_utc <= now_naive + timedelta(hours=24),
+                EconomicEvent.importance >= 3,
+            )
+            .order_by(EconomicEvent.ts_utc.asc())
+        ).all()
+        calendar_events = [
+            {
+                "ts": row.ts_utc.replace(tzinfo=timezone.utc),
+                "name": row.name,
+                "country": row.country,
+                "importance": row.importance,
+            }
+            for row in upcoming
+        ]
+        for alert in compute_alerts(
+            quotes, data_checks, plan_checks, now=now, calendar_events=calendar_events
+        ):
             if _recent_exists(session, alert["kind"], alert["title"], since):
                 skipped += 1
                 continue

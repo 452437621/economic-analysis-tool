@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, select
 
 from app.analytics.analogs import build_state, find_analogs
 from app.analytics.attribution import build_drivers, decompose
+from app.analytics.calendar_study import build_calendar_study
 from app.analytics.correlation import correlation_snapshot
 from app.analytics.data import aligned, load_frames
 from app.analytics.events import build_event_study
@@ -109,6 +110,33 @@ def run_analytics() -> dict:
         if events:
             _save(session, "event_study", "library", asof, events)
             counts["events"] = 1
+
+        from app.models.core import EconomicEvent
+
+        calendar_rows = session.scalars(
+            select(EconomicEvent)
+            .where(
+                EconomicEvent.ts_utc >= asof - timedelta(days=365),
+                EconomicEvent.ts_utc <= asof,
+                EconomicEvent.importance >= 3,
+            )
+            .order_by(EconomicEvent.ts_utc.asc())
+        ).all()
+        calendar_payload = build_calendar_study(
+            closes,
+            [
+                {
+                    "ts": row.ts_utc,
+                    "name": row.name,
+                    "country": row.country,
+                    "importance": row.importance,
+                }
+                for row in calendar_rows
+            ],
+        )
+        if calendar_payload.get("groups"):
+            _save(session, "calendar_study", "market", asof, calendar_payload)
+            counts["calendar_study"] = 1
 
         session.commit()
 
