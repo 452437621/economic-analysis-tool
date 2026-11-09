@@ -59,3 +59,21 @@ def test_watchlist_move_order():
         client.post(f"/api/watchlist/{first}/move", json={"direction": "up"})
         restored = client.get("/api/watchlist").json()["data"]
         assert restored[0]["symbol"] == first
+
+
+def test_watchlist_reorder_batch():
+    _prepare()
+    with TestClient(app) as client:
+        rows = client.get("/api/watchlist").json()["data"]
+        symbols = [row["symbol"] for row in rows]
+        assert len(symbols) >= 2
+        reversed_symbols = list(reversed(symbols))
+        saved = client.post("/api/watchlist/reorder", json={"symbols": reversed_symbols})
+        assert saved.status_code == 200
+        assert saved.json()["order"] == reversed_symbols
+        after = client.get("/api/watchlist").json()["data"]
+        assert [row["symbol"] for row in after] == reversed_symbols
+        # restore original order
+        client.post("/api/watchlist/reorder", json={"symbols": symbols})
+        restored = client.get("/api/watchlist").json()["data"]
+        assert [row["symbol"] for row in restored] == symbols

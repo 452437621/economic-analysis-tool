@@ -24,6 +24,10 @@ class MoveIn(BaseModel):
     direction: str = Field(pattern="^(up|down)$")
 
 
+class ReorderIn(BaseModel):
+    symbols: list[str] = Field(min_length=1, max_length=100)
+
+
 def _latest_quotes(session: Session) -> dict[str, Quote]:
     latest: dict[str, Quote] = {}
     for row in session.scalars(select(Quote).order_by(Quote.ts_utc.desc()).limit(3000)).all():
@@ -120,6 +124,29 @@ def add_watch(
     item.note = payload.note if payload.note is not None else item.note
     session.commit()
     return {"symbol": instrument.symbol, "saved": True, "priority": item.priority}
+
+
+@router.post("/reorder")
+def reorder_watchlist(
+    payload: ReorderIn,
+    session: Session = Depends(get_session),
+) -> dict:
+    rows = session.execute(
+        select(WatchItem, Instrument)
+        .join(Instrument, Instrument.id == WatchItem.instrument_id)
+        .order_by(WatchItem.sort_order.asc(), WatchItem.priority.asc(), Instrument.symbol.asc())
+    ).all()
+    by_symbol = {instrument.symbol: item for item, instrument in rows}
+    unknown = [symbol for symbol in payload.symbols if symbol not in by_symbol]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"unknown watchlist symbols: {unknown}")
+    requested = list(dict.fromkeys(payload.symbols))
+    remaining = [instrument.symbol for _, instrument in rows if instrument.symbol not in requested]
+    ordered = requested + remaining
+    for index, symbol in enumerate(ordered):
+        by_symbol[symbol].sort_order = index
+    session.commit()
+    return {"saved": True, "order": ordered}
 
 
 @router.post("/{symbol}/move")

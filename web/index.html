@@ -37,9 +37,17 @@
     body { margin: 0; background: var(--bg); color: var(--text);
       font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; font-size: 14px;
       transition: background-color .15s ease, color .15s ease; }
+    html { scroll-behavior: smooth; }
+    .topbar { position: sticky; top: 0; z-index: 10; background: var(--bg); }
     header { display: flex; align-items: center; gap: 16px; padding: 14px 22px;
-      border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--header-1), var(--header-2));
-      position: sticky; top: 0; z-index: 5; }
+      border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--header-1), var(--header-2)); }
+    nav#section-nav { display: flex; gap: 4px; padding: 6px 18px; overflow-x: auto; white-space: nowrap;
+      border-bottom: 1px solid var(--line); background: var(--panel); scrollbar-width: thin; }
+    nav#section-nav a { color: var(--muted); text-decoration: none; font-size: 12px; padding: 4px 9px;
+      border-radius: 6px; transition: background .12s, color .12s; }
+    nav#section-nav a:hover { color: var(--text); background: var(--panel-2); }
+    nav#section-nav a.active { color: var(--accent); background: var(--panel-2); font-weight: 600; }
+    main > section, main > .grid.cards { scroll-margin-top: 128px; }
     .theme-select { background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
       border-radius: 8px; padding: 5px 8px; font-size: 12px; font-family: inherit; cursor: pointer; }
     .logo { font-weight: 700; letter-spacing: .5px; font-size: 18px; }
@@ -105,6 +113,11 @@
       border-radius: 8px; padding: 7px 9px; font-size: 12px; font-family: inherit; }
     .watch-card h3 { display: flex; justify-content: space-between; align-items: center; }
     .watch-actions { display: flex; gap: 2px; align-items: center; }
+    .drag-handle { display: none; color: var(--muted); margin-right: 6px; cursor: grab; user-select: none; }
+    .watch-card.editing { cursor: grab; border-style: dashed; }
+    .watch-card.editing .drag-handle { display: inline; }
+    .watch-card.editing .watch-move, .watch-card.editing .watch-remove { display: none; }
+    .watch-card.dragging { opacity: .45; }
     .watch-move { background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 14px;
       padding: 0 4px; line-height: 1; }
     .watch-move:hover { color: var(--accent); }
@@ -135,6 +148,7 @@
   </style>
 </head>
 <body>
+  <div class="topbar">
   <header>
     <div>
       <div class="logo">EPIC<span>.</span></div>
@@ -150,6 +164,8 @@
     <span id="clock" class="sub"></span>
     <span id="status" class="badge">连接中…</span>
   </header>
+  <nav id="section-nav" aria-label="页面导航"></nav>
+  </div>
 
   <main>
     <div class="grid cards">
@@ -191,7 +207,14 @@
     </section>
 
     <section>
-      <h2>重点关注 <span class="hint">自选标的 · 可增删 · 默认来自 config/default.yaml；设置 EPIC_WATCHLIST_ONLY=true 可让信号/计划只分析自选</span></h2>
+      <h2>重点关注 <span class="hint">自选标的 · 可增删 · 默认来自 config/default.yaml；设置 EPIC_WATCHLIST_ONLY=true 可让信号/计划只分析自选</span>
+        <span style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
+          <span class="hint" id="watch-mode-hint"></span>
+          <button id="watch-edit-btn" class="modal-close" onclick="enterWatchEditMode()">调整顺序</button>
+          <button id="watch-save-btn" class="modal-close" style="display: none;" onclick="saveWatchOrder()">保存顺序</button>
+          <button id="watch-cancel-btn" class="modal-close" style="display: none;" onclick="cancelWatchOrder()">取消</button>
+        </span>
+      </h2>
       <div class="grid cards" id="watchlist"><div class="card muted">加载中…</div></div>
       <div class="panel" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
         <select id="watch-symbol" class="watch-input"></select>
@@ -435,8 +458,45 @@
       else if (darkMQ.addListener) darkMQ.addListener(onSystemChange);
     })();
 
-    const fmt = (v) => (v === null || v === undefined ? "—" : v);
-    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    const fmt = (v) => (v === null || v === undefined ? "—" : v);    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+    function initSectionNav() {
+      const nav = $("section-nav");
+      if (!nav) return;
+      const sections = [...document.querySelectorAll("main > .grid.cards, main > section")];
+      const links = [];
+      sections.forEach((section, index) => {
+        if (!section.id) section.id = "section-" + index;
+        let label = "区块 " + (index + 1);
+        if (section.matches(".grid.cards")) {
+          label = "概览";
+        } else {
+          const h2 = section.querySelector("h2");
+          const textNode = h2 ? [...h2.childNodes].find((node) => node.nodeType === 3 && node.textContent.trim()) : null;
+          if (textNode) label = textNode.textContent.trim();
+          else if (h2) label = h2.textContent.trim().slice(0, 8);
+        }
+        const link = document.createElement("a");
+        link.href = "#" + section.id;
+        link.textContent = label;
+        nav.appendChild(link);
+        links.push({ link, section });
+      });
+      const setActive = () => {
+        let current = links[0];
+        for (const item of links) {
+          if (item.section.getBoundingClientRect().top <= 140) current = item;
+        }
+        links.forEach((item) => item.link.classList.toggle("active", item === current));
+      };
+      let scheduled = false;
+      window.addEventListener("scroll", () => {
+        if (scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(() => { scheduled = false; setActive(); });
+      }, { passive: true });
+      setActive();
+    }
 
     async function getJSON(url) {
       const res = await fetch(url, { cache: "no-store" });
@@ -861,6 +921,76 @@
       }
     }
 
+    let watchEditMode = false;
+    let watchDragging = null;
+
+    function enterWatchEditMode() {
+      watchEditMode = true;
+      $("watch-edit-btn").style.display = "none";
+      $("watch-save-btn").style.display = "";
+      $("watch-cancel-btn").style.display = "";
+      $("watch-mode-hint").textContent = "拖动卡片调整顺序，完成后点保存";
+      loadWatchlist();
+    }
+
+    function cancelWatchOrder() {
+      watchEditMode = false;
+      $("watch-edit-btn").style.display = "";
+      $("watch-save-btn").style.display = "none";
+      $("watch-cancel-btn").style.display = "none";
+      $("watch-mode-hint").textContent = "";
+      loadWatchlist();
+    }
+
+    async function saveWatchOrder() {
+      const symbols = [...document.querySelectorAll("#watchlist .watch-card")]
+        .map((card) => card.dataset.symbol);
+      try {
+        const response = await fetch("/api/watchlist/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbols }),
+        });
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        $("watch-status").textContent = "顺序已保存";
+        watchEditMode = false;
+        $("watch-edit-btn").style.display = "";
+        $("watch-save-btn").style.display = "none";
+        $("watch-cancel-btn").style.display = "none";
+        $("watch-mode-hint").textContent = "";
+        loadWatchlist();
+      } catch (err) {
+        $("watch-status").textContent = "保存失败：" + err.message;
+      }
+    }
+
+    function attachWatchDnD() {
+      const container = $("watchlist");
+      container.querySelectorAll(".watch-card").forEach((card) => {
+        card.addEventListener("dragstart", (event) => {
+          if (!watchEditMode) { event.preventDefault(); return; }
+          watchDragging = card;
+          card.classList.add("dragging");
+          event.dataTransfer.effectAllowed = "move";
+          try { event.dataTransfer.setData("text/plain", card.dataset.symbol); } catch (err) { /* ignore */ }
+        });
+        card.addEventListener("dragend", () => {
+          card.classList.remove("dragging");
+          watchDragging = null;
+        });
+        card.addEventListener("dragover", (event) => {
+          event.preventDefault();
+          if (!watchDragging || card === watchDragging) return;
+          const rect = card.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+          const after = event.clientY > midY ||
+            (event.clientY >= rect.top && event.clientY <= rect.bottom && event.clientX > rect.left + rect.width / 2);
+          if (after) card.after(watchDragging);
+          else card.before(watchDragging);
+        });
+      });
+    }
+
     async function loadWatchlist() {
       try {
         const payload = await getJSON("/api/watchlist");
@@ -868,8 +998,8 @@
         $("watchlist").innerHTML = rows.map((row) => {
           const change = row.change_pct;
           const cls = change === null || change === undefined ? "" : change >= 0 ? "up" : "down";
-          return `<div class="card watch-card">
-            <h3><span>${esc(row.name)}</span><span class="watch-actions">
+          return `<div class="card watch-card${watchEditMode ? " editing" : ""}" data-symbol="${esc(row.symbol)}" draggable="${watchEditMode}">
+            <h3><span><span class="drag-handle">⋮⋮</span>${esc(row.name)}</span><span class="watch-actions">
               <button class="watch-move" title="上移" onclick="moveWatch('${esc(row.symbol)}','up')">↑</button>
               <button class="watch-move" title="下移" onclick="moveWatch('${esc(row.symbol)}','down')">↓</button>
               <button class="watch-remove" title="移出自选" onclick="removeWatch('${esc(row.symbol)}')">×</button>
@@ -882,6 +1012,7 @@
             <div class="mini">${esc(row.note || "")}</div>
           </div>`;
         }).join("") || '<div class="card muted">暂无自选，使用下方表单添加。</div>';
+        if (watchEditMode) attachWatchDnD();
       } catch (err) {
         $("watchlist").innerHTML = `<div class="card err">${esc(err.message)}</div>`;
       }
@@ -1127,6 +1258,7 @@
     }
 
     tick();
+    initSectionNav();
     loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadTheses(); loadAlerts(); loadQuality(); loadJournal(); loadCalendar(); loadPositions(); loadEvents(); loadAcceptance(); loadWatchlist(); loadWatchCandidates();
     const docParam = new URLSearchParams(location.search).get("doc");
     if (docParam) openDoc(docParam);
@@ -1141,7 +1273,10 @@
     setInterval(loadCalendar, 300000);
     setInterval(loadPositions, 300000);
     setInterval(loadEvents, 60000);
-    setInterval(loadWatchlist, 60000);
+    setInterval(() => { if (!watchEditMode) loadWatchlist(); }, 60000);
+    if (new URLSearchParams(location.search).get("watch_edit") === "1") {
+      setTimeout(enterWatchEditMode, 1000);
+    }
   </script>
 </body>
 </html>
