@@ -181,6 +181,7 @@ def acceptance(session: Session = Depends(get_session)) -> dict:
         "analytics": int(session.scalar(select(func.count()).select_from(AnalyticsResult)) or 0),
         "signals": int(session.scalar(select(func.count()).select_from(Signal)) or 0),
         "plans": int(session.scalar(select(func.count()).select_from(TradePlan)) or 0),
+        "theses": int(session.scalar(select(func.count()).select_from(Thesis)) or 0),
         "alerts": int(session.scalar(select(func.count()).select_from(Alert)) or 0),
     }
     checks_rows = session.scalars(
@@ -204,6 +205,7 @@ def acceptance(session: Session = Depends(get_session)) -> dict:
         {"name": "分析结果 ≥ 10", "passed": counts["analytics"] >= 10, "detail": counts["analytics"]},
         {"name": "信号 ≥ 1", "passed": counts["signals"] >= 1, "detail": counts["signals"]},
         {"name": "计划 ≥ 1", "passed": counts["plans"] >= 1, "detail": counts["plans"]},
+        {"name": "论点 ≥ 1", "passed": counts["theses"] >= 1, "detail": counts["theses"]},
         {"name": "数据质检全部通过", "passed": quality_failed == 0, "detail": f"failed={quality_failed}"},
     ]
     return {

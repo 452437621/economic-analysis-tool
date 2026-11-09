@@ -20,6 +20,7 @@ from app.alerts import scan_alerts
 from app.analytics.runner import run_analytics
 from app.decision.runner import run_decision
 from app.decision.scoring import score_predictions
+from app.decision.theses import generate_theses
 from app.ingest import pipeline
 from app.models.base import utcnow
 from app.models.core import Job, JobRun
@@ -43,6 +44,7 @@ JOBS = {
     "check_data_quality": pipeline.check_data_quality,
     "analyze": run_analytics,
     "decide": run_decision,
+    "theses": generate_theses,
     "score_predictions": score_predictions,
     "scan_alerts": scan_alerts,
     "brief_premarket": lambda: brief_mod.generate("premarket"),

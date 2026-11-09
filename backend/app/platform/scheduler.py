@@ -160,6 +160,21 @@ def _register_collectors() -> None:
         max_instances=1,
     )
     scheduler.add_job(
+        _collector("theses"),
+        trigger=DateTrigger(run_date=now + timedelta(seconds=330)),
+        id="theses_bootstrap",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        _collector("theses"),
+        trigger=CronTrigger(hour=16, minute=35, timezone=CST),
+        id="theses_daily",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
         _collector("scan_alerts"),
         trigger=IntervalTrigger(seconds=300),
         id="scan_alerts",

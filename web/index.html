@@ -218,6 +218,11 @@
     </section>
 
     <section>
+      <h2>论点与情景 <span class="hint">由信号生成的可证伪论点 · 证据权重 · 情景概率（草稿，需人工确认）</span></h2>
+      <div class="grid two-col" id="theses"><div class="card muted">加载中…</div></div>
+    </section>
+
+    <section>
       <h2>交易日志 <span class="hint">用于 M6 复盘；周报自动汇总</span></h2>
       <div class="panel">
         <textarea id="journal-input" class="journal-input" rows="4" placeholder="今日主线、判断依据、计划执行、情绪与错误……"></textarea>
@@ -677,6 +682,30 @@
       }
     }
 
+    async function loadTheses() {
+      try {
+        const payload = await getJSON("/api/theses?limit=6");
+        const rows = payload.data || [];
+        $("theses").innerHTML = rows.map((thesis) => {
+          const scenarios = (thesis.scenarios || []).map((s) =>
+            `<div class="kv"><span>${esc(s.name)}</span><span>${Math.round(s.probability * 100)}%</span></div>`
+          ).join("");
+          return `<div class="panel">
+            <h3>${esc(thesis.title)}</h3>
+            <div class="metric">${Math.round((thesis.posterior || 0) * 100)}%<small>后验置信</small></div>
+            <div class="kv"><span>方向</span><span>${thesis.direction === "long" ? "看多" : "看空"}</span></div>
+            <div class="kv"><span>状态</span><span>${esc(thesis.status)}</span></div>
+            <div class="kv"><span>证据</span><span>${thesis.evidence_count} 条断言</span></div>
+            <div class="kv"><span>主要动力</span><span>${esc(thesis.main_driver || "")}</span></div>
+            ${scenarios}
+            <div class="mini">失效条件：${esc(thesis.invalidation || "")}</div>
+          </div>`;
+        }).join("") || '<div class="card muted">暂无论点，运行 --job theses 生成。</div>';
+      } catch (err) {
+        $("theses").innerHTML = `<div class="card err">${esc(err.message)}</div>`;
+      }
+    }
+
     async function loadJournal() {
       try {
         const payload = await getJSON("/api/journal?limit=5");
@@ -799,7 +828,7 @@
     }
 
     tick();
-    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadAlerts(); loadQuality(); loadJournal(); loadCalendar();
+    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadTheses(); loadAlerts(); loadQuality(); loadJournal(); loadCalendar();
     const docParam = new URLSearchParams(location.search).get("doc");
     if (docParam) openDoc(docParam);
     setInterval(tick, 1000);
@@ -807,6 +836,7 @@
     setInterval(() => { loadMacro(); loadNews(); loadSources(); loadBrief(); }, 60000);
     setInterval(loadAnalytics, 120000);
     setInterval(loadDecisions, 60000);
+    setInterval(loadTheses, 120000);
     setInterval(() => { loadAlerts(); loadQuality(); }, 30000);
     setInterval(loadJournal, 120000);
     setInterval(loadCalendar, 300000);
