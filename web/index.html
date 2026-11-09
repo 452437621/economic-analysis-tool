@@ -196,6 +196,7 @@
 
     <section>
       <h2>交易信号与计划 <span class="hint">规则信号 · 风控校验 · 预测登记（纸面账户 100 万，单笔风险 0.25%）</span></h2>
+      <div class="mini" id="signal-types" style="margin-top: 8px;"></div>
       <div class="grid cards" id="decision-cards"><div class="card muted">加载中…</div></div>
       <div class="grid two-col" style="margin-top: 14px;">
         <div class="panel">
@@ -584,6 +585,10 @@
             <div class="kv"><span>命中率</span><span>${reviewData.hit_rate !== null && reviewData.hit_rate !== undefined ? (reviewData.hit_rate * 100).toFixed(1) + "%" : "—"}</span></div></div>`,
         ];
         $("decision-cards").innerHTML = cards.join("");
+        const st = d.signal_types || {};
+        $("signal-types").innerHTML = Object.entries(st).map(([type, value]) =>
+          `<span style="margin-right: 16px;">${esc(type)}：${value.count} 条（${value.long} 多 / ${value.short} 空，均强度 ${(value.avg_strength * 100).toFixed(0)}%）</span>`
+        ).join("");
 
         const signals = (d.signals || []).slice(0, 8);
         $("signals").innerHTML = signals.map((s) => `

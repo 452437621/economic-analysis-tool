@@ -19,10 +19,11 @@ def test_calendar_alerts_levels():
         {"ts": now + timedelta(hours=3), "name": "低重要性", "country": "美国", "importance": 2},
     ]
     alerts = calendar_alerts(events, now=now)
-    assert len(alerts) == 2  # far future and low-importance filtered
+    assert len(alerts) == 2  # far future and low-importance filtered; merged per country/day
     levels = {alert["title"]: alert["level"] for alert in alerts}
-    assert levels["中国:CPI:同比 即将发布"] == "warn"
-    assert levels["美国:非农就业 即将发布"] == "critical"
+    assert any("中国" in title and level == "warn" for title, level in levels.items())
+    assert any("美国" in title and level == "critical" for title, level in levels.items())
+    assert any("数据发布" in alert["title"] for alert in alerts)
 
     combined = compute_alerts([], [], [], now=now, calendar_events=events)
     assert any(alert["kind"] == "calendar" for alert in combined)

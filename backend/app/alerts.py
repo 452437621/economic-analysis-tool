@@ -37,9 +37,9 @@ def _should_check_stale(asset_class: str | None, now: datetime) -> bool:
 
 
 def calendar_alerts(events: list[dict], now: datetime | None = None) -> list[dict]:
-    """Upcoming high-impact calendar events within 24 hours."""
+    """Upcoming high-impact calendar events within 24 hours, merged per country/day."""
     now = now or datetime.now(timezone.utc)
-    alerts: list[dict] = []
+    groups: dict[tuple[str, str], list[dict]] = {}
     for event in events:
         ts = event.get("ts")
         if ts is None:
@@ -49,14 +49,32 @@ def calendar_alerts(events: list[dict], now: datetime | None = None) -> list[dic
         hours = (ts - now).total_seconds() / 3600
         if hours < -0.1 or hours > 24 or int(event.get("importance") or 0) < 3:
             continue
-        level = "critical" if hours <= 1.5 else "warn"
-        when = ts.astimezone(CN_MARKET_TZ).strftime("%m-%d %H:%M")
+        local = ts.astimezone(CN_MARKET_TZ)
+        key = (str(event.get("country") or "全球"), local.strftime("%m-%d"))
+        groups.setdefault(key, []).append(
+            {
+                "name": str(event.get("name") or ""),
+                "time": local.strftime("%H:%M"),
+                "hours": hours,
+            }
+        )
+
+    alerts: list[dict] = []
+    for (country, day), items in groups.items():
+        items.sort(key=lambda item: item["hours"])
+        nearest = items[0]["hours"]
+        level = "critical" if nearest <= 1.5 else "warn"
+        names = []
+        for item in items[:5]:
+            short = item["name"].split("(报告期")[0]
+            names.append(f"{item['time']} {short}")
+        suffix = " 等" if len(items) > 5 else ""
         alerts.append(
             {
                 "level": level,
                 "kind": "calendar",
-                "title": f"{event.get('name')} 即将发布",
-                "message": f"{when} {event.get('country') or ''}；重要性 3 星",
+                "title": f"{country} {day} 数据发布 {len(items)} 项",
+                "message": f"{'；'.join(names)}{suffix}；最近一项约 {nearest:.1f} 小时后",
             }
         )
     return alerts

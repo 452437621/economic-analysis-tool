@@ -47,6 +47,18 @@ def summary(session: Session = Depends(get_session)) -> dict:
         select(func.count()).select_from(Prediction).where(Prediction.status == "open")
     ) or 0
 
+    all_signals = session.scalars(select(Signal)).all()
+    signal_types: dict[str, dict] = {}
+    for row in all_signals:
+        bucket = signal_types.setdefault(
+            row.type, {"count": 0, "long": 0, "short": 0, "strength_sum": 0.0}
+        )
+        bucket["count"] += 1
+        bucket["long" if row.direction == "long" else "short"] += 1
+        bucket["strength_sum"] += row.strength or 0
+    for bucket in signal_types.values():
+        bucket["avg_strength"] = round(bucket.pop("strength_sum") / max(bucket["count"], 1), 3)
+
     checks_by_plan: dict[str, list[dict]] = {}
     for check in checks:
         checks_by_plan.setdefault(check.plan_id, []).append(
@@ -92,6 +104,7 @@ def summary(session: Session = Depends(get_session)) -> dict:
             for row in plans
         ],
         "backtest": latest_backtest,
+        "signal_types": signal_types,
         "open_predictions": int(open_predictions),
         "counts": {"signals": len(signals), "plans": len(plans)},
     }
