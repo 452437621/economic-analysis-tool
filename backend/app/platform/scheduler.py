@@ -94,6 +94,21 @@ def _register_collectors() -> None:
         next_run_time=now + timedelta(seconds=20),
     )
     scheduler.add_job(
+        _collector("collect_positions"),
+        trigger=CronTrigger(hour=15, minute=45, timezone=CST),
+        id="collect_positions",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _collector("collect_positions"),
+        trigger=DateTrigger(run_date=now + timedelta(seconds=25)),
+        id="collect_positions_bootstrap",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
         _collector("collect_bodies"),
         trigger=IntervalTrigger(seconds=600),
         id="collect_bodies",

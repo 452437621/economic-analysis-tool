@@ -242,6 +242,15 @@
     </section>
 
     <section>
+      <h2>持仓结构 <span class="hint">上期所会员多空持仓（日频，净持仓 = 多 − 空）</span></h2>
+      <table>
+        <thead><tr><th>品种</th><th>多头持仓</th><th>空头持仓</th><th>净持仓</th><th>净占比</th><th>多头变化</th><th>空头变化</th></tr></thead>
+        <tbody id="positions"><tr><td colspan="7">加载中…</td></tr></tbody>
+      </table>
+      <div class="mini" id="positions-note"></div>
+    </section>
+
+    <section>
       <h2>财经日历 <span class="hint">未来 14 天 · 经济数据</span></h2>
       <ul class="news" id="calendar"><li>加载中…</li></ul>
     </section>
@@ -668,6 +677,27 @@
       }
     }
 
+    async function loadPositions() {
+      try {
+        const payload = await getJSON("/api/positions");
+        const rows = payload.data || [];
+        $("positions").innerHTML = rows.map((row) => `
+          <tr><td class="sym">${esc(row.name)}（${esc(row.product.replace("all", "").toUpperCase())}）</td>
+          <td class="num">${fmtNum(row.long_pos, 0)}</td>
+          <td class="num">${fmtNum(row.short_pos, 0)}</td>
+          <td class="num ${row.net_pos >= 0 ? "up" : "down"}">${fmtNum(row.net_pos, 0)}</td>
+          <td class="num">${row.net_ratio !== null ? (row.net_ratio * 100).toFixed(1) + "%" : "—"}</td>
+          <td class="num">${fmtNum(row.long_chg, 0)}</td>
+          <td class="num">${fmtNum(row.short_chg, 0)}</td></tr>`).join("")
+          || '<tr><td colspan="7">暂无持仓数据，等待 collect_positions 任务。</td></tr>';
+        $("positions-note").textContent = payload.trade_date
+          ? `数据日期 ${payload.trade_date}；来源上期所持仓排名（会员合计），净占比 = (多−空)/(多+空)。`
+          : "";
+      } catch (err) {
+        $("positions").innerHTML = `<tr><td colspan="7" class="err">${esc(err.message)}</td></tr>`;
+      }
+    }
+
     async function loadCalendar() {
       try {
         const payload = await getJSON("/api/calendar?days=14&limit=20");
@@ -837,7 +867,7 @@
     }
 
     tick();
-    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadTheses(); loadAlerts(); loadQuality(); loadJournal(); loadCalendar();
+    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadTheses(); loadAlerts(); loadQuality(); loadJournal(); loadCalendar(); loadPositions();
     const docParam = new URLSearchParams(location.search).get("doc");
     if (docParam) openDoc(docParam);
     setInterval(tick, 1000);
@@ -849,6 +879,7 @@
     setInterval(() => { loadAlerts(); loadQuality(); }, 30000);
     setInterval(loadJournal, 120000);
     setInterval(loadCalendar, 300000);
+    setInterval(loadPositions, 300000);
   </script>
 </body>
 </html>

@@ -20,6 +20,7 @@ from app.ingest.providers import (
     ecb,
     jgb,
     rss,
+    shfe_positions,
     sina,
     treasury,
 )
@@ -43,6 +44,7 @@ from app.models.core import (
     Instrument,
     MacroObs,
     MarketBar,
+    PositionSnapshot,
     Quote as QuoteRow,
 )
 from app.platform.db import SessionLocal
@@ -63,6 +65,9 @@ SOURCE_JGB = dict(
 )
 SOURCE_ECB = dict(
     name="欧洲央行", kind="official", tier="S1", reliability=0.95, base_url="https://data.ecb.europa.eu"
+)
+SOURCE_SHFE = dict(
+    name="上海期货交易所", kind="official", tier="S1", reliability=0.95, base_url="https://www.shfe.com.cn"
 )
 
 NEWS_FEEDS = [
@@ -353,8 +358,47 @@ def collect_rates() -> dict:
     return stats
 
 
+def collect_positions() -> dict:
+    """Fetch SHFE member position ranking (aggregate long/short by product)."""
+    started = time.perf_counter()
+    stats: dict = {"trade_date": None, "products": 0, "errors": []}
+    with HttpClient(min_interval=0.5) as client, SessionLocal() as session:
+        source = store.get_source(session, **SOURCE_SHFE)
+        try:
+            report_date, rows = shfe_positions.fetch_latest(client)
+            if not report_date or not rows:
+                raise RuntimeError("no position report available")
+            session.execute(
+                delete(PositionSnapshot).where(PositionSnapshot.trade_date == report_date)
+            )
+            for item in rows:
+                session.add(
+                    PositionSnapshot(
+                        trade_date=report_date,
+                        product=item["product"],
+                        name=item["name"],
+                        long_pos=item["long_pos"],
+                        short_pos=item["short_pos"],
+                        net_pos=item["net_pos"],
+                        net_ratio=item["net_ratio"],
+                        long_chg=item["long_chg"],
+                        short_chg=item["short_chg"],
+                    )
+                )
+            session.commit()
+            stats["trade_date"] = report_date.isoformat()
+            stats["products"] = len(rows)
+            store.record_health(session, source.id, ok=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("positions failed")
+            store.record_health(session, source.id, ok=False, error=str(exc))
+            stats["errors"].append(str(exc))
+    stats["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
+    logger.info("collect_positions: %s", stats)
+    return stats
+
+
 def collect_calendar(days_ahead: int = 14, days_back: int = 180) -> dict:
-    """Fetch economic calendar events (past 180d for event study + next 14d)."""
     started = time.perf_counter()
     stats: dict = {"events": 0, "new": 0, "errors": []}
     now = datetime.now(timezone.utc)

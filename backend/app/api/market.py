@@ -16,6 +16,7 @@ from app.models.core import (
     MacroObs,
     MacroSeries,
     MarketBar,
+    PositionSnapshot,
     Quote,
     Source,
     SourceHealth,
@@ -165,6 +166,34 @@ def macro_series(
         "name": series.name,
         "unit": series.unit,
         "data": [{"ts": _iso(row.ts_utc), "value": row.value} for row in rows],
+    }
+
+
+@router.get("/positions")
+def positions(session: Session = Depends(get_session)) -> dict:
+    latest_date = session.scalar(select(func.max(PositionSnapshot.trade_date)))
+    if latest_date is None:
+        return {"data": [], "trade_date": None}
+    rows = session.scalars(
+        select(PositionSnapshot)
+        .where(PositionSnapshot.trade_date == latest_date)
+        .order_by(PositionSnapshot.net_pos.desc())
+    ).all()
+    return {
+        "trade_date": latest_date.isoformat(),
+        "data": [
+            {
+                "product": row.product,
+                "name": row.name,
+                "long_pos": row.long_pos,
+                "short_pos": row.short_pos,
+                "net_pos": row.net_pos,
+                "net_ratio": row.net_ratio,
+                "long_chg": row.long_chg,
+                "short_chg": row.short_chg,
+            }
+            for row in rows
+        ],
     }
 
 

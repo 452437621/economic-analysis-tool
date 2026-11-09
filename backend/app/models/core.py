@@ -486,3 +486,20 @@ class EconomicEvent(Base):
     source_code: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+
+class PositionSnapshot(Base):
+    __tablename__ = "position_snapshots"
+    __table_args__ = (UniqueConstraint("trade_date", "product", name="uq_pos_date_product"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    product: Mapped[str] = mapped_column(String(20), nullable=False)
+    name: Mapped[str] = mapped_column(String(40), nullable=False)
+    long_pos: Mapped[int] = mapped_column(Integer, default=0)
+    short_pos: Mapped[int] = mapped_column(Integer, default=0)
+    net_pos: Mapped[int] = mapped_column(Integer, default=0)
+    net_ratio: Mapped[float | None] = mapped_column(Float)
+    long_chg: Mapped[int] = mapped_column(Integer, default=0)
+    short_chg: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
