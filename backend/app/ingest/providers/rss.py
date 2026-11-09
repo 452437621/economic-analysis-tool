@@ -13,6 +13,7 @@ from app.ingest.http import HttpClient
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
+MAX_ITEMS = 80
 
 
 def _local(tag: str) -> str:
@@ -97,7 +98,7 @@ def parse_feed(xml_bytes: bytes, source: str) -> list[NewsItem]:
                     summary = _clean(fields[key].text)
                     break
             items.append(NewsItem(source=source, url=link, title=title, published_at=published, summary=summary))
-    return items
+    return items[:MAX_ITEMS]
 
 
 def fetch_feed(client: HttpClient, url: str, source: str) -> tuple[list[NewsItem], bytes]:

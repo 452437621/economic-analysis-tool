@@ -40,6 +40,7 @@ JOBS = {
     "collect_calendar": pipeline.collect_calendar,
     "collect_positions": pipeline.collect_positions,
     "collect_news": pipeline.collect_news,
+    "collect_news_slow": lambda: pipeline.collect_news(slow=True),
     "collect_bodies": pipeline.collect_bodies,
     "extract_claims": pipeline.extract_claims,
     "extract_claims_llm": pipeline.extract_claims_llm,

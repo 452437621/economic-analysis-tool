@@ -78,6 +78,13 @@ NEWS_FEEDS = [
     dict(name="美联储", url="https://www.federalreserve.gov/feeds/press_all.xml", kind="rss", tier="S1"),
     dict(name="欧洲央行", url="https://www.ecb.europa.eu/rss/press.html", kind="rss", tier="S1"),
     dict(name="美国财政部", url="https://home.treasury.gov/news/press-releases", kind="html", tier="S1"),
+    dict(name="日本央行", url="https://www.boj.or.jp/en/rss/whatsnew.xml", kind="rss", tier="S1"),
+    dict(name="美国能源信息署", url="https://www.eia.gov/rss/todayinenergy.xml", kind="rss", tier="S1"),
+]
+
+# 体积大/更新慢的官方源，单独低频采集
+NEWS_FEEDS_SLOW = [
+    dict(name="国家统计局", url="https://www.stats.gov.cn/sj/zxfb/rss.xml", kind="rss", tier="S1"),
 ]
 
 MACRO_SERIES_META: dict[str, dict] = {
@@ -460,12 +467,13 @@ def collect_calendar(days_ahead: int = 14, days_back: int = 180) -> dict:
     return stats
 
 
-def collect_news() -> dict:
+def collect_news(slow: bool = False) -> dict:
     started = time.perf_counter()
     stats: dict = {"documents": 0, "feeds": 0, "errors": []}
+    feeds = NEWS_FEEDS_SLOW if slow else NEWS_FEEDS
 
     with HttpClient(min_interval=0.5) as client, SessionLocal() as session:
-        for feed in NEWS_FEEDS:
+        for feed in feeds:
             source = store.get_source(
                 session,
                 feed["name"],

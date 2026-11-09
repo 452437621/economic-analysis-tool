@@ -76,6 +76,21 @@ def _register_collectors() -> None:
         next_run_time=now + timedelta(seconds=8),
     )
     scheduler.add_job(
+        _collector("collect_news_slow"),
+        trigger=CronTrigger(hour=8, minute=15, timezone=CST),
+        id="collect_news_slow",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _collector("collect_news_slow"),
+        trigger=DateTrigger(run_date=now + timedelta(seconds=55)),
+        id="collect_news_slow_bootstrap",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
         _collector("collect_rates"),
         trigger=IntervalTrigger(hours=6),
         id="collect_rates",
