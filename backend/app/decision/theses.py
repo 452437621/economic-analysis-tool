@@ -1,12 +1,22 @@
-"""Thesis & scenario management: turn signals into falsifiable theses (M4 tail)."""
+"""Thesis & scenario management: turn signals and events into falsifiable theses."""
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, select
 
-from app.models.core import Claim, Instrument, Scenario, Signal, Thesis, ThesisEvidence
+from app.models.core import (
+    Claim,
+    Event,
+    EventInstrument,
+    Instrument,
+    Scenario,
+    Signal,
+    Thesis,
+    ThesisEvidence,
+)
 from app.platform.db import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -92,10 +102,127 @@ def build_thesis(signal: dict, instrument_name: str, claims: list[Claim]) -> dic
     }
 
 
+EVENT_DIRECTION: dict[str, dict[str, tuple[str, ...]]] = {
+    "trade": {"long": ("AU", "AG"), "short": ("000300", "CU")},
+    "geopolitical": {"long": ("AU", "SC"), "short": ("000300",)},
+    "supply": {"long": ("SC",)},
+    "monetary_policy": {"long": ("AU",), "short": ("000300",)},
+}
+
+
+def build_event_thesis(event: dict, symbol: str, instrument_name: str, direction: str) -> dict:
+    label = "看多" if direction == "long" else "看空"
+    return {
+        "title": f"【事件】{event.get('title', '')[:40]} · {instrument_name}{label}",
+        "direction": direction,
+        "prior": 0.5,
+        "posterior": 0.5,
+        "horizon_days": 5,
+        "status": "watch",
+        "invalidation": (
+            f"事件影响消退后 {instrument_name} 未在 5 个交易日内兑现方向；"
+            "或出现相反政策/官方澄清。"
+        ),
+        "main_driver": f"{event.get('type')} 事件驱动（规则识别，需人工核实）",
+        "evidence": [],
+        "scenarios": [
+            {
+                "name": "基准情景",
+                "probability": 0.5,
+                "triggers": "事件持续发酵，市场按风险方向定价",
+                "impacts": {"direction": label, "horizon": "5d"},
+            },
+            {
+                "name": "反向情景",
+                "probability": 0.5,
+                "triggers": "事件被证伪/迅速缓和",
+                "impacts": {"direction": "看空" if direction == "long" else "看多", "horizon": "5d"},
+            },
+        ],
+    }
+
+
+def generate_event_theses(
+    session,
+    instruments: dict,
+    claims: list[Claim],
+    limit: int = 3,
+) -> dict:
+    counts = {"theses": 0, "scenarios": 0, "evidence": 0}
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=14)
+    events = session.scalars(
+        select(Event)
+        .where(Event.event_date >= cutoff, Event.type.in_(tuple(EVENT_DIRECTION)))
+        .order_by(Event.event_date.desc())
+        .limit(limit)
+    ).all()
+    for event in events:
+        linked = session.scalars(
+            select(EventInstrument.instrument_id).where(EventInstrument.event_id == event.id)
+        ).all()
+        source_claims: list[Claim] = []
+        if event.source_ids:
+            source_claims = session.scalars(
+                select(Claim).where(Claim.document_id == event.source_ids[0]).limit(2)
+            ).all()
+        for instrument_id in linked:
+            instrument = instruments.get(instrument_id)
+            if instrument is None:
+                continue
+            directions = EVENT_DIRECTION.get(event.type) or {}
+            direction = None
+            for candidate, symbols in directions.items():
+                if instrument.symbol in symbols:
+                    direction = candidate
+                    break
+            if direction is None:
+                continue
+            payload = build_event_thesis(
+                {"title": event.title, "type": event.type}, instrument.symbol, instrument.name, direction
+            )
+            thesis = Thesis(
+                title=payload["title"],
+                asset_ids=[instrument.id],
+                direction=payload["direction"],
+                prior=payload["prior"],
+                posterior=payload["posterior"],
+                horizon_days=payload["horizon_days"],
+                status=payload["status"],
+                invalidation=payload["invalidation"],
+                main_driver=payload["main_driver"],
+            )
+            session.add(thesis)
+            session.flush()
+            counts["theses"] += 1
+            for claim in source_claims:
+                session.add(
+                    ThesisEvidence(
+                        thesis_id=thesis.id,
+                        claim_id=claim.id,
+                        weight=0.4,
+                        note=f"事件来源断言：{claim.subject} {claim.predicate}",
+                    )
+                )
+                counts["evidence"] += 1
+            for scenario in payload["scenarios"]:
+                session.add(
+                    Scenario(
+                        thesis_id=thesis.id,
+                        name=scenario["name"],
+                        probability=scenario["probability"],
+                        triggers=scenario["triggers"],
+                        impacts=scenario["impacts"],
+                    )
+                )
+                counts["scenarios"] += 1
+    return counts
+
+
 def generate_theses(limit: int = 4) -> dict:
     counts = {"theses": 0, "scenarios": 0, "evidence": 0}
     with SessionLocal() as session:
         session.execute(delete(Thesis).where(Thesis.title.like("【信号】%")))
+        session.execute(delete(Thesis).where(Thesis.title.like("【事件】%")))
         signals = session.scalars(
             select(Signal).order_by(Signal.strength.desc()).limit(limit)
         ).all()
@@ -152,6 +279,9 @@ def generate_theses(limit: int = 4) -> dict:
                     )
                 )
                 counts["scenarios"] += 1
+        event_counts = generate_event_theses(session, instruments, claims)
+        for key in counts:
+            counts[key] += event_counts[key]
         session.commit()
     logger.info("generate_theses: %s", counts)
     return counts

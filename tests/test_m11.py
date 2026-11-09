@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from app.decision.theses import build_thesis, match_claims
+from app.decision.theses import build_event_thesis, build_thesis, match_claims
 from app.main import app
 
 CLAIMS = [
@@ -37,6 +37,16 @@ def test_build_thesis_from_signal():
     assert len(payload["scenarios"]) == 2
     assert payload["scenarios"][0]["probability"] == 0.55
     assert "1.5×ATR" in payload["invalidation"]
+
+
+def test_build_event_thesis_direction():
+    payload = build_event_thesis(
+        {"title": "USTR tariff action", "type": "trade"}, "AU", "沪金", "long"
+    )
+    assert "【事件】" in payload["title"]
+    assert payload["direction"] == "long"
+    assert payload["horizon_days"] == 5
+    assert len(payload["scenarios"]) == 2
 
 
 def test_theses_api_structure():
