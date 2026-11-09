@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "EPIC"
-    app_version: str = "0.1.0"
+    app_version: str = "1.0.0-rc1"
     env: str = "local"
     host: str = "127.0.0.1"
     port: int = 8765
