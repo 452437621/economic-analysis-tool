@@ -12,7 +12,9 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app.analytics.drivers import rank_drivers
 from app.models.core import (
+    AnalyticsResult,
     Brief,
     Claim,
     DataCheck,
@@ -150,7 +152,57 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
     lines.append(f"- {mainline}（自动摘要，置信度标注待 M2 证据链完善）")
     lines.append("")
 
-    lines.append("## 1. 市场快照（按波动排序，Top 5）")
+    wind_row = session.scalar(
+        select(AnalyticsResult)
+        .where(AnalyticsResult.kind == "wind", AnalyticsResult.subject == "market")
+        .order_by(AnalyticsResult.asof.desc())
+        .limit(1)
+    )
+    indicator_map: dict[str, dict] = {}
+    for row in session.scalars(
+        select(AnalyticsResult).where(AnalyticsResult.kind == "indicator").order_by(AnalyticsResult.asof.desc())
+    ).all():
+        indicator_map.setdefault(row.subject, row.payload or {})
+    regime_map: dict[str, dict] = {}
+    for row in session.scalars(
+        select(AnalyticsResult).where(AnalyticsResult.kind == "regime").order_by(AnalyticsResult.asof.desc())
+    ).all():
+        regime_map.setdefault(row.subject, row.payload or {})
+    latest_position_date = session.scalar(select(func.max(PositionSnapshot.trade_date)))
+    position_rows = []
+    if latest_position_date is not None:
+        position_rows = [
+            {"product": row.product, "name": row.name, "net_ratio": row.net_ratio}
+            for row in session.scalars(
+                select(PositionSnapshot).where(PositionSnapshot.trade_date == latest_position_date)
+            ).all()
+        ]
+    recent_events = session.scalars(
+        select(Event)
+        .where(Event.event_date >= now.replace(tzinfo=None) - timedelta(days=7))
+        .order_by(Event.event_date.desc())
+        .limit(10)
+    ).all()
+    driver_list = rank_drivers(
+        wind=wind_row.payload if wind_row else None,
+        indicators=indicator_map,
+        positions=position_rows,
+        events=[{"type": row.type, "title": row.title} for row in recent_events],
+        regimes=regime_map,
+    )
+
+    lines.append("## 1. 主次动力（规则合成，非预测）")
+    if driver_list:
+        for driver in driver_list:
+            lines.append(
+                f"- **{driver['name']}**：{driver['direction']}（强度 {driver['strength']:.0%}）"
+                f"— {driver['evidence']}"
+            )
+    else:
+        lines.append("- 数据不足，等待分析任务完成后生成")
+    lines.append("")
+
+    lines.append("## 2. 市场快照（按波动排序，Top 5）")
     lines.append("| 品种 | 名称 | 最新 | 涨跌幅 | 数据源 | 时点 |")
     lines.append("|---|---|---|---|---|---|")
     for row in top:
@@ -161,7 +213,7 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
         )
     lines.append("")
 
-    lines.append("## 2. 美债利率与流动性")
+    lines.append("## 3. 美债利率与流动性")
     lines.append("| 序列 | 最新 | 时点 |")
     lines.append("|---|---|---|")
     for row in macro:
@@ -169,7 +221,7 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
         lines.append(f"| {row['name']}（{row['code']}） | {row['value']:.2f}% | {ts} |")
     lines.append("")
 
-    lines.append("## 3. 会员持仓（Top20，净持仓 = 多 − 空）")
+    lines.append("## 4. 会员持仓（Top20，净持仓 = 多 − 空）")
     latest_position_date = session.scalar(select(func.max(PositionSnapshot.trade_date)))
     positions = []
     if latest_position_date is not None:
@@ -197,7 +249,7 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
         lines.append("- 暂无会员持仓数据")
     lines.append("")
 
-    lines.append("## 4. 事件驱动（近 3 天）")
+    lines.append("## 5. 事件驱动（近 3 天）")
     recent_events = session.scalars(
         select(Event)
         .where(Event.event_date >= now.replace(tzinfo=None) - timedelta(days=3))
@@ -221,20 +273,20 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
         lines.append("- 暂无规则识别事件")
     lines.append("")
 
-    lines.append("## 5. 新闻与政策（官方来源）")
+    lines.append("## 6. 新闻与政策（官方来源）")
     for item in news:
         doc_id = item["id"]
         lines.append(f"- [{item['source']}] {item['title']}（{item['published_at'][:16].replace('T', ' ')}）`[D:{doc_id}]`")
     lines.append("")
 
-    lines.append("## 6. 数据与信息缺口")
+    lines.append("## 7. 数据与信息缺口")
     lines.append(f"- 已入库原文 {bodies_count} 篇、断言 {claims_count} 条；新闻条目 {len(news)} 条（Top 10 展示）")
     for check in _freshness(session):
         status = "正常" if check["passed"] else "异常"
         lines.append(f"- 数据检查：{check['dataset']} = {status}（{check['detail'] or ''}）")
     lines.append("")
 
-    lines.append("## 7. 免责声明")
+    lines.append("## 8. 免责声明")
     lines.append("- 本简报由系统基于公开数据自动生成，仅供个人研究，不构成投资建议。")
     lines.append("- 外盘数据存在约 15 分钟延迟，国内期货盘后数据为最近收盘；引用前请核对时点。")
 
