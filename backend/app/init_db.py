@@ -130,7 +130,7 @@ def seed_watchlist() -> int:
         instruments = {
             row.symbol: row.id for row in session.scalars(select(Instrument)).all()
         }
-        for item in items:
+        for index, item in enumerate(items):
             symbol = str(item.get("symbol"))
             instrument_id = instruments.get(symbol)
             if not instrument_id:
@@ -146,6 +146,7 @@ def seed_watchlist() -> int:
                     instrument_id=instrument_id,
                     group=item.get("group"),
                     priority=int(item.get("priority") or 3),
+                    sort_order=index,
                     note=item.get("note"),
                 )
             )

@@ -206,7 +206,11 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
     watch_rows = session.execute(
         select(WatchItem, Instrument)
         .join(Instrument, Instrument.id == WatchItem.instrument_id)
-        .order_by(WatchItem.priority.asc(), Instrument.symbol.asc())
+        .order_by(
+            WatchItem.sort_order.asc(),
+            WatchItem.priority.asc(),
+            Instrument.symbol.asc(),
+        )
     ).all()
     if watch_rows:
         quote_map = {row["symbol"]: row for row in quotes}

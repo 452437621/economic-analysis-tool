@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.core import AnalyticsResult, Instrument, Quote, WatchItem
@@ -18,6 +18,10 @@ class WatchIn(BaseModel):
     group: str | None = Field(default=None, max_length=40)
     priority: int = Field(default=3, ge=1, le=5)
     note: str | None = Field(default=None, max_length=500)
+
+
+class MoveIn(BaseModel):
+    direction: str = Field(pattern="^(up|down)$")
 
 
 def _latest_quotes(session: Session) -> dict[str, Quote]:
@@ -45,7 +49,11 @@ def list_watchlist(session: Session = Depends(get_session)) -> dict:
     items = session.execute(
         select(WatchItem, Instrument)
         .join(Instrument, Instrument.id == WatchItem.instrument_id)
-        .order_by(WatchItem.priority.asc(), Instrument.symbol.asc())
+        .order_by(
+            WatchItem.sort_order.asc(),
+            WatchItem.priority.asc(),
+            Instrument.symbol.asc(),
+        )
     ).all()
     quotes = _latest_quotes(session)
     indicators = _indicator_changes(session)
@@ -59,6 +67,7 @@ def list_watchlist(session: Session = Depends(get_session)) -> dict:
                 "asset_class": instrument.asset_class,
                 "group": item.group,
                 "priority": item.priority,
+                "sort_order": item.sort_order,
                 "note": item.note,
                 "price": quote.price if quote else None,
                 "change_pct": quote.change_pct if quote else None,
@@ -103,13 +112,43 @@ def add_watch(
         select(WatchItem).where(WatchItem.instrument_id == instrument.id)
     )
     if item is None:
-        item = WatchItem(instrument_id=instrument.id)
+        max_order = session.scalar(select(func.max(WatchItem.sort_order))) or 0
+        item = WatchItem(instrument_id=instrument.id, sort_order=int(max_order) + 1)
         session.add(item)
     item.group = payload.group or item.group
     item.priority = payload.priority
     item.note = payload.note if payload.note is not None else item.note
     session.commit()
     return {"symbol": instrument.symbol, "saved": True, "priority": item.priority}
+
+
+@router.post("/{symbol}/move")
+def move_watch(
+    symbol: str,
+    payload: MoveIn,
+    session: Session = Depends(get_session),
+) -> dict:
+    instrument = session.scalar(select(Instrument).where(Instrument.symbol == symbol))
+    if instrument is None:
+        raise HTTPException(status_code=404, detail=f"instrument not found: {symbol}")
+    items = session.scalars(
+        select(WatchItem).order_by(
+            WatchItem.sort_order.asc(), WatchItem.priority.asc(), WatchItem.instrument_id.asc()
+        )
+    ).all()
+    index = next(
+        (i for i, item in enumerate(items) if item.instrument_id == instrument.id), None
+    )
+    if index is None:
+        raise HTTPException(status_code=404, detail=f"not in watchlist: {symbol}")
+    target = index - 1 if payload.direction == "up" else index + 1
+    if target < 0 or target >= len(items):
+        return {"symbol": symbol, "moved": False}
+    items[index], items[target] = items[target], items[index]
+    for order, item in enumerate(items):
+        item.sort_order = order
+    session.commit()
+    return {"symbol": symbol, "moved": True}
 
 
 @router.delete("/{symbol}")

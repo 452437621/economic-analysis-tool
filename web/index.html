@@ -104,6 +104,10 @@
     .watch-input { background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
       border-radius: 8px; padding: 7px 9px; font-size: 12px; font-family: inherit; }
     .watch-card h3 { display: flex; justify-content: space-between; align-items: center; }
+    .watch-actions { display: flex; gap: 2px; align-items: center; }
+    .watch-move { background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 14px;
+      padding: 0 4px; line-height: 1; }
+    .watch-move:hover { color: var(--accent); }
     .watch-remove { background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 16px; }
     .watch-remove:hover { color: var(--bad); }
     .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .72); display: none; align-items: flex-start; justify-content: center; padding: 40px 16px; z-index: 20; }
@@ -865,7 +869,11 @@
           const change = row.change_pct;
           const cls = change === null || change === undefined ? "" : change >= 0 ? "up" : "down";
           return `<div class="card watch-card">
-            <h3>${esc(row.name)} <button class="watch-remove" title="移出自选" onclick="removeWatch('${esc(row.symbol)}')">×</button></h3>
+            <h3><span>${esc(row.name)}</span><span class="watch-actions">
+              <button class="watch-move" title="上移" onclick="moveWatch('${esc(row.symbol)}','up')">↑</button>
+              <button class="watch-move" title="下移" onclick="moveWatch('${esc(row.symbol)}','down')">↓</button>
+              <button class="watch-remove" title="移出自选" onclick="removeWatch('${esc(row.symbol)}')">×</button>
+            </span></h3>
             <div class="metric ${cls}">${row.price !== null && row.price !== undefined ? fmtNum(row.price, 2) : "—"}
               <small>${change !== null && change !== undefined ? (change >= 0 ? "+" : "") + change.toFixed(2) + "%" : "暂无报价"}</small></div>
             <div class="kv"><span>代码</span><span>${esc(row.symbol)}</span></div>
@@ -908,6 +916,21 @@
         loadWatchCandidates();
       } catch (err) {
         $("watch-status").textContent = "添加失败：" + err.message;
+      }
+    }
+
+    async function moveWatch(symbol, direction) {
+      try {
+        const response = await fetch(`/api/watchlist/${encodeURIComponent(symbol)}/move`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ direction }),
+        });
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        $("watch-status").textContent = direction === "up" ? "已上移" : "已下移";
+        loadWatchlist();
+      } catch (err) {
+        $("watch-status").textContent = "排序失败：" + err.message;
       }
     }
 

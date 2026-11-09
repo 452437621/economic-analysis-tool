@@ -482,6 +482,7 @@ class WatchItem(Base, TimestampMixin):
     )
     group: Mapped[str | None] = mapped_column(String(40))
     priority: Mapped[int] = mapped_column(Integer, default=3)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     note: Mapped[str | None] = mapped_column(Text)
 
 

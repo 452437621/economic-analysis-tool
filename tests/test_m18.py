@@ -41,3 +41,21 @@ def test_watchlist_unknown_symbol():
     with TestClient(app) as client:
         response = client.post("/api/watchlist", json={"symbol": "NOT_A_SYMBOL"})
         assert response.status_code == 404
+
+
+def test_watchlist_move_order():
+    _prepare()
+    with TestClient(app) as client:
+        rows = client.get("/api/watchlist").json()["data"]
+        assert len(rows) >= 2
+        first, second = rows[0]["symbol"], rows[1]["symbol"]
+        moved = client.post(f"/api/watchlist/{first}/move", json={"direction": "down"})
+        assert moved.status_code == 200
+        assert moved.json()["moved"] is True
+        after = client.get("/api/watchlist").json()["data"]
+        assert after[0]["symbol"] == second
+        assert after[1]["symbol"] == first
+        # move back up to restore
+        client.post(f"/api/watchlist/{first}/move", json={"direction": "up"})
+        restored = client.get("/api/watchlist").json()["data"]
+        assert restored[0]["symbol"] == first
