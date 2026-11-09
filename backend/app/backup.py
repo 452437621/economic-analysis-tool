@@ -24,6 +24,12 @@ def backup() -> Path:
         finally:
             dst.close()
             src.close()
+        check = sqlite3.connect(dest / "epic.db")
+        try:
+            result = check.execute("PRAGMA integrity_check").fetchone()
+            print(f"integrity_check: {result[0] if result else 'unknown'}")
+        finally:
+            check.close()
 
     config_file = ROOT_DIR / "config" / "default.yaml"
     if config_file.exists():

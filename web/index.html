@@ -91,7 +91,13 @@
     li.doc:hover { background: var(--panel-2); }
     footer { color: var(--muted); font-size: 12px; text-align: center; padding: 30px 0 18px; }
     .err { color: var(--bad); font-family: var(--mono); font-size: 12px; }
-    @media (max-width: 760px) { main { padding: 14px; } th, td { padding: 6px 7px; } }
+    @media (max-width: 760px) {
+      main { padding: 14px; }
+      th, td { padding: 6px 7px; }
+      .grid.cards, .grid.two-col, .grid.macro-grid { grid-template-columns: 1fr; }
+      h2 { flex-wrap: wrap; }
+      .cards .metric { font-size: 24px; }
+    }
   </style>
 </head>
 <body>
