@@ -37,6 +37,7 @@ from app.models.core import (
     Thesis,
     ThesisEvidence,
     TradePlan,
+    WatchItem,
 )
 
 __all__ = [
@@ -78,4 +79,5 @@ __all__ = [
     "Thesis",
     "ThesisEvidence",
     "TradePlan",
+    "WatchItem",
 ]

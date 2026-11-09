@@ -11,7 +11,7 @@ import yaml
 from sqlalchemy import select
 
 from app.models.base import utcnow
-from app.models.core import Instrument, Job
+from app.models.core import Instrument, Job, WatchItem
 from app.platform.config import ROOT_DIR, settings
 from app.platform.db import SessionLocal, init_db
 
@@ -117,14 +117,53 @@ def seed_jobs() -> int:
     return created
 
 
+def seed_watchlist() -> int:
+    """Seed default watchlist from config (only missing symbols; user edits kept)."""
+    config_path = ROOT_DIR / "config" / "default.yaml"
+    if not config_path.exists():
+        return 0
+    with config_path.open("r", encoding="utf-8") as fh:
+        config = yaml.safe_load(fh) or {}
+    items = (config.get("market") or {}).get("watchlist") or []
+    created = 0
+    with SessionLocal() as session:
+        instruments = {
+            row.symbol: row.id for row in session.scalars(select(Instrument)).all()
+        }
+        for item in items:
+            symbol = str(item.get("symbol"))
+            instrument_id = instruments.get(symbol)
+            if not instrument_id:
+                logger.warning("watchlist symbol not found: %s", symbol)
+                continue
+            exists = session.scalar(
+                select(WatchItem).where(WatchItem.instrument_id == instrument_id)
+            )
+            if exists is not None:
+                continue
+            session.add(
+                WatchItem(
+                    instrument_id=instrument_id,
+                    group=item.get("group"),
+                    priority=int(item.get("priority") or 3),
+                    note=item.get("note"),
+                )
+            )
+            created += 1
+        session.commit()
+    return created
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     init_db()
     created = seed_instruments()
+    watch = seed_watchlist()
     jobs = seed_jobs()
     print(f"database ready: {settings.db_url}")
     print(f"instruments seeded: {created}")
+    print(f"watchlist seeded: {watch}")
     print(f"jobs seeded: {jobs}")
     print(f"initialized at: {utcnow().isoformat()}")
 

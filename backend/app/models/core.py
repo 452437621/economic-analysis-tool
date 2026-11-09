@@ -473,6 +473,18 @@ class JournalEntry(Base, TimestampMixin):
     meta: Mapped[dict | None] = mapped_column(JSON)
 
 
+class WatchItem(Base, TimestampMixin):
+    __tablename__ = "watchlist"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    instrument_id: Mapped[str] = mapped_column(
+        ForeignKey("instruments.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
+    group: Mapped[str | None] = mapped_column(String(40))
+    priority: Mapped[int] = mapped_column(Integer, default=3)
+    note: Mapped[str | None] = mapped_column(Text)
+
+
 class EconomicEvent(Base):
     __tablename__ = "economic_events"
     __table_args__ = (UniqueConstraint("ts_utc", "name", name="uq_event_ts_name"),)

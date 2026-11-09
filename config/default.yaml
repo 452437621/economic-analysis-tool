@@ -51,6 +51,16 @@ market:
     black:
       - {symbol: I, name: 铁矿石, asset_class: black, currency: CNY, exchange: DCE}
 
+  # 重点关注 / 自选池（可在看板增删，也可改这里后重跑 init_db 恢复默认）
+  watchlist:
+    - {symbol: "603993", group: 核心个股, priority: 1, note: 有色金属/钼钴，个股模板}
+    - {symbol: AU, group: 贵金属, priority: 2, note: 内外盘黄金核心}
+    - {symbol: AG, group: 贵金属, priority: 3, note: 白银弹性}
+    - {symbol: CU, group: 工业金属, priority: 2, note: 铜博士/宏观晴雨表}
+    - {symbol: SC, group: 能源, priority: 3, note: 国内原油}
+    - {symbol: "000300", group: 股指, priority: 3, note: A股宽基}
+    - {symbol: DXY, group: 汇率, priority: 3, note: 美元指数}
+
 macro:
   series:
     - {code: US2Y, name: 美债2年, unit: "%", freq: d, country: US}

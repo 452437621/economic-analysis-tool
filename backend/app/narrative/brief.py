@@ -28,6 +28,7 @@ from app.models.core import (
     PositionSnapshot,
     Quote,
     Source,
+    WatchItem,
 )
 from app.platform.config import settings
 from app.platform.db import SessionLocal
@@ -201,6 +202,26 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
     else:
         lines.append("- 数据不足，等待分析任务完成后生成")
     lines.append("")
+
+    watch_rows = session.execute(
+        select(WatchItem, Instrument)
+        .join(Instrument, Instrument.id == WatchItem.instrument_id)
+        .order_by(WatchItem.priority.asc(), Instrument.symbol.asc())
+    ).all()
+    if watch_rows:
+        quote_map = {row["symbol"]: row for row in quotes}
+        lines.append("### 重点关注（自选）")
+        for item, instrument in watch_rows:
+            quote = quote_map.get(instrument.symbol)
+            price = _fmt_num(quote["price"], 2) if quote else "—"
+            change = "—" if not quote or quote["change_pct"] is None else f"{quote['change_pct']:+.2f}%"
+            change_20d = (indicator_map.get(instrument.symbol) or {}).get("change_20d")
+            change_20d_text = f"{change_20d:+.2f}%" if change_20d is not None else "—"
+            lines.append(
+                f"- **{instrument.name}（{instrument.symbol}）**：{price}（{change}）；"
+                f"20 日 {change_20d_text}；{item.group or '未分组'}"
+            )
+        lines.append("")
 
     lines.append("## 2. 市场快照（按波动排序，Top 5）")
     lines.append("| 品种 | 名称 | 最新 | 涨跌幅 | 数据源 | 时点 |")

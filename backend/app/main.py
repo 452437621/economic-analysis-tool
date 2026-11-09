@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.api import alerts, analytics, decisions, events, journal, knowledge, market, system, theses
+from app.api import alerts, analytics, decisions, events, journal, knowledge, market, system, theses, watchlist
 from app.platform.config import ROOT_DIR, settings
 from app.platform.db import init_db
 from app.platform.logging import setup_logging
@@ -51,6 +51,7 @@ app.include_router(alerts.router)
 app.include_router(journal.router)
 app.include_router(theses.router)
 app.include_router(events.router)
+app.include_router(watchlist.router)
 
 if WEB_DIR.exists():
     assets_dir = WEB_DIR / "assets"

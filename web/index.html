@@ -76,6 +76,11 @@
     .mini { color: var(--muted); font-size: 11px; line-height: 1.6; }
     .journal-input { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
       border-radius: 8px; padding: 10px; font-family: inherit; font-size: 13px; line-height: 1.6; resize: vertical; }
+    .watch-input { background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+      border-radius: 8px; padding: 7px 9px; font-size: 12px; font-family: inherit; }
+    .watch-card h3 { display: flex; justify-content: space-between; align-items: center; }
+    .watch-remove { background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 16px; }
+    .watch-remove:hover { color: var(--bad); }
     .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .72); display: none; align-items: flex-start; justify-content: center; padding: 40px 16px; z-index: 20; }
     .modal.open { display: flex; }
     .modal-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; width: min(980px, 100%); max-height: 84vh; display: flex; flex-direction: column; }
@@ -148,6 +153,24 @@
     <section>
       <h2>告警 <span class="hint" id="alert-hint"></span></h2>
       <ul class="news" id="alerts"><li>加载中…</li></ul>
+    </section>
+
+    <section>
+      <h2>重点关注 <span class="hint">自选标的 · 可增删 · 默认来自 config/default.yaml</span></h2>
+      <div class="grid cards" id="watchlist"><div class="card muted">加载中…</div></div>
+      <div class="panel" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+        <select id="watch-symbol" class="watch-input"></select>
+        <input id="watch-group" class="watch-input" placeholder="分组（如 有色金属）" style="width: 150px;" />
+        <select id="watch-priority" class="watch-input">
+          <option value="1">优先级 1</option>
+          <option value="2">优先级 2</option>
+          <option value="3" selected>优先级 3</option>
+          <option value="4">优先级 4</option>
+          <option value="5">优先级 5</option>
+        </select>
+        <button class="modal-close" onclick="addWatch()">添加自选</button>
+        <span class="hint" id="watch-status"></span>
+      </div>
     </section>
 
     <section>
@@ -768,6 +791,71 @@
       }
     }
 
+    async function loadWatchlist() {
+      try {
+        const payload = await getJSON("/api/watchlist");
+        const rows = payload.data || [];
+        $("watchlist").innerHTML = rows.map((row) => {
+          const change = row.change_pct;
+          const cls = change === null || change === undefined ? "" : change >= 0 ? "up" : "down";
+          return `<div class="card watch-card">
+            <h3>${esc(row.name)} <button class="watch-remove" title="移出自选" onclick="removeWatch('${esc(row.symbol)}')">×</button></h3>
+            <div class="metric ${cls}">${row.price !== null && row.price !== undefined ? fmtNum(row.price, 2) : "—"}
+              <small>${change !== null && change !== undefined ? (change >= 0 ? "+" : "") + change.toFixed(2) + "%" : "暂无报价"}</small></div>
+            <div class="kv"><span>代码</span><span>${esc(row.symbol)}</span></div>
+            <div class="kv"><span>分组 / 优先级</span><span>${esc(row.group || "—")} / ${row.priority}</span></div>
+            <div class="kv"><span>20 日变动</span><span>${row.change_20d !== null && row.change_20d !== undefined ? (row.change_20d >= 0 ? "+" : "") + row.change_20d + "%" : "—"}</span></div>
+            <div class="mini">${esc(row.note || "")}</div>
+          </div>`;
+        }).join("") || '<div class="card muted">暂无自选，使用下方表单添加。</div>';
+      } catch (err) {
+        $("watchlist").innerHTML = `<div class="card err">${esc(err.message)}</div>`;
+      }
+    }
+
+    async function loadWatchCandidates() {
+      try {
+        const payload = await getJSON("/api/watchlist/candidates");
+        const rows = (payload.data || []).filter((row) => !row.watched);
+        $("watch-symbol").innerHTML = rows.map((row) =>
+          `<option value="${esc(row.symbol)}">${esc(row.symbol)} · ${esc(row.name)}</option>`
+        ).join("") || '<option value="">（全部已在自选）</option>';
+      } catch (err) { /* optional */ }
+    }
+
+    async function addWatch() {
+      const symbol = $("watch-symbol").value;
+      if (!symbol) { $("watch-status").textContent = "没有可添加的标的"; return; }
+      try {
+        await fetch("/api/watchlist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            symbol,
+            group: $("watch-group").value.trim() || null,
+            priority: Number($("watch-priority").value),
+          }),
+        });
+        $("watch-status").textContent = `已添加 ${symbol}`;
+        $("watch-group").value = "";
+        loadWatchlist();
+        loadWatchCandidates();
+      } catch (err) {
+        $("watch-status").textContent = "添加失败：" + err.message;
+      }
+    }
+
+    async function removeWatch(symbol) {
+      try {
+        await fetch(`/api/watchlist/${encodeURIComponent(symbol)}`, { method: "DELETE" });
+        $("watch-status").textContent = `已移除 ${symbol}`;
+        loadWatchlist();
+        loadWatchCandidates();
+      } catch (err) {
+        $("watch-status").textContent = "移除失败：" + err.message;
+      }
+    }
+
     async function loadCalendar() {
       try {
         const payload = await getJSON("/api/calendar?days=14&limit=20");
@@ -950,7 +1038,7 @@
     }
 
     tick();
-    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadTheses(); loadAlerts(); loadQuality(); loadJournal(); loadCalendar(); loadPositions(); loadEvents(); loadAcceptance();
+    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadTheses(); loadAlerts(); loadQuality(); loadJournal(); loadCalendar(); loadPositions(); loadEvents(); loadAcceptance(); loadWatchlist(); loadWatchCandidates();
     const docParam = new URLSearchParams(location.search).get("doc");
     if (docParam) openDoc(docParam);
     setInterval(tick, 1000);
@@ -964,6 +1052,7 @@
     setInterval(loadCalendar, 300000);
     setInterval(loadPositions, 300000);
     setInterval(loadEvents, 60000);
+    setInterval(loadWatchlist, 60000);
   </script>
 </body>
 </html>
