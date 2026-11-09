@@ -85,6 +85,15 @@ def _register_collectors() -> None:
         next_run_time=now + timedelta(seconds=15),
     )
     scheduler.add_job(
+        _collector("collect_calendar"),
+        trigger=IntervalTrigger(hours=6),
+        id="collect_calendar",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        next_run_time=now + timedelta(seconds=20),
+    )
+    scheduler.add_job(
         _collector("collect_bodies"),
         trigger=IntervalTrigger(seconds=600),
         id="collect_bodies",

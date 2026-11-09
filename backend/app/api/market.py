@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.models.base import utcnow
 from app.models.core import (
     Document,
+    EconomicEvent,
     Instrument,
     MacroObs,
     MacroSeries,
@@ -164,6 +165,37 @@ def macro_series(
         "name": series.name,
         "unit": series.unit,
         "data": [{"ts": _iso(row.ts_utc), "value": row.value} for row in rows],
+    }
+
+
+@router.get("/calendar")
+def calendar(
+    days: int = Query(14, ge=1, le=60),
+    limit: int = Query(100, ge=1, le=300),
+    session: Session = Depends(get_session),
+) -> dict:
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    rows = session.scalars(
+        select(EconomicEvent)
+        .where(
+            EconomicEvent.ts_utc >= now - timedelta(hours=6),
+            EconomicEvent.ts_utc <= now + timedelta(days=days),
+        )
+        .order_by(EconomicEvent.ts_utc.asc())
+        .limit(limit)
+    ).all()
+    return {
+        "data": [
+            {
+                "id": row.id,
+                "ts": _iso(row.ts_utc),
+                "name": row.name,
+                "category": row.category,
+                "country": row.country,
+                "importance": row.importance,
+            }
+            for row in rows
+        ]
     }
 
 

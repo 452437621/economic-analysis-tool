@@ -35,6 +35,7 @@ JOBS = {
     "collect_quotes": pipeline.collect_quotes,
     "collect_daily_bars": pipeline.collect_daily_bars,
     "collect_rates": pipeline.collect_rates,
+    "collect_calendar": pipeline.collect_calendar,
     "collect_news": pipeline.collect_news,
     "collect_bodies": pipeline.collect_bodies,
     "extract_claims": pipeline.extract_claims,

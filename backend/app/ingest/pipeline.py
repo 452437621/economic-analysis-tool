@@ -12,7 +12,17 @@ from sqlalchemy import delete, func, select
 from app.ingest import store
 from app.ingest.contracts import Bar, MacroPoint, Quote
 from app.ingest.http import HttpClient
-from app.ingest.providers import czce, eastmoney, ecb, jgb, rss, sina, treasury
+from app.ingest.providers import (
+    czce,
+    eastmoney,
+    eastmoney_calendar,
+    eastmoney_yield,
+    ecb,
+    jgb,
+    rss,
+    sina,
+    treasury,
+)
 from app.ingest.providers.html_extract import extract_main_text
 from app.ingest.symbols import (
     CN_FUTURES,
@@ -29,6 +39,7 @@ from app.models.core import (
     DataCheck,
     Document,
     DocumentBody,
+    EconomicEvent,
     Instrument,
     MacroObs,
     MarketBar,
@@ -74,6 +85,11 @@ MACRO_SERIES_META: dict[str, dict] = {
     "JP30Y": {"name": "日本国债30年", "unit": "%", "country": "JP"},
     "DE2Y": {"name": "德国国债2年", "unit": "%", "country": "DE"},
     "DE10Y": {"name": "德国国债10年", "unit": "%", "country": "DE"},
+    "CN2Y": {"name": "中国国债2年", "unit": "%", "country": "CN"},
+    "CN5Y": {"name": "中国国债5年", "unit": "%", "country": "CN"},
+    "CN10Y": {"name": "中国国债10年", "unit": "%", "country": "CN"},
+    "CN30Y": {"name": "中国国债30年", "unit": "%", "country": "CN"},
+    "CN10Y2Y": {"name": "中国国债10年-2年利差", "unit": "pp", "country": "CN"},
 }
 
 
@@ -307,6 +323,29 @@ def collect_rates() -> dict:
             logger.exception("ecb rates failed")
             store.record_health(session, ecb_source.id, ok=False, error=str(exc))
             stats["errors"].append(f"ecb: {exc}")
+
+        # Eastmoney China (and US) treasury yields
+        em_yield_source = store.get_source(session, **SOURCE_EM)
+        try:
+            curves = eastmoney_yield.fetch_rates(client, start_year=current_year - 4)
+            for code, points in curves.items():
+                meta = MACRO_SERIES_META.get(code, {})
+                n = store.upsert_macro(
+                    session,
+                    code,
+                    points,
+                    source_id=em_yield_source.id,
+                    name=meta.get("name"),
+                    unit=meta.get("unit"),
+                    country=meta.get("country"),
+                )
+                stats["points"] += n
+                stats["series"] += 1
+            store.record_health(session, em_yield_source.id, ok=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("eastmoney yields failed")
+            store.record_health(session, em_yield_source.id, ok=False, error=str(exc))
+            stats["errors"].append(f"em_yield: {exc}")
         session.commit()
 
     stats["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
@@ -314,8 +353,56 @@ def collect_rates() -> dict:
     return stats
 
 
+def collect_calendar(days_ahead: int = 14) -> dict:
+    """Fetch upcoming economic calendar events (Eastmoney)."""
+    started = time.perf_counter()
+    stats: dict = {"events": 0, "new": 0, "errors": []}
+    now = datetime.now(timezone.utc)
+    start = (now.astimezone(timezone(timedelta(hours=8))).date()) - timedelta(days=1)
+    end = start + timedelta(days=days_ahead)
+
+    with HttpClient(min_interval=0.5) as client, SessionLocal() as session:
+        source = store.get_source(session, **SOURCE_EM)
+        try:
+            events = eastmoney_calendar.fetch_calendar(client, start, end)
+            existing = {
+                (ts.replace(tzinfo=None) if ts.tzinfo else ts, name)
+                for ts, name in session.execute(
+                    select(EconomicEvent.ts_utc, EconomicEvent.name)
+                ).all()
+            }
+            for event in events:
+                naive_ts = event["ts_utc"].replace(tzinfo=None)
+                if (naive_ts, event["name"]) in existing:
+                    continue
+                session.add(
+                    EconomicEvent(
+                        ts_utc=naive_ts,
+                        name=event["name"],
+                        category=event["category"],
+                        country=event["country"],
+                        importance=event["importance"],
+                        source_code=event["source_code"],
+                    )
+                )
+                existing.add((naive_ts, event["name"]))
+                stats["new"] += 1
+            cutoff = now.replace(tzinfo=None) - timedelta(days=30)
+            session.execute(delete(EconomicEvent).where(EconomicEvent.ts_utc < cutoff))
+            session.execute(delete(EconomicEvent).where(EconomicEvent.name.like("%累计同比%")))
+            session.commit()
+            stats["events"] = len(events)
+            store.record_health(session, source.id, ok=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("calendar failed")
+            store.record_health(session, source.id, ok=False, error=str(exc))
+            stats["errors"].append(str(exc))
+    stats["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
+    logger.info("collect_calendar: %s", stats)
+    return stats
+
+
 def collect_news() -> dict:
-    """Fetch official RSS/HTML feeds into the document store (title + metadata only)."""
     started = time.perf_counter()
     stats: dict = {"documents": 0, "feeds": 0, "errors": []}
 

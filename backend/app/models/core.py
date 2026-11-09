@@ -472,3 +472,17 @@ class JournalEntry(Base, TimestampMixin):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     meta: Mapped[dict | None] = mapped_column(JSON)
 
+
+class EconomicEvent(Base):
+    __tablename__ = "economic_events"
+    __table_args__ = (UniqueConstraint("ts_utc", "name", name="uq_event_ts_name"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    ts_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(40))
+    country: Mapped[str | None] = mapped_column(String(40))
+    importance: Mapped[int] = mapped_column(Integer, default=2)
+    source_code: Mapped[str | None] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+

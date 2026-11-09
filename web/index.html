@@ -226,6 +226,11 @@
     </section>
 
     <section>
+      <h2>财经日历 <span class="hint">未来 14 天 · 经济数据</span></h2>
+      <ul class="news" id="calendar"><li>加载中…</li></ul>
+    </section>
+
+    <section>
       <h2>新闻与政策 <span class="hint">官方来源 · 仅标题与元数据</span></h2>
       <ul class="news" id="news"><li>加载中…</li></ul>
     </section>
@@ -366,7 +371,7 @@
       }
     }
 
-    const MACRO_ORDER = ["US10Y", "US10Y_REAL", "US10Y_BE", "US2Y", "US5Y", "US30Y", "US5Y_REAL", "US5Y_BE", "JP10Y", "DE10Y"];
+    const MACRO_ORDER = ["US10Y", "US10Y_REAL", "US10Y_BE", "US2Y", "US5Y", "US30Y", "CN10Y", "CN10Y2Y", "JP10Y", "DE10Y"];
 
     async function loadMacro() {
       try {
@@ -628,6 +633,22 @@
       }
     }
 
+    async function loadCalendar() {
+      try {
+        const payload = await getJSON("/api/calendar?days=14&limit=20");
+        const rows = payload.data || [];
+        $("calendar").innerHTML = rows.map((event) => {
+          const stars = "●".repeat(event.importance || 1);
+          return `<li>
+            <div class="meta">${fmtTime(event.ts, true)} · ${esc(event.country || "全球")} · <span class="muted">${esc(event.category || "")}</span></div>
+            <div>${esc(event.name)} <span class="hint">${stars}</span></div>
+          </li>`;
+        }).join("") || "<li>暂无日历数据，等待 collect_calendar 任务。</li>";
+      } catch (err) {
+        $("calendar").innerHTML = `<li class="err">${esc(err.message)}</li>`;
+      }
+    }
+
     async function loadJournal() {
       try {
         const payload = await getJSON("/api/journal?limit=5");
@@ -750,7 +771,7 @@
     }
 
     tick();
-    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadAlerts(); loadQuality(); loadJournal();
+    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadAlerts(); loadQuality(); loadJournal(); loadCalendar();
     const docParam = new URLSearchParams(location.search).get("doc");
     if (docParam) openDoc(docParam);
     setInterval(tick, 1000);
@@ -760,6 +781,7 @@
     setInterval(loadDecisions, 60000);
     setInterval(() => { loadAlerts(); loadQuality(); }, 30000);
     setInterval(loadJournal, 120000);
+    setInterval(loadCalendar, 300000);
   </script>
 </body>
 </html>
