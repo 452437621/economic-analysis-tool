@@ -22,5 +22,5 @@ def test_parse_feed_caps_items():
 
 def test_official_feed_coverage():
     names = {feed["name"] for feed in NEWS_FEEDS}
-    assert {"美联储", "欧洲央行", "美国财政部", "日本央行", "美国能源信息署"} <= names
+    assert {"美联储", "欧洲央行", "日本央行", "美国能源信息署", "美国贸易代表办公室"} <= names
     assert any(feed["url"].startswith("https://www.stats.gov.cn") for feed in NEWS_FEEDS_SLOW)

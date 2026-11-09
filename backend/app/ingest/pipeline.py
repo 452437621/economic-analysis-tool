@@ -77,9 +77,9 @@ SOURCE_CZCE = dict(
 NEWS_FEEDS = [
     dict(name="美联储", url="https://www.federalreserve.gov/feeds/press_all.xml", kind="rss", tier="S1"),
     dict(name="欧洲央行", url="https://www.ecb.europa.eu/rss/press.html", kind="rss", tier="S1"),
-    dict(name="美国财政部", url="https://home.treasury.gov/news/press-releases", kind="html", tier="S1"),
     dict(name="日本央行", url="https://www.boj.or.jp/en/rss/whatsnew.xml", kind="rss", tier="S1"),
     dict(name="美国能源信息署", url="https://www.eia.gov/rss/todayinenergy.xml", kind="rss", tier="S1"),
+    dict(name="美国贸易代表办公室", url="https://ustr.gov/rss.xml", kind="rss", tier="S1"),
 ]
 
 # 体积大/更新慢的官方源，单独低频采集
@@ -488,6 +488,8 @@ def collect_news(slow: bool = False) -> dict:
                 else:
                     items, raw = rss.fetch_html_news(client, feed["url"], feed["name"])
                 suffix = "xml" if feed["kind"] == "rss" else "html"
+                if not items:
+                    raise RuntimeError("feed returned 0 items (parser may be outdated)")
                 raw_path = store.save_raw(
                     feed["name"],
                     f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.{suffix}",
