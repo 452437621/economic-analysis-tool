@@ -19,7 +19,9 @@ from app.models.core import (
     Prediction,
     Signal,
     TradePlan,
+    WatchItem,
 )
+from app.platform.config import settings
 from app.platform.db import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,18 @@ def run_decision() -> dict:
         raise RuntimeError("no daily bars for decision engine")
 
     asof = _asof(closes)
+    if settings.watchlist_only:
+        with SessionLocal() as watch_session:
+            watch_symbols = {
+                row.symbol
+                for row in watch_session.scalars(
+                    select(Instrument)
+                    .join(WatchItem, WatchItem.instrument_id == Instrument.id)
+                ).all()
+            }
+        keep = [symbol for symbol in closes.columns if symbol in watch_symbols]
+        if keep:
+            closes = closes[keep]
     signals = generate_all(closes)
     backtests = backtest_all(closes)
     counts = {"signals": 0, "plans": 0, "checks": 0, "predictions": 0, "backtests": 0}
