@@ -63,6 +63,9 @@ market:
 
 macro:
   series:
+    - {code: SOFR, name: 担保隔夜融资利率(SOFR), unit: "%", freq: d, country: US}
+    - {code: EFFR, name: 联邦基金有效利率(EFFR), unit: "%", freq: d, country: US}
+    - {code: SOFR_EFFR, name: SOFR-EFFR 利差, unit: pp, freq: d, country: US}
     - {code: US2Y, name: 美债2年, unit: "%", freq: d, country: US}
     - {code: US10Y, name: 美债10年, unit: "%", freq: d, country: US}
     - {code: US30Y, name: 美债30年, unit: "%", freq: d, country: US}

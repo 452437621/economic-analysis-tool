@@ -20,6 +20,7 @@ from app.ingest.providers import (
     eastmoney_yield,
     ecb,
     jgb,
+    nyfed,
     rss,
     shfe_positions,
     sina,
@@ -74,6 +75,9 @@ SOURCE_SHFE = dict(
 SOURCE_CZCE = dict(
     name="郑州商品交易所", kind="official", tier="S1", reliability=0.95, base_url="https://www.czce.com.cn"
 )
+SOURCE_NYFED = dict(
+    name="纽约联储", kind="official", tier="S1", reliability=0.95, base_url="https://markets.newyorkfed.org"
+)
 
 NEWS_FEEDS = [
     dict(name="美联储", url="https://www.federalreserve.gov/feeds/press_all.xml", kind="rss", tier="S1"),
@@ -107,6 +111,9 @@ MACRO_SERIES_META: dict[str, dict] = {
     "CN10Y": {"name": "中国国债10年", "unit": "%", "country": "CN"},
     "CN30Y": {"name": "中国国债30年", "unit": "%", "country": "CN"},
     "CN10Y2Y": {"name": "中国国债10年-2年利差", "unit": "pp", "country": "CN"},
+    "SOFR": {"name": "担保隔夜融资利率(SOFR)", "unit": "%", "country": "US"},
+    "EFFR": {"name": "联邦基金有效利率(EFFR)", "unit": "%", "country": "US"},
+    "SOFR_EFFR": {"name": "SOFR-EFFR 利差", "unit": "pp", "country": "US"},
 }
 
 
@@ -363,6 +370,30 @@ def collect_rates() -> dict:
             logger.exception("eastmoney yields failed")
             store.record_health(session, em_yield_source.id, ok=False, error=str(exc))
             stats["errors"].append(f"em_yield: {exc}")
+
+        # NY Fed: SOFR / EFFR / spread
+        nyfed_source = store.get_source(session, **SOURCE_NYFED)
+        try:
+            start = (datetime.now(timezone.utc).date() - timedelta(days=365 * 5))
+            curves = nyfed.fetch_rates(client, start_date=start)
+            for code, points in curves.items():
+                meta = MACRO_SERIES_META.get(code, {})
+                n = store.upsert_macro(
+                    session,
+                    code,
+                    points,
+                    source_id=nyfed_source.id,
+                    name=meta.get("name"),
+                    unit=meta.get("unit"),
+                    country=meta.get("country"),
+                )
+                stats["points"] += n
+                stats["series"] += 1
+            store.record_health(session, nyfed_source.id, ok=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("nyfed rates failed")
+            store.record_health(session, nyfed_source.id, ok=False, error=str(exc))
+            stats["errors"].append(f"nyfed: {exc}")
         session.commit()
 
     stats["elapsed_ms"] = int((time.perf_counter() - started) * 1000)

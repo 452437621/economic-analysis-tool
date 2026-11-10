@@ -20,3 +20,11 @@ def test_watchlist_drag_mode_present():
     assert "attachWatchDnD" in HTML
     assert "/api/watchlist/reorder" in HTML
     assert "draggable=" in HTML
+
+
+def test_history_modal_and_sofr_cards_present():
+    assert 'id="history-modal"' in HTML
+    assert "openHistory" in HTML
+    assert "SOFR_EFFR" in HTML
+    assert "initHistoryRanges" in HTML
+

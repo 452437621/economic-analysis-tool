@@ -74,15 +74,38 @@
     section > h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
     .hint { font-size: 12px; color: var(--muted); font-weight: 400; }
     table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 10px; overflow: hidden; }
-    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
+    th, td { text-align: center; padding: 8px 10px; border-bottom: 1px solid var(--line);
+      border-right: 1px solid var(--line); font-size: 13px; }
+    th:last-child, td:last-child { border-right: 0; }
     th { color: var(--muted); font-weight: 600; background: var(--panel-2); }
     tr.group td { background: var(--group-bg); color: var(--muted); font-size: 12px; letter-spacing: .5px; }
-    td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+    td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: center; }
     .up { color: var(--ok); } .down { color: var(--bad); } .flat { color: var(--muted); }
     .sym { font-family: var(--mono); font-weight: 600; }
     .muted { color: var(--muted); }
     .macro-grid { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
-    .macro { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+    .macro { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; cursor: pointer; transition: border-color .12s; }
+    .macro:hover { border-color: var(--accent); }
+    .history-link { cursor: pointer; }
+    .history-link:hover { color: var(--accent); text-decoration: underline; }
+    .history-panel { width: min(1040px, 100%); }
+    .history-toolbar { display: flex; gap: 10px; align-items: center; padding: 10px 18px;
+      border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+    .history-ranges { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+    .history-ranges button { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
+      border-radius: 6px; cursor: pointer; font-size: 12px; padding: 3px 9px; font-family: inherit; }
+    .history-ranges button.active { color: var(--accent); border-color: var(--accent); }
+    .history-chart { padding: 12px 18px 4px; }
+    .history-chart svg { width: 100%; height: auto; display: block; }
+    .history-chart .grid { stroke: var(--line); stroke-width: 1; }
+    .history-chart .axis-label { fill: var(--muted); font-size: 11px; }
+    .history-chart .line { fill: none; stroke: var(--accent); stroke-width: 2; }
+    .history-chart .area { fill: var(--accent); opacity: .10; }
+    .history-chart .dot { fill: var(--accent); }
+    .history-chart .last-label { fill: var(--text); font-size: 12px; font-family: var(--mono); }
+    .history-stats { display: flex; gap: 18px; flex-wrap: wrap; padding: 4px 18px 16px;
+      color: var(--muted); font-size: 12px; }
+    .history-stats b { color: var(--text); font-family: var(--mono); }
     .macro .name { color: var(--muted); font-size: 12px; }
     .macro .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 4px; }
     .macro .ts { color: var(--muted); font-size: 11px; margin-top: 2px; }
@@ -95,7 +118,7 @@
     .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
     .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); }
     .placeholder { border: 1px dashed var(--line); border-radius: 8px; padding: 14px; color: var(--muted); font-size: 13px; line-height: 1.7; }
-    .brief { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; white-space: pre-wrap; font-size: 12.5px; line-height: 1.75; max-height: 460px; overflow: auto; }
+    .brief { background: transparent; border: 0; border-radius: 0; padding: 0; white-space: pre-wrap; font-size: 12.5px; line-height: 1.75; }
     .brief a { color: var(--accent); }
     .brief .brief-h { font-weight: 700; color: var(--text); margin: 10px 0 6px; font-size: 13.5px; }
     .brief .brief-li { color: var(--muted); margin: 2px 0; }
@@ -333,7 +356,7 @@
     </section>
 
     <section>
-      <h2>利率与流动性 <span class="hint">美国 / 日本 / 德国国债日频曲线</span></h2>
+      <h2>利率与流动性 <span class="hint">SOFR / EFFR / SOFR-EFFR 利差 · 美国 / 日本 / 德国国债日频曲线（点击卡片看趋势）</span></h2>
       <div class="grid macro-grid" id="macro"><div class="card muted">加载中…</div></div>
     </section>
 
@@ -415,6 +438,24 @@
       </div>
       <div class="modal-body" id="doc-body">加载中…</div>
       <div class="claims" id="doc-claims"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="history-modal" onclick="if (event.target === this) closeHistory()">
+    <div class="modal-panel history-panel">
+      <div class="modal-head">
+        <div>
+          <h3 id="history-title">—</h3>
+          <div class="hint" id="history-meta"></div>
+        </div>
+        <button class="modal-close" onclick="closeHistory()">✕</button>
+      </div>
+      <div class="history-toolbar">
+        <span class="hint" id="history-hint">点击标的名称或数值查看历史趋势</span>
+        <span class="history-ranges" id="history-ranges"></span>
+      </div>
+      <div class="history-chart" id="history-chart"></div>
+      <div class="history-stats" id="history-stats"></div>
     </div>
   </div>
 
@@ -572,9 +613,9 @@
           html += `<tr class="group"><td colspan="6">${GROUP_NAMES[key] || key}</td></tr>`;
           for (const item of groups[key]) {
             html += `<tr>
-              <td class="sym">${esc(item.symbol)}</td>
-              <td>${esc(item.name)}</td>
-              <td class="num">${fmtPrice(item)}</td>
+              <td class="sym"><span class="history-link" onclick="openHistory('instrument','${esc(item.symbol)}','${esc(item.name)}')">${esc(item.symbol)}</span></td>
+              <td><span class="history-link" onclick="openHistory('instrument','${esc(item.symbol)}','${esc(item.name)}')">${esc(item.name)}</span></td>
+              <td class="num"><span class="history-link" onclick="openHistory('instrument','${esc(item.symbol)}','${esc(item.name)}')">${fmtPrice(item)}</span></td>
               <td class="num">${fmtPct(item.change_pct)}</td>
               <td>${esc(item.source || "—")} ${staleBadge(item.stale_sec, item.delay_sec || 0)}</td>
               <td class="muted">${fmtTime(item.ts)}</td>
@@ -589,7 +630,7 @@
       }
     }
 
-    const MACRO_ORDER = ["US10Y", "US10Y_REAL", "US10Y_BE", "US2Y", "US5Y", "US30Y", "CN10Y", "CN10Y2Y", "JP10Y", "DE10Y"];
+    const MACRO_ORDER = ["SOFR", "EFFR", "SOFR_EFFR", "US10Y", "US10Y_REAL", "US10Y_BE", "US2Y", "US5Y", "US30Y", "CN10Y", "CN10Y2Y", "JP10Y", "DE10Y"];
 
     async function loadMacro() {
       try {
@@ -599,9 +640,9 @@
         for (const code of MACRO_ORDER) {
           const row = map[code];
           if (!row) continue;
-          html += `<div class="macro">
+          html += `<div class="macro" onclick="openHistory('macro','${esc(code)}','${esc(row.name)}','${esc(row.unit || "")}')">
             <div class="name">${esc(row.name)} <span class="muted">${esc(code)}</span></div>
-            <div class="value">${Number(row.value).toFixed(2)}<small>${esc(row.unit || "")}</small></div>
+            <div class="value history-link">${Number(row.value).toFixed(2)}<small>${esc(row.unit || "")}</small></div>
             <div class="ts">${fmtTime(row.ts, true)}</div>
           </div>`;
         }
@@ -999,12 +1040,12 @@
           const change = row.change_pct;
           const cls = change === null || change === undefined ? "" : change >= 0 ? "up" : "down";
           return `<div class="card watch-card${watchEditMode ? " editing" : ""}" data-symbol="${esc(row.symbol)}" draggable="${watchEditMode}">
-            <h3><span><span class="drag-handle">⋮⋮</span>${esc(row.name)}</span><span class="watch-actions">
+            <h3><span class="history-link" onclick="if (!watchEditMode) openHistory('instrument','${esc(row.symbol)}','${esc(row.name)}')"><span class="drag-handle">⋮⋮</span>${esc(row.name)}</span><span class="watch-actions">
               <button class="watch-move" title="上移" onclick="moveWatch('${esc(row.symbol)}','up')">↑</button>
               <button class="watch-move" title="下移" onclick="moveWatch('${esc(row.symbol)}','down')">↓</button>
               <button class="watch-remove" title="移出自选" onclick="removeWatch('${esc(row.symbol)}')">×</button>
             </span></h3>
-            <div class="metric ${cls}">${row.price !== null && row.price !== undefined ? fmtNum(row.price, 2) : "—"}
+            <div class="metric history-link ${cls}" onclick="if (!watchEditMode) openHistory('instrument','${esc(row.symbol)}','${esc(row.name)}')">${row.price !== null && row.price !== undefined ? fmtNum(row.price, 2) : "—"}
               <small>${change !== null && change !== undefined ? (change >= 0 ? "+" : "") + change.toFixed(2) + "%" : "暂无报价"}</small></div>
             <div class="kv"><span>代码</span><span>${esc(row.symbol)}</span></div>
             <div class="kv"><span>分组 / 优先级</span><span>${esc(row.group || "—")} / ${row.priority}</span></div>
@@ -1168,7 +1209,140 @@
       }
     }
 
+    const HISTORY_RANGES = [
+      ["1m", "1月"], ["3m", "3月"], ["6m", "6月"], ["1y", "1年"],
+      ["2y", "2年"], ["5y", "5年"], ["all", "全部"],
+    ];
+    const HISTORY_DAYS = { "1m": 31, "3m": 92, "6m": 183, "1y": 366, "2y": 731, "5y": 1826 };
+    const historyState = { kind: null, key: "", name: "", unit: "", points: [], range: "1y" };
+
+    function initHistoryRanges() {
+      $("history-ranges").innerHTML = HISTORY_RANGES.map(([value, label]) =>
+        `<button data-range="${value}" onclick="setHistoryRange('${value}')">${label}</button>`
+      ).join("");
+      updateHistoryRangeButtons();
+    }
+
+    function updateHistoryRangeButtons() {
+      $("history-ranges").querySelectorAll("button").forEach((button) => {
+        button.classList.toggle("active", button.dataset.range === historyState.range);
+      });
+    }
+
+    function setHistoryRange(range) {
+      historyState.range = range;
+      updateHistoryRangeButtons();
+      renderHistory();
+    }
+
+    function closeHistory() {
+      $("history-modal").classList.remove("open");
+    }
+
+    function historyValue(value) {
+      const unit = historyState.unit;
+      if (unit === "%") return Number(value).toFixed(2) + "%";
+      if (unit === "pp") return Number(value).toFixed(2) + "pp";
+      return Number(value).toFixed(2) + (unit ? " " + unit : "");
+    }
+
+    async function openHistory(kind, key, name, unit = "") {
+      closeDoc();
+      $("history-modal").classList.add("open");
+      $("history-title").textContent = `${name || key}（${key}）`;
+      $("history-meta").textContent = "加载中…";
+      $("history-chart").innerHTML = '<div class="placeholder">加载中…</div>';
+      $("history-stats").innerHTML = "";
+      historyState.kind = kind;
+      historyState.key = key;
+      historyState.name = name || key;
+      historyState.unit = unit;
+      historyState.points = [];
+      try {
+        let points = [];
+        if (kind === "instrument") {
+          const payload = await getJSON(`/api/market/bars?symbol=${encodeURIComponent(key)}&timeframe=1d&limit=3000`);
+          points = (payload.data || [])
+            .map((row) => ({ t: Date.parse(row.ts), v: Number(row.close) }))
+            .filter((point) => Number.isFinite(point.t) && Number.isFinite(point.v));
+          historyState.unit = "";
+        } else {
+          const payload = await getJSON(`/api/macro/series?code=${encodeURIComponent(key)}&limit=5000`);
+          points = (payload.data || [])
+            .map((row) => ({ t: Date.parse(row.ts), v: Number(row.value) }))
+            .filter((point) => Number.isFinite(point.t) && Number.isFinite(point.v));
+          historyState.unit = payload.unit || unit || "";
+        }
+        historyState.points = points;
+        if (!points.length) {
+          $("history-meta").textContent = "无历史数据（等待采集任务）";
+          $("history-chart").innerHTML = '<div class="placeholder">暂无历史数据。</div>';
+          return;
+        }
+        renderHistory();
+      } catch (err) {
+        $("history-meta").textContent = "加载失败";
+        $("history-chart").innerHTML = `<div class="err">${esc(err.message)}</div>`;
+      }
+    }
+
+    function renderHistory() {
+      const allPoints = historyState.points;
+      if (!allPoints.length) return;
+      const days = HISTORY_DAYS[historyState.range];
+      const lastTs = allPoints[allPoints.length - 1].t;
+      const points = days
+        ? allPoints.filter((point) => point.t >= lastTs - days * 86400000)
+        : allPoints;
+      if (points.length < 2) {
+        $("history-chart").innerHTML = '<div class="placeholder">所选区间数据点不足。</div>';
+        return;
+      }
+      const W = 920, H = 320, L = 64, R = 82, T = 18, B = 38;
+      const values = points.map((point) => point.v);
+      let minValue = Math.min(...values), maxValue = Math.max(...values);
+      if (minValue === maxValue) { minValue -= 1; maxValue += 1; }
+      const pad = (maxValue - minValue) * 0.08;
+      minValue -= pad;
+      maxValue += pad;
+      const x = (index) => L + ((W - L - R) * index) / (points.length - 1);
+      const y = (value) => T + (H - T - B) * (1 - (value - minValue) / (maxValue - minValue));
+      const fmtDate = (ts) => new Date(ts).toISOString().slice(0, 10);
+      let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(historyState.name)} 历史趋势">`;
+      for (let i = 0; i <= 4; i += 1) {
+        const value = minValue + ((maxValue - minValue) * i) / 4;
+        const yPos = y(value);
+        svg += `<line class="grid" x1="${L}" y1="${yPos.toFixed(1)}" x2="${W - R}" y2="${yPos.toFixed(1)}" />`;
+        svg += `<text class="axis-label" x="${L - 8}" y="${(yPos + 4).toFixed(1)}" text-anchor="end">${historyValue(value)}</text>`;
+      }
+      for (let i = 0; i <= 4; i += 1) {
+        const index = Math.round(((points.length - 1) * i) / 4);
+        svg += `<text class="axis-label" x="${x(index).toFixed(1)}" y="${H - 12}" text-anchor="middle">${fmtDate(points[index].t)}</text>`;
+      }
+      const line = points.map((point, index) => `${index === 0 ? "M" : "L"}${x(index).toFixed(1)},${y(point.v).toFixed(1)}`).join(" ");
+      const area = `${line} L${x(points.length - 1).toFixed(1)},${H - B} L${L},${H - B} Z`;
+      svg += `<path class="area" d="${area}" />`;
+      svg += `<path class="line" d="${line}" />`;
+      const last = points[points.length - 1];
+      svg += `<circle class="dot" cx="${x(points.length - 1).toFixed(1)}" cy="${y(last.v).toFixed(1)}" r="4" />`;
+      svg += `<text class="last-label" x="${W - R + 10}" y="${(y(last.v) + 4).toFixed(1)}">${historyValue(last.v)}</text>`;
+      svg += "</svg>";
+      $("history-chart").innerHTML = svg;
+      const first = points[0];
+      const diff = last.v - first.v;
+      const pct = first.v ? (diff / Math.abs(first.v)) * 100 : 0;
+      const rangeLabel = (HISTORY_RANGES.find(([value]) => value === historyState.range) || ["", "全部"])[1];
+      $("history-meta").textContent = `${historyState.kind === "macro" ? "宏观序列" : "日线"} · ${points.length} 个点 · ${fmtDate(first.t)} ~ ${fmtDate(last.t)}`;
+      $("history-stats").innerHTML = `
+        <span>最新 <b>${historyValue(last.v)}</b></span>
+        <span>${rangeLabel}变化 <b>${diff >= 0 ? "+" : ""}${diff.toFixed(2)}${historyState.unit === "pp" ? "pp" : ""}${historyState.unit === "%" ? "pp" : ""}</b></span>
+        <span>区间涨跌 <b>${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%</b></span>
+        <span>区间低 / 高 <b>${historyValue(Math.min(...values))} / ${historyValue(Math.max(...values))}</b></span>
+        <span>样本 <b>${points.length}</b></span>`;
+    }
+
     async function openDoc(id) {
+      $("history-modal").classList.remove("open");
       $("modal").classList.add("open");
       $("doc-title").textContent = "加载中…";
       $("doc-meta").textContent = "";
@@ -1259,6 +1433,7 @@
 
     tick();
     initSectionNav();
+    initHistoryRanges();
     loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadTheses(); loadAlerts(); loadQuality(); loadJournal(); loadCalendar(); loadPositions(); loadEvents(); loadAcceptance(); loadWatchlist(); loadWatchCandidates();
     const docParam = new URLSearchParams(location.search).get("doc");
     if (docParam) openDoc(docParam);
@@ -1276,6 +1451,13 @@
     setInterval(() => { if (!watchEditMode) loadWatchlist(); }, 60000);
     if (new URLSearchParams(location.search).get("watch_edit") === "1") {
       setTimeout(enterWatchEditMode, 1000);
+    }
+    const historyParam = new URLSearchParams(location.search).get("history");
+    if (historyParam) {
+      const parts = historyParam.split(":");
+      const kind = parts.length === 2 ? parts[0] : "macro";
+      const key = parts.length === 2 ? parts[1] : historyParam;
+      setTimeout(() => openHistory(kind, key, key), 1200);
     }
   </script>
 </body>
