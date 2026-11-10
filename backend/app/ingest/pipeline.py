@@ -19,6 +19,7 @@ from app.ingest.providers import (
     eastmoney_calendar,
     eastmoney_yield,
     ecb,
+    frankfurter,
     jgb,
     nyfed,
     rss,
@@ -34,6 +35,7 @@ from app.ingest.symbols import (
     EM_QUOTE_SECID,
     EM_SECID,
     SINA_FX,
+    SINA_GLOBAL_FUTURES,
     SINA_HF,
     compute_dxy,
 )
@@ -46,6 +48,7 @@ from app.models.core import (
     EconomicEvent,
     Instrument,
     MacroObs,
+    MacroSeries,
     MarketBar,
     PositionSnapshot,
     Quote as QuoteRow,
@@ -77,6 +80,9 @@ SOURCE_CZCE = dict(
 )
 SOURCE_NYFED = dict(
     name="纽约联储", kind="official", tier="S1", reliability=0.95, base_url="https://markets.newyorkfed.org"
+)
+SOURCE_FRANKFURTER = dict(
+    name="Frankfurter(ECB参考汇率)", kind="market", tier="S2", reliability=0.9, base_url="https://api.frankfurter.app"
 )
 
 NEWS_FEEDS = [
@@ -237,6 +243,20 @@ def collect_daily_bars() -> dict:
                 stats["errors"].append(f"{symbol}: {exc}")
         store.record_health(session, sina_source.id, ok=not stats["errors"])
 
+        # Overseas futures / spot daily bars (Sina GlobalFuturesService)
+        for symbol, code in SINA_GLOBAL_FUTURES.items():
+            instrument_id = symbol_ids.get(symbol)
+            if not instrument_id:
+                continue
+            try:
+                bars = _latest(sina.fetch_global_daily(client, code), 2000)
+                n = store.upsert_bars(session, instrument_id, "1d", bars, sina_source.id, delay_sec=900)
+                stats["bars"] += n
+                stats["symbols"] += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("global daily bars failed: %s", symbol)
+                stats["errors"].append(f"{symbol}: {exc}")
+
         for symbol, secid in EM_SECID.items():
             instrument_id = symbol_ids.get(symbol)
             if not instrument_id:
@@ -263,6 +283,25 @@ def collect_daily_bars() -> dict:
                 logger.exception("daily kline failed: %s", symbol)
                 stats["errors"].append(f"{symbol}: {exc}")
         store.record_health(session, em_source.id, ok=not stats["errors"])
+
+        # FX daily history: Frankfurter (ECB reference rates)
+        fx_source = store.get_source(session, **SOURCE_FRANKFURTER)
+        try:
+            fx_bars = frankfurter.fetch_daily(
+                client, start_date=datetime.now(timezone.utc).date() - timedelta(days=365 * 5)
+            )
+            for symbol, bars in fx_bars.items():
+                instrument_id = symbol_ids.get(symbol)
+                if not instrument_id or not bars:
+                    continue
+                n = store.upsert_bars(session, instrument_id, "1d", _latest(bars, 2000), fx_source.id, delay_sec=0)
+                stats["bars"] += n
+                stats["symbols"] += 1
+            store.record_health(session, fx_source.id, ok=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("frankfurter fx failed")
+            store.record_health(session, fx_source.id, ok=False, error=str(exc))
+            stats["errors"].append(f"fx: {exc}")
 
         session.commit()
 
@@ -758,6 +797,54 @@ def check_data_quality() -> dict:
             session.scalar(select(func.max(func.coalesce(Document.published_at, Document.fetched_at)))),
             3,
         )
+
+        coverage = session.execute(
+            select(Instrument.symbol, func.count(MarketBar.id))
+            .outerjoin(
+                MarketBar,
+                (MarketBar.instrument_id == Instrument.id) & (MarketBar.timeframe == "1d"),
+            )
+            .where(Instrument.active.is_(True))
+            .group_by(Instrument.id)
+        ).all()
+        missing = [symbol for symbol, count in coverage if count == 0]
+        session.add(
+            DataCheck(
+                kind="coverage",
+                dataset="启用标的日线覆盖",
+                check_date=now,
+                expected=len(coverage),
+                actual=len(coverage) - len(missing),
+                deviation=len(missing),
+                passed=not missing,
+                detail="缺失: " + ", ".join(missing) if missing else "全部启用标的均有日线",
+            )
+        )
+        stats["checks"] += 1
+        if missing:
+            stats["failed"] += 1
+
+        macro_coverage = session.execute(
+            select(MacroSeries.code, func.count(MacroObs.id))
+            .outerjoin(MacroObs, MacroObs.series_id == MacroSeries.id)
+            .group_by(MacroSeries.id)
+        ).all()
+        missing_macro = [code for code, count in macro_coverage if count == 0]
+        session.add(
+            DataCheck(
+                kind="coverage",
+                dataset="宏观序列覆盖",
+                check_date=now,
+                expected=len(macro_coverage),
+                actual=len(macro_coverage) - len(missing_macro),
+                deviation=len(missing_macro),
+                passed=not missing_macro,
+                detail="缺失: " + ", ".join(missing_macro) if missing_macro else "全部宏观序列均有观测",
+            )
+        )
+        stats["checks"] += 1
+        if missing_macro:
+            stats["failed"] += 1
         session.commit()
 
     stats["elapsed_ms"] = int((time.perf_counter() - started) * 1000)

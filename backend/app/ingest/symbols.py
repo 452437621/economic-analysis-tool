@@ -66,6 +66,19 @@ EM_DAILY_SECID: dict[str, str] = {
     "HSI": "100.HSI",
 }
 
+# 外盘/现货日线（新浪 GlobalFuturesService）
+SINA_GLOBAL_FUTURES: dict[str, str] = {
+    "XAUUSD": "XAU",
+    "GC": "GC",
+    "SI": "SI",
+    "CL": "CL",
+    "BZ": "OIL",
+    "HG": "CAD",
+    "AL_LME": "AHD",
+    "ZN_LME": "ZSD",
+    "NI_LME": "NID",
+}
+
 # ICE 美元指数篮子权重（用于由 6 组汇率合成 DXY 代理）
 DXY_BASKET: dict[str, float] = {
     "EURUSD": -0.576,

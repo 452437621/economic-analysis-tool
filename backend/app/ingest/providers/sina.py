@@ -16,6 +16,10 @@ DAILY_URL = (
     "https://stock.finance.sina.com.cn/futures/api/jsonp.php/"
     "var%20_{code}=/InnerFuturesNewService.getDailyKLine?symbol={code}"
 )
+GLOBAL_DAILY_URL = (
+    "https://stock2.finance.sina.com.cn/futures/api/jsonp.php/"
+    "var%20_{code}=/GlobalFuturesService.getGlobalFuturesDailyKLine?symbol={code}"
+)
 REALTIME_URL = "https://hq.sinajs.cn/list={codes}"
 
 
@@ -64,6 +68,42 @@ def parse_daily_jsonp(text: str) -> list[Bar]:
             continue
     bars.sort(key=lambda bar: bar.ts)
     return bars
+
+
+def parse_global_daily_jsonp(text: str) -> list[Bar]:
+    """Parse Sina global futures daily K-line (date/open/high/low/close)."""
+    start, end = text.find("["), text.rfind("]")
+    if start < 0 or end <= start:
+        return []
+    try:
+        rows = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return []
+    bars: list[Bar] = []
+    for row in rows:
+        try:
+            ts = datetime.strptime(str(row["date"]), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            bars.append(
+                Bar(
+                    ts=ts,
+                    open=float(row["open"]),
+                    high=float(row["high"]),
+                    low=float(row["low"]),
+                    close=float(row["close"]),
+                    volume=_f(row.get("volume")),
+                    open_interest=_f(row.get("position")),
+                )
+            )
+        except (KeyError, ValueError, TypeError):
+            continue
+    bars.sort(key=lambda bar: bar.ts)
+    return bars
+
+
+def fetch_global_daily(client: HttpClient, code: str) -> list[Bar]:
+    resp = client.get(GLOBAL_DAILY_URL.format(code=code), headers=SINA_REFERER)
+    resp.raise_for_status()
+    return parse_global_daily_jsonp(resp.content.decode("utf-8", errors="replace"))
 
 
 def parse_domestic_quote(text: str, symbol: str) -> Quote | None:
