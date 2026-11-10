@@ -28,3 +28,12 @@ def test_history_modal_and_sofr_cards_present():
     assert "SOFR_EFFR" in HTML
     assert "initHistoryRanges" in HTML
 
+
+def test_snapshot_split_and_te_category_order():
+    assert 'id="quotes-global"' in HTML
+    assert 'id="quotes-domestic"' in HTML
+    assert "SNAPSHOT_CATEGORIES" in HTML
+    assert "isDomestic" in HTML
+    assert '"XAUUSD", "GC", "AU", "SI", "AG", "HG", "CU", "I"' in HTML
+
+

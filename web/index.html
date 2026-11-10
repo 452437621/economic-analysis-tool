@@ -60,6 +60,9 @@
     .badge.bad { color: var(--bad); border-color: var(--bad-border); }
     .badge.warn { color: var(--warn); border-color: var(--warn-border); }
     main { max-width: 1320px; margin: 0 auto; padding: 22px; }
+    .snapshot-block { margin-bottom: 16px; }
+    .snapshot-title { font-size: 13px; margin: 0 0 8px; color: var(--text); font-weight: 600; }
+    .snapshot-title .hint { font-weight: 400; }
     .grid { display: grid; gap: 14px; }
     .cards { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
     .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 15px; }
@@ -255,11 +258,21 @@
     </section>
 
     <section>
-      <h2>市场快照 <span class="hint" id="snapshot-hint">国内期货实时 · 外盘延迟约 15 分钟 · 美债日频</span></h2>
-      <table>
-        <thead><tr><th>品种</th><th>名称</th><th>最新</th><th>涨跌幅</th><th>数据源</th><th>时点</th></tr></thead>
-        <tbody id="quotes"><tr><td colspan="6">加载中…</td></tr></tbody>
-      </table>
+      <h2>市场快照 <span class="hint" id="snapshot-hint">按 TradingEconomics 商品类别排序 · 外盘 / 国内分开 · 点击代码或价格看趋势</span></h2>
+      <div class="snapshot-block">
+        <h3 class="snapshot-title">外盘品种 <span class="hint">国外交易所 / 离岸 / 美股指数</span></h3>
+        <table>
+          <thead><tr><th>品种</th><th>名称</th><th>最新</th><th>涨跌幅</th><th>数据源</th><th>时点</th></tr></thead>
+          <tbody id="quotes-global"><tr><td colspan="6">加载中…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="snapshot-block">
+        <h3 class="snapshot-title">国内品种 <span class="hint">上期所 / 能源中心 / 大商所 / 郑商所 / A股</span></h3>
+        <table>
+          <thead><tr><th>品种</th><th>名称</th><th>最新</th><th>涨跌幅</th><th>数据源</th><th>时点</th></tr></thead>
+          <tbody id="quotes-domestic"><tr><td colspan="6">加载中…</td></tr></tbody>
+        </table>
+      </div>
     </section>
 
     <section>
@@ -601,32 +614,64 @@
       }
     }
 
+    const SNAPSHOT_CATEGORIES = [
+      { key: "energy", label: "能源", symbols: ["CL", "BZ", "SC"] },
+      { key: "metals", label: "金属", symbols: ["XAUUSD", "GC", "AU", "SI", "AG", "HG", "CU", "I"] },
+      { key: "agri", label: "农业", symbols: ["M", "P", "CF", "SR"] },
+      { key: "industrial", label: "工业", symbols: ["AL_LME", "ZN_LME", "NI_LME", "AL", "ZN", "NI"] },
+      { key: "index", label: "指数 / 个股", symbols: ["SPX", "NDX", "DJIA", "HSI", "000300", "603993"] },
+      { key: "fx", label: "汇率", symbols: ["DXY", "USDCNH", "USDJPY", "EURUSD", "GBPUSD", "USDCAD", "USDSEK", "USDCHF"] },
+    ];
+    const DOMESTIC_EXCHANGES = new Set(["SHFE", "INE", "DCE", "CZCE"]);
+    const DOMESTIC_SYMBOLS = new Set(["000300", "603993"]);
+
+    function isDomestic(item) {
+      return DOMESTIC_EXCHANGES.has(item.exchange) || DOMESTIC_SYMBOLS.has(item.symbol);
+    }
+
+    function snapshotRow(item) {
+      return `<tr>
+        <td class="sym"><span class="history-link" onclick="openHistory('instrument','${esc(item.symbol)}','${esc(item.name)}')">${esc(item.symbol)}</span></td>
+        <td><span class="history-link" onclick="openHistory('instrument','${esc(item.symbol)}','${esc(item.name)}')">${esc(item.name)}</span></td>
+        <td class="num"><span class="history-link" onclick="openHistory('instrument','${esc(item.symbol)}','${esc(item.name)}')">${fmtPrice(item)}</span></td>
+        <td class="num">${fmtPct(item.change_pct)}</td>
+        <td>${esc(item.source || "—")} ${staleBadge(item.stale_sec, item.delay_sec || 0)}</td>
+        <td class="muted">${fmtTime(item.ts)}</td>
+      </tr>`;
+    }
+
+    function renderSnapshot(rows, domestic) {
+      const filtered = rows.filter((item) => isDomestic(item) === domestic);
+      const used = new Set();
+      let html = "";
+      for (const category of SNAPSHOT_CATEGORIES) {
+        const items = category.symbols
+          .map((symbol) => filtered.find((item) => item.symbol === symbol))
+          .filter(Boolean);
+        if (!items.length) continue;
+        items.forEach((item) => used.add(item.symbol));
+        html += `<tr class="group"><td colspan="6">${category.label}</td></tr>`;
+        html += items.map(snapshotRow).join("");
+      }
+      const rest = filtered.filter((item) => !used.has(item.symbol));
+      if (rest.length) {
+        html += '<tr class="group"><td colspan="6">其他</td></tr>';
+        html += rest.map(snapshotRow).join("");
+      }
+      return html || '<tr><td colspan="6" class="muted">暂无行情，等待采集任务…</td></tr>';
+    }
+
     async function loadQuotes() {
       try {
         const payload = await getJSON("/api/market/snapshot");
         const rows = payload.data || [];
-        const groups = {};
-        for (const item of rows) (groups[item.asset_class] ||= []).push(item);
-        let html = "";
-        for (const key of ["metal", "energy", "black", "agri", "fx", "equity", "rate"]) {
-          if (!groups[key]) continue;
-          html += `<tr class="group"><td colspan="6">${GROUP_NAMES[key] || key}</td></tr>`;
-          for (const item of groups[key]) {
-            html += `<tr>
-              <td class="sym"><span class="history-link" onclick="openHistory('instrument','${esc(item.symbol)}','${esc(item.name)}')">${esc(item.symbol)}</span></td>
-              <td><span class="history-link" onclick="openHistory('instrument','${esc(item.symbol)}','${esc(item.name)}')">${esc(item.name)}</span></td>
-              <td class="num"><span class="history-link" onclick="openHistory('instrument','${esc(item.symbol)}','${esc(item.name)}')">${fmtPrice(item)}</span></td>
-              <td class="num">${fmtPct(item.change_pct)}</td>
-              <td>${esc(item.source || "—")} ${staleBadge(item.stale_sec, item.delay_sec || 0)}</td>
-              <td class="muted">${fmtTime(item.ts)}</td>
-            </tr>`;
-          }
-        }
-        $("quotes").innerHTML = html || '<tr><td colspan="6">暂无行情，等待采集任务…</td></tr>';
+        $("quotes-global").innerHTML = renderSnapshot(rows, false);
+        $("quotes-domestic").innerHTML = renderSnapshot(rows, true);
         $("quoted").innerHTML = `${payload.meta.with_quote}<small>个标的 / 共 ${payload.meta.count}</small>`;
         $("snapshot-asof").textContent = fmtTime(payload.meta.asof);
       } catch (err) {
-        $("quotes").innerHTML = `<tr><td colspan="6" class="err">${esc(err.message)}</td></tr>`;
+        $("quotes-global").innerHTML = `<tr><td colspan="6" class="err">${esc(err.message)}</td></tr>`;
+        $("quotes-domestic").innerHTML = `<tr><td colspan="6" class="err">${esc(err.message)}</td></tr>`;
       }
     }
 
