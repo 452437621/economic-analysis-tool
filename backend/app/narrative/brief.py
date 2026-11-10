@@ -50,6 +50,11 @@ def _fmt_num(value: float | None, digits: int = 2) -> str:
     return f"{value:,.{digits}f}"
 
 
+def _md_cell(value: object) -> str:
+    """Escape table-breaking characters in markdown table cells."""
+    return str(value).replace("|", "｜").replace("\n", " ").strip()
+
+
 def _latest_quotes(session: Session) -> list[dict]:
     instruments = session.scalars(select(Instrument).where(Instrument.active.is_(True))).all()
     rows = session.scalars(select(Quote).order_by(Quote.ts_utc.desc()).limit(3000)).all()
@@ -150,7 +155,7 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
             mainline += f"、10Y 实际利率 {real10y['value']:.2f}%"
     else:
         mainline = "行情数据尚未就绪，等待采集任务完成"
-    lines.append(f"- {mainline}（自动摘要，置信度标注待 M2 证据链完善）")
+    lines.append(f"> **一句话主线：** {mainline}（自动摘要，置信度标注待 M2 证据链完善）")
     lines.append("")
 
     wind_row = session.scalar(
@@ -193,14 +198,16 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
     )
 
     lines.append("## 1. 主次动力（规则合成，非预测）")
+    lines.append("| 动力 | 方向 | 强度 | 证据 |")
+    lines.append("|---|---|---|---|")
     if driver_list:
         for driver in driver_list:
             lines.append(
-                f"- **{driver['name']}**：{driver['direction']}（强度 {driver['strength']:.0%}）"
-                f"— {driver['evidence']}"
+                f"| {_md_cell(driver['name'])} | {_md_cell(driver['direction'])} "
+                f"| {driver['strength']:.0%} | {_md_cell(driver['evidence'])} |"
             )
     else:
-        lines.append("- 数据不足，等待分析任务完成后生成")
+        lines.append("| — | 数据不足 | — | 等待分析任务完成后生成 |")
     lines.append("")
 
     watch_rows = session.execute(
@@ -215,6 +222,8 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
     if watch_rows:
         quote_map = {row["symbol"]: row for row in quotes}
         lines.append("### 重点关注（自选）")
+        lines.append("| 品种 | 代码 | 最新 | 涨跌 | 20日 | 分组 |")
+        lines.append("|---|---|---|---|---|---|")
         for item, instrument in watch_rows:
             quote = quote_map.get(instrument.symbol)
             price = _fmt_num(quote["price"], 2) if quote else "—"
@@ -222,8 +231,8 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
             change_20d = (indicator_map.get(instrument.symbol) or {}).get("change_20d")
             change_20d_text = f"{change_20d:+.2f}%" if change_20d is not None else "—"
             lines.append(
-                f"- **{instrument.name}（{instrument.symbol}）**：{price}（{change}）；"
-                f"20 日 {change_20d_text}；{item.group or '未分组'}"
+                f"| {_md_cell(instrument.name)} | {_md_cell(instrument.symbol)} | {price} "
+                f"| {change} | {change_20d_text} | {_md_cell(item.group or '未分组')} |"
             )
         lines.append("")
 

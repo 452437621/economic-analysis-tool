@@ -44,6 +44,8 @@ def markdown_to_html(markdown: str) -> str:
         if re.match(r"^#{1,3} ", line):
             level = len(line) - len(line.lstrip("#"))
             html_parts.append(f"<h{level + 1}>{_inline(line[level + 1:])}</h{level + 1}>")
+        elif line.startswith("> "):
+            html_parts.append(f'<div class="mainline">{_inline(line[2:])}</div>')
         elif line.startswith("- "):
             html_parts.append(f"<li>{_inline(line[2:])}</li>")
         elif line.strip() == "":

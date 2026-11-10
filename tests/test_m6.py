@@ -104,3 +104,4 @@ def test_markdown_render_escapes_html():
     assert "<h3>标题</h3>" in html
     assert "&lt;script&gt;" in html
     assert "<table>" in html
+    assert 'class="mainline"' in markdown_to_html("> **一句话主线：** 测试")
