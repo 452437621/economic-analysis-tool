@@ -486,6 +486,23 @@ class WatchItem(Base, TimestampMixin):
     note: Mapped[str | None] = mapped_column(Text)
 
 
+class MemberPosition(Base):
+    __tablename__ = "member_positions"
+    __table_args__ = (
+        UniqueConstraint("trade_date", "product", "side", "rank", name="uq_member_pos"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    product: Mapped[str] = mapped_column(String(20), nullable=False)
+    name: Mapped[str] = mapped_column(String(40), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    member: Mapped[str] = mapped_column(String(80), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    change: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class EconomicEvent(Base):
     __tablename__ = "economic_events"
     __table_args__ = (UniqueConstraint("ts_utc", "name", name="uq_event_ts_name"),)

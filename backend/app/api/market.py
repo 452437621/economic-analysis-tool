@@ -16,6 +16,7 @@ from app.models.core import (
     MacroObs,
     MacroSeries,
     MarketBar,
+    MemberPosition,
     PositionSnapshot,
     Quote,
     Source,
@@ -191,6 +192,44 @@ def positions(session: Session = Depends(get_session)) -> dict:
                 "net_ratio": row.net_ratio,
                 "long_chg": row.long_chg,
                 "short_chg": row.short_chg,
+            }
+            for row in rows
+        ],
+    }
+
+
+@router.get("/positions/members")
+def position_members(
+    product: str = Query(..., min_length=1, max_length=20),
+    limit: int = Query(20, ge=1, le=20),
+    session: Session = Depends(get_session),
+) -> dict:
+    code = product.strip().lower()
+    latest_date = session.scalar(
+        select(func.max(MemberPosition.trade_date)).where(MemberPosition.product == code)
+    )
+    if latest_date is None:
+        return {"product": code, "trade_date": None, "data": []}
+    rows = session.scalars(
+        select(MemberPosition)
+        .where(
+            MemberPosition.product == code,
+            MemberPosition.trade_date == latest_date,
+            MemberPosition.rank <= limit,
+        )
+        .order_by(MemberPosition.side.asc(), MemberPosition.rank.asc())
+    ).all()
+    return {
+        "product": code,
+        "trade_date": latest_date.isoformat(),
+        "data": [
+            {
+                "name": row.name,
+                "side": row.side,
+                "rank": row.rank,
+                "member": row.member,
+                "position": row.position,
+                "change": row.change,
             }
             for row in rows
         ],

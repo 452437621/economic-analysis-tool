@@ -45,6 +45,7 @@ STATIC_GETS = [
     "/api/events?limit=5",
     "/api/calendar?days=7&limit=10",
     "/api/positions",
+    "/api/positions/members?product=au&limit=20",
 ]
 
 

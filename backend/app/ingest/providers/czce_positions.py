@@ -42,6 +42,7 @@ def parse_rows(rows: list[tuple]) -> list[dict]:
             continue
         if first == "名次" and current:
             longs, shorts, long_chg, short_chg = [], [], [], []
+            members: list[dict] = []
             cursor = index + 1
             while cursor < len(rows):
                 data = rows[cursor]
@@ -51,10 +52,33 @@ def parse_rows(rows: list[tuple]) -> list[dict]:
                     break
                 if rank < 1 or rank > 20:
                     break
-                longs.append(_int(data[5]))
-                long_chg.append(_int(data[6]))
-                shorts.append(_int(data[8]))
-                short_chg.append(_int(data[9]))
+                if len(data) < 10:
+                    cursor += 1
+                    continue
+                long_value, long_change = _int(data[5]), _int(data[6])
+                short_value, short_change = _int(data[8]), _int(data[9])
+                longs.append(long_value)
+                long_chg.append(long_change)
+                shorts.append(short_value)
+                short_chg.append(short_change)
+                members.append(
+                    {
+                        "side": "long",
+                        "rank": rank,
+                        "member": str(data[4]).strip(),
+                        "position": long_value,
+                        "change": long_change,
+                    }
+                )
+                members.append(
+                    {
+                        "side": "short",
+                        "rank": rank,
+                        "member": str(data[7]).strip(),
+                        "position": short_value,
+                        "change": short_change,
+                    }
+                )
                 cursor += 1
             if longs:
                 total = sum(longs) + sum(shorts)
@@ -68,6 +92,7 @@ def parse_rows(rows: list[tuple]) -> list[dict]:
                         "net_ratio": round((sum(longs) - sum(shorts)) / total, 4) if total else None,
                         "long_chg": sum(long_chg),
                         "short_chg": sum(short_chg),
+                        "members": members,
                     }
                 )
             index = cursor

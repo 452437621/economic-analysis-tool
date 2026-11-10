@@ -42,6 +42,7 @@ def parse_tables(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
     long_sum = short_sum = 0
     long_chg = short_chg = 0
+    members: list[dict] = []
     for table in soup.find_all("table"):
         rows = table.find_all("tr")
         if not rows:
@@ -57,6 +58,7 @@ def parse_tables(html: str) -> dict:
             if len(cells) < 4 or cells[0] == "合计":
                 continue
             try:
+                rank = int(cells[0])
                 value = int(cells[2].replace(",", ""))
                 change = int(cells[3].replace(",", ""))
             except ValueError:
@@ -67,11 +69,21 @@ def parse_tables(html: str) -> dict:
             else:
                 short_sum += value
                 short_chg += change
+            members.append(
+                {
+                    "side": "long" if is_long else "short",
+                    "rank": rank,
+                    "member": cells[1],
+                    "position": value,
+                    "change": change,
+                }
+            )
     return {
         "long_pos": long_sum,
         "short_pos": short_sum,
         "long_chg": long_chg,
         "short_chg": short_chg,
+        "members": members,
     }
 
 

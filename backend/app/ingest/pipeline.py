@@ -50,6 +50,7 @@ from app.models.core import (
     MacroObs,
     MacroSeries,
     MarketBar,
+    MemberPosition,
     PositionSnapshot,
     Quote as QuoteRow,
 )
@@ -476,6 +477,27 @@ def collect_positions() -> dict:
                     existing.net_ratio = item["net_ratio"]
                     existing.long_chg = item["long_chg"]
                     existing.short_chg = item["short_chg"]
+                    session.execute(
+                        delete(MemberPosition).where(
+                            MemberPosition.trade_date == report_date,
+                            MemberPosition.product == item["product"],
+                        )
+                    )
+                    for member in item.get("members") or []:
+                        if not member.get("member") or not member.get("rank"):
+                            continue
+                        session.add(
+                            MemberPosition(
+                                trade_date=report_date,
+                                product=item["product"],
+                                name=item["name"],
+                                side=member["side"],
+                                rank=int(member["rank"]),
+                                member=str(member["member"]),
+                                position=int(member.get("position") or 0),
+                                change=int(member.get("change") or 0),
+                            )
+                        )
                 session.commit()
                 stats["products"] += len(rows)
                 date_str = report_date.isoformat()

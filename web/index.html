@@ -374,12 +374,35 @@
     </section>
 
     <section>
-      <h2>持仓结构 <span class="hint">上期所会员多空持仓（日频，净持仓 = 多 − 空）</span></h2>
+      <h2>持仓结构 <span class="hint">上期所/郑商所/大商所会员多空持仓（日频，净持仓 = 多 − 空）</span></h2>
       <table>
         <thead><tr><th>品种</th><th>多头持仓</th><th>空头持仓</th><th>净持仓</th><th>净占比</th><th>多头变化</th><th>空头变化</th></tr></thead>
         <tbody id="positions"><tr><td colspan="7">加载中…</td></tr></tbody>
       </table>
       <div class="mini" id="positions-note"></div>
+      <div class="panel" style="margin-top: 14px;">
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <h3 style="margin: 0;">会员持仓明细（Top 20）</h3>
+          <select id="position-product" class="watch-input" onchange="loadPositionMembers()"></select>
+          <span class="hint" id="position-members-meta"></span>
+        </div>
+        <div class="grid two-col" style="margin-top: 10px;">
+          <div>
+            <h3>多头持仓</h3>
+            <table>
+              <thead><tr><th>排名</th><th>会员</th><th>持仓</th><th>增减</th></tr></thead>
+              <tbody id="position-long"><tr><td colspan="4">加载中…</td></tr></tbody>
+            </table>
+          </div>
+          <div>
+            <h3>空头持仓</h3>
+            <table>
+              <thead><tr><th>排名</th><th>会员</th><th>持仓</th><th>增减</th></tr></thead>
+              <tbody id="position-short"><tr><td colspan="4">加载中…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section>
@@ -1000,10 +1023,46 @@
           <td class="num">${fmtNum(row.short_chg, 0)}</td></tr>`).join("")
           || '<tr><td colspan="7">暂无持仓数据，等待 collect_positions 任务。</td></tr>';
         $("positions-note").textContent = payload.trade_date
-          ? `数据日期 ${payload.trade_date}；来源上期所持仓排名（会员合计），净占比 = (多−空)/(多+空)。`
+          ? `数据日期 ${payload.trade_date}；来源上期所/郑商所/大商所会员持仓排名（会员合计），净占比 = (多−空)/(多+空)。`
           : "";
+        const select = $("position-product");
+        const current = select.value;
+        select.innerHTML = rows.map((row) =>
+          `<option value="${esc(row.product)}">${esc(row.name)}（${esc(row.product.toUpperCase())}）</option>`
+        ).join("");
+        if (current && rows.some((row) => row.product === current)) select.value = current;
+        loadPositionMembers();
       } catch (err) {
         $("positions").innerHTML = `<tr><td colspan="7" class="err">${esc(err.message)}</td></tr>`;
+      }
+    }
+
+    function positionMemberRows(rows) {
+      return rows.map((row) => `
+        <tr><td class="num">${row.rank}</td>
+        <td>${esc(row.member)}</td>
+        <td class="num">${fmtNum(row.position, 0)}</td>
+        <td class="num ${row.change >= 0 ? "up" : "down"}">${fmtNum(row.change, 0)}</td></tr>`).join("");
+    }
+
+    async function loadPositionMembers() {
+      const product = $("position-product").value;
+      if (!product) return;
+      try {
+        const payload = await getJSON(`/api/positions/members?product=${encodeURIComponent(product)}&limit=20`);
+        const rows = payload.data || [];
+        const longs = rows.filter((row) => row.side === "long");
+        const shorts = rows.filter((row) => row.side === "short");
+        $("position-long").innerHTML = positionMemberRows(longs)
+          || '<tr><td colspan="4">暂无多头明细</td></tr>';
+        $("position-short").innerHTML = positionMemberRows(shorts)
+          || '<tr><td colspan="4">暂无空头明细</td></tr>';
+        $("position-members-meta").textContent = payload.trade_date
+          ? `数据日期 ${payload.trade_date} · 会员简称来自交易所排名表`
+          : "暂无该品种会员明细";
+      } catch (err) {
+        $("position-long").innerHTML = `<tr><td colspan="4" class="err">${esc(err.message)}</td></tr>`;
+        $("position-short").innerHTML = "";
       }
     }
 

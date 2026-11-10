@@ -30,6 +30,11 @@ def test_aggregate_positions_uses_dominant_contract_top20():
     assert copper["net_ratio"] == round(12 / 78, 4)
     assert copper["long_chg"] == -1
     assert copper["short_chg"] == 2
+    assert any(
+        member["side"] == "long" and member["rank"] == 1 and member["position"] == 40
+        for member in copper["members"]
+    )
+    assert len(copper["members"]) == 4
     gold = next(row for row in rows if row["product"] == "au")
     assert gold["net_pos"] == -30
 

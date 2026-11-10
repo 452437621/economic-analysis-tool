@@ -36,6 +36,7 @@ from app.models.core import (
     SourceHealth,
     Thesis,
     ThesisEvidence,
+    MemberPosition,
     TradePlan,
     WatchItem,
 )
@@ -78,6 +79,7 @@ __all__ = [
     "SourceHealth",
     "Thesis",
     "ThesisEvidence",
+    "MemberPosition",
     "TradePlan",
     "WatchItem",
 ]

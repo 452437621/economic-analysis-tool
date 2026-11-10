@@ -59,6 +59,29 @@ def _aggregate(rows: list[dict]) -> list[dict]:
         long_pos = sum(int(row.get("CJ2") or 0) for row in ranked)
         short_pos = sum(int(row.get("CJ3") or 0) for row in ranked)
         total = long_pos + short_pos
+        members = []
+        for row in ranked:
+            rank = int(row.get("RANK") or 0)
+            long_member = str(row.get("PARTICIPANTABBR2") or f"会员{rank}").strip()
+            short_member = str(row.get("PARTICIPANTABBR3") or f"会员{rank}").strip()
+            members.append(
+                {
+                    "side": "long",
+                    "rank": rank,
+                    "member": long_member,
+                    "position": int(row.get("CJ2") or 0),
+                    "change": int(row.get("CJ2_CHG") or 0),
+                }
+            )
+            members.append(
+                {
+                    "side": "short",
+                    "rank": rank,
+                    "member": short_member,
+                    "position": int(row.get("CJ3") or 0),
+                    "change": int(row.get("CJ3_CHG") or 0),
+                }
+            )
         result.append(
             {
                 "product": product,
@@ -70,6 +93,7 @@ def _aggregate(rows: list[dict]) -> list[dict]:
                 "net_ratio": round((long_pos - short_pos) / total, 4) if total else None,
                 "long_chg": sum(int(row.get("CJ2_CHG") or 0) for row in ranked),
                 "short_chg": sum(int(row.get("CJ3_CHG") or 0) for row in ranked),
+                "members": members,
             }
         )
     result.sort(key=lambda item: item["net_ratio"] if item["net_ratio"] is not None else 0, reverse=True)

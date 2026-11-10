@@ -33,3 +33,5 @@ def test_parse_tables_sums_ranked_positions():
     assert parsed["short_pos"] == 5663
     assert parsed["long_chg"] == -2597
     assert parsed["short_chg"] == -1224
+    assert len(parsed["members"]) == 4
+    assert {member["side"] for member in parsed["members"]} == {"long", "short"}
