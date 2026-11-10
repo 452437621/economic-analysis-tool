@@ -8,15 +8,22 @@ ROOT = Path(__file__).resolve().parents[1]
 HTML = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
 
 
-def test_theme_selector_and_palettes_exist():
-    assert 'id="theme-select"' in HTML
-    assert 'data-theme="light"' in HTML
-    assert 'data-theme="sepia"' in HTML
-    assert 'value="auto"' in HTML
+def test_settings_button_and_palettes_exist():
+    assert 'id="settings-btn"' in HTML
+    assert 'id="settings-modal"' in HTML
+    assert 'data-theme-mode="dark"' in HTML
+    assert 'data-theme-mode="light"' in HTML
+    assert 'data-theme-mode="sepia"' in HTML
+    assert 'data-theme-mode="auto"' in HTML
+    assert 'data-updown-mode="red"' in HTML
+    assert 'data-updown-mode="green"' in HTML
+    assert 'data-updown="red"' in HTML
 
 
-def test_theme_persistence_hooks():
+def test_theme_and_updown_persistence_hooks():
     assert "localStorage" in HTML
     assert "THEME_KEY" in HTML
+    assert "UPDOWN_KEY" in HTML
     assert "prefers-color-scheme" in HTML
-    assert "?theme=" not in HTML or "URLSearchParams" in HTML
+    assert "--up-color" in HTML
+    assert "--down-color" in HTML
