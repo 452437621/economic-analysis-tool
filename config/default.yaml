@@ -78,6 +78,7 @@ macro:
     - {code: JP30Y, name: 日本国债30年, unit: "%", freq: d, country: JP}
     - {code: DE2Y, name: 德国国债2年, unit: "%", freq: d, country: DE}
     - {code: DE10Y, name: 德国国债10年, unit: "%", freq: d, country: DE}
+    - {code: FR10Y, name: 法国国债10年（月度）, unit: "%", freq: m, country: FR}
     - {code: CN2Y, name: 中国国债2年, unit: "%", freq: d, country: CN}
     - {code: CN5Y, name: 中国国债5年, unit: "%", freq: d, country: CN}
     - {code: CN10Y, name: 中国国债10年, unit: "%", freq: d, country: CN}

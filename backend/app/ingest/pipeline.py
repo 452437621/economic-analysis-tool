@@ -113,6 +113,7 @@ MACRO_SERIES_META: dict[str, dict] = {
     "JP30Y": {"name": "日本国债30年", "unit": "%", "country": "JP"},
     "DE2Y": {"name": "德国国债2年", "unit": "%", "country": "DE"},
     "DE10Y": {"name": "德国国债10年", "unit": "%", "country": "DE"},
+    "FR10Y": {"name": "法国国债10年（月度）", "unit": "%", "country": "FR"},
     "CN2Y": {"name": "中国国债2年", "unit": "%", "country": "CN"},
     "CN5Y": {"name": "中国国债5年", "unit": "%", "country": "CN"},
     "CN10Y": {"name": "中国国债10年", "unit": "%", "country": "CN"},
@@ -387,6 +388,26 @@ def collect_rates() -> dict:
             logger.exception("ecb rates failed")
             store.record_health(session, ecb_source.id, ok=False, error=str(exc))
             stats["errors"].append(f"ecb: {exc}")
+
+        # France 10Y convergence rate (ECB IRS, monthly)
+        try:
+            curves = ecb.fetch_france_rates(client, start_year=current_year - 4)
+            for code, points in curves.items():
+                meta = MACRO_SERIES_META.get(code, {})
+                n = store.upsert_macro(
+                    session,
+                    code,
+                    points,
+                    source_id=ecb_source.id,
+                    name=meta.get("name"),
+                    unit=meta.get("unit"),
+                    country=meta.get("country"),
+                )
+                stats["points"] += n
+                stats["series"] += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("ecb france rates failed")
+            stats["errors"].append(f"ecb_fr: {exc}")
 
         # Eastmoney China (and US) treasury yields
         em_yield_source = store.get_source(session, **SOURCE_EM)

@@ -93,6 +93,52 @@ def _latest_macro(session: Session) -> list[dict]:
     return result
 
 
+RATE_ORDER = [
+    "SOFR",
+    "EFFR",
+    "SOFR_EFFR",
+    "US2Y",
+    "US5Y",
+    "US10Y",
+    "US30Y",
+    "US5Y_REAL",
+    "US10Y_REAL",
+    "US5Y_BE",
+    "US10Y_BE",
+    "CN2Y",
+    "CN5Y",
+    "CN10Y",
+    "CN30Y",
+    "CN10Y2Y",
+    "JP2Y",
+    "JP10Y",
+    "JP30Y",
+    "DE2Y",
+    "DE10Y",
+    "FR10Y",
+]
+COUNTRY_BY_CODE = {
+    "SOFR": "美国",
+    "EFFR": "美国",
+    "SOFR_EFFR": "美国",
+    "FR10Y": "法国",
+}
+COUNTRY_PREFIX = {"US": "美国", "CN": "中国", "JP": "日本", "DE": "德国", "FR": "法国"}
+
+
+def order_rate_rows(rows: list[dict]) -> list[dict]:
+    """Order rates by country (US→CN→JP→DE→FR→others) and maturity ascending."""
+    by_code = {row["code"]: row for row in rows}
+    ordered_codes = [code for code in RATE_ORDER if code in by_code]
+    ordered_codes += [code for code in by_code if code not in ordered_codes]
+    result = []
+    for code in ordered_codes:
+        row = dict(by_code[code])
+        row["country"] = COUNTRY_BY_CODE.get(code) or COUNTRY_PREFIX.get(code[:2], "其他")
+        result.append(row)
+    return result
+
+
 def _latest_news(session: Session, limit: int = 10) -> list[dict]:
     rows = session.execute(
         select(Document, Source)
@@ -247,12 +293,12 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
         )
     lines.append("")
 
-    lines.append("## 3. 美债利率与流动性")
-    lines.append("| 序列 | 最新 | 时点 |")
-    lines.append("|---|---|---|")
-    for row in macro:
+    lines.append("## 3. 利率与流动性（按国家/期限排序）")
+    lines.append("| 国家 | 序列 | 最新 | 时点 |")
+    lines.append("|---|---|---|---|")
+    for row in order_rate_rows(macro):
         ts = row["ts"].astimezone().strftime("%m-%d")
-        lines.append(f"| {row['name']}（{row['code']}） | {row['value']:.2f}% | {ts} |")
+        lines.append(f"| {row['country']} | {row['name']}（{row['code']}） | {row['value']:.2f}% | {ts} |")
     lines.append("")
 
     lines.append("## 4. 会员持仓（Top20，净持仓 = 多 − 空）")

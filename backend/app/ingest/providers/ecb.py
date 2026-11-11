@@ -14,6 +14,38 @@ logger = logging.getLogger(__name__)
 
 BASE = "https://data-api.ecb.europa.eu/service/data/YC/B.U2.EUR.4F.G_N_A.SV_C_YM.{series}"
 SERIES = {"DE2Y": "SR_2Y", "DE10Y": "SR_10Y"}
+CONVERGENCE = {"FR10Y": "IRS/M.FR.L.L40.CI.0000.EUR.N.Z"}
+
+
+def fetch_france_rates(client: HttpClient, start_year: int | None = None) -> dict[str, list[MacroPoint]]:
+    """France 10Y convergence rate (monthly, ECB IRS dataset)."""
+    start_year = start_year or (datetime.now().year - 4)
+    out: dict[str, list[MacroPoint]] = {}
+    for code, path in CONVERGENCE.items():
+        url = f"https://data-api.ecb.europa.eu/service/data/{path}"
+        resp = client.get(url, params={"format": "csvdata", "startPeriod": f"{start_year}-01"})
+        resp.raise_for_status()
+        text = resp.content.decode("utf-8", errors="replace")
+        points: list[MacroPoint] = []
+        for row in csv.DictReader(io.StringIO(text)):
+            period = (row.get("TIME_PERIOD") or "").strip()
+            value = (row.get("OBS_VALUE") or "").strip()
+            if not period or not value:
+                continue
+            try:
+                parsed = datetime.strptime(period, "%Y-%m").date()
+                points.append(
+                    MacroPoint(
+                        code=code,
+                        ts=datetime.combine(parsed, time.min, tzinfo=timezone.utc),
+                        value=float(value),
+                    )
+                )
+            except ValueError:
+                continue
+        out[code] = points
+    logger.info("ecb france rates: %s", {code: len(points) for code, points in out.items()})
+    return out
 
 
 def fetch_rates(client: HttpClient, start_year: int | None = None) -> dict[str, list[MacroPoint]]:
