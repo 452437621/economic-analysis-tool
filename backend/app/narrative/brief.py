@@ -277,19 +277,19 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
             change_20d = (indicator_map.get(instrument.symbol) or {}).get("change_20d")
             change_20d_text = f"{change_20d:+.2f}%" if change_20d is not None else "—"
             lines.append(
-                f"| **{_md_cell(instrument.name)}** | **{_md_cell(instrument.symbol)}** | {price} "
+                f"| **{_md_cell(instrument.name)}** | {_md_cell(instrument.symbol)} | {price} "
                 f"| {change} | {change_20d_text} | {_md_cell(item.group or '未分组')} |"
             )
         lines.append("")
 
     lines.append("## 2. 市场快照（按波动排序，Top 5）")
-    lines.append("| 品种 | 名称 | 最新 | 涨跌幅 | 数据源 | 时点 |")
+    lines.append("| 品种 | 代码 | 最新 | 涨跌幅 | 数据源 | 时点 |")
     lines.append("|---|---|---|---|---|---|")
     for row in top:
         ts = row["ts"].astimezone().strftime("%m-%d %H:%M")
         pct = "—" if row["change_pct"] is None else f"{row['change_pct']:+.2f}%"
         lines.append(
-            f"| **{row['symbol']}** | **{row['name']}** | {_fmt_num(row['price'], 2)} | {pct} | {row['source'] or '—'} | {ts} |"
+            f"| **{row['name']}** | {row['symbol']} | {_fmt_num(row['price'], 2)} | {pct} | {row['source'] or '—'} | {ts} |"
         )
     lines.append("")
 

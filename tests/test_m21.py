@@ -17,6 +17,7 @@ def test_brief_mainline_drivers_and_watchlist_are_tables():
     assert "| 动力 | 方向 | 强度 | 证据 |" in markdown
     assert "### 重点关注（自选）" in markdown or "### 重点关注" in markdown
     assert "| 品种 | 代码 | 最新 | 涨跌 | 20日 | 分组 |" in markdown
+    assert "| 品种 | 代码 | 最新 | 涨跌幅 | 数据源 | 时点 |" in markdown
 
 
 def test_rate_rows_order_by_country_and_maturity():
