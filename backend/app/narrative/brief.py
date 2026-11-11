@@ -148,7 +148,7 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
     lines.append("## 0. 一句话主线")
     if top:
         direction = "上涨" if (top[0]["change_pct"] or 0) >= 0 else "下跌"
-        mainline = f"{top[0]['name']} {direction} {abs(top[0]['change_pct']):.2f}% 领跑波动"
+        mainline = f"**{top[0]['name']}** {direction} {abs(top[0]['change_pct']):.2f}% 领跑波动"
         if us10y:
             mainline += f"；10Y 美债 {us10y['value']:.2f}%"
         if real10y:
@@ -203,7 +203,7 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
     if driver_list:
         for driver in driver_list:
             lines.append(
-                f"| {_md_cell(driver['name'])} | {_md_cell(driver['direction'])} "
+                f"| **{_md_cell(driver['name'])}** | {_md_cell(driver['direction'])} "
                 f"| {driver['strength']:.0%} | {_md_cell(driver['evidence'])} |"
             )
     else:
@@ -231,7 +231,7 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
             change_20d = (indicator_map.get(instrument.symbol) or {}).get("change_20d")
             change_20d_text = f"{change_20d:+.2f}%" if change_20d is not None else "—"
             lines.append(
-                f"| {_md_cell(instrument.name)} | {_md_cell(instrument.symbol)} | {price} "
+                f"| **{_md_cell(instrument.name)}** | **{_md_cell(instrument.symbol)}** | {price} "
                 f"| {change} | {change_20d_text} | {_md_cell(item.group or '未分组')} |"
             )
         lines.append("")
@@ -243,7 +243,7 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
         ts = row["ts"].astimezone().strftime("%m-%d %H:%M")
         pct = "—" if row["change_pct"] is None else f"{row['change_pct']:+.2f}%"
         lines.append(
-            f"| {row['symbol']} | {row['name']} | {_fmt_num(row['price'], 2)} | {pct} | {row['source'] or '—'} | {ts} |"
+            f"| **{row['symbol']}** | **{row['name']}** | {_fmt_num(row['price'], 2)} | {pct} | {row['source'] or '—'} | {ts} |"
         )
     lines.append("")
 

@@ -187,6 +187,8 @@ th, td {{ border: 1px solid #ccc; padding: 6px 8px; font-size: 13px; text-align:
 th {{ background: #f2f2f2; }}
 .mainline {{ font-size: 18px; font-weight: 700; line-height: 1.6; background: #f7f7f7;
   border-left: 4px solid #0b6fb3; padding: 10px 14px; margin: 8px 0 14px; }}
+.up {{ color: #c0392b; }} .down {{ color: #2e8b57; }}
+b {{ color: #0b5f94; }}
 code {{ background: #f4f4f4; padding: 1px 4px; border-radius: 3px; }}
 @media print {{ body {{ margin: 0; }} }}
 </style></head>

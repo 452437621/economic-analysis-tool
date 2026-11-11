@@ -11,12 +11,28 @@ import re
 
 _BOLD = re.compile(r"\*\*(.+?)\*\*")
 _CODE = re.compile(r"`([^`]+)`")
+_PCT = re.compile(r"([+-]\d+(?:\.\d+)?%)")
+_WORD_PCT = re.compile(r"(上涨|下跌)\s*(\d+(?:\.\d+)?%)")
 
 
 def _inline(text: str) -> str:
     escaped = html.escape(text)
     escaped = _BOLD.sub(r"<b>\1</b>", escaped)
     escaped = _CODE.sub(r"<code>\1</code>", escaped)
+    escaped = _PCT.sub(
+        lambda match: (
+            f'<span class="{"up" if float(match.group(1)[:-1]) > 0 else "down"}">'
+            f"{match.group(1)}</span>"
+        ),
+        escaped,
+    )
+    escaped = _WORD_PCT.sub(
+        lambda match: (
+            f'{match.group(1)} <span class="{"up" if match.group(1) == "上涨" else "down"}">'
+            f"{match.group(2)}</span>"
+        ),
+        escaped,
+    )
     return escaped
 
 

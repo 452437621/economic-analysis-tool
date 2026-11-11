@@ -142,6 +142,10 @@
       border-left: 4px solid var(--accent); background: var(--panel-2); padding: 10px 14px;
       margin: 4px 0 14px; border-radius: 6px; }
     .brief .brief-mainline b { color: var(--accent); }
+    .brief b { color: var(--accent); }
+    .brief-modal-panel { width: min(1100px, 100%); }
+    .brief-modal-body { max-height: calc(84vh - 82px); overflow: auto; }
+    .brief-modal-body .brief { font-size: 13px; }
     .brief-table { width: 100%; margin: 6px 0 10px; border-collapse: collapse; font-size: 12px; }
     .brief-table th, .brief-table td { padding: 4px 8px; border-bottom: 1px solid var(--line); }
     .brief-table th { color: var(--muted); font-weight: 600; }
@@ -288,16 +292,13 @@
     </section>
 
     <section>
-      <h2>简报 <span class="hint" id="brief-meta"></span>
-        <span style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
-          <button class="modal-close" onclick="loadBrief()">日常</button>
-          <button class="modal-close" onclick="loadBrief('weekly')">周报</button>
-          <button class="modal-close" onclick="loadBrief('monthly')">月报</button>
-          <a id="brief-print" class="hint" href="#" target="_blank" style="color: var(--accent);">打印 / PDF</a>
-          <a id="brief-export" class="hint" href="#" download style="color: var(--accent);">导出 Markdown</a>
-        </span>
-      </h2>
-      <div class="brief" id="brief">加载中…</div>
+      <h2>简报 <span class="hint" id="brief-meta">日报 / 周报 / 月报 · 弹框查看</span></h2>
+      <div class="panel" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <button class="option-button" onclick="openBrief('daily')">日报</button>
+        <button class="option-button" onclick="openBrief('weekly')">周报</button>
+        <button class="option-button" onclick="openBrief('monthly')">月报</button>
+        <span class="hint">点击按钮弹框查看；支持打印/PDF、导出 Markdown。</span>
+      </div>
     </section>
 
     <section>
@@ -538,6 +539,25 @@
           </div>
           <div class="mini" style="margin-top: 8px;">影响价格、涨跌幅与变化值；不影响告警级别与状态徽标。</div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="brief-modal" onclick="if (event.target === this) closeBrief()">
+    <div class="modal-panel brief-modal-panel">
+      <div class="modal-head">
+        <div>
+          <h3 id="brief-modal-title">日报</h3>
+          <div class="hint" id="brief-modal-meta"></div>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center; margin-left: auto; flex-wrap: wrap;">
+          <a id="brief-print" class="hint" href="#" target="_blank" style="color: var(--accent);">打印 / PDF</a>
+          <a id="brief-export" class="hint" href="#" download style="color: var(--accent);">导出 Markdown</a>
+          <button class="modal-close" onclick="closeBrief()">✕</button>
+        </div>
+      </div>
+      <div class="modal-body brief-modal-body">
+        <div class="brief" id="brief">加载中…</div>
       </div>
     </div>
   </div>
@@ -818,19 +838,34 @@
       }
     }
 
-    async function loadBrief(kind) {
+    function closeBrief() {
+      $("brief-modal").classList.remove("open");
+    }
+
+    async function openBrief(kind = "daily") {
+      const titles = { daily: "日报", weekly: "周报", monthly: "月报" };
+      const title = titles[kind] || "日报";
+      $("settings-modal").classList.remove("open");
+      $("history-modal").classList.remove("open");
+      $("brief-modal").classList.add("open");
+      $("brief-modal-title").textContent = title;
+      $("brief-modal-meta").textContent = "加载中…";
+      $("brief").innerHTML = '<div class="placeholder">加载中…</div>';
       try {
-        const query = kind ? `?kind=${encodeURIComponent(kind)}` : "";
+        const query = kind === "daily" ? "" : `?kind=${encodeURIComponent(kind)}`;
         const payload = await getJSON("/api/briefs/latest" + query);
         const brief = payload.data;
         if (!brief) {
-          $("brief").textContent = "暂无简报，等待 07:30 / 21:00 定时任务，或手动运行 brief_manual / weekly_review。";
+          $("brief").innerHTML = '<div class="placeholder">暂无简报，等待 07:30 / 21:00 定时任务，或手动运行 brief_manual / weekly_review。</div>';
+          $("brief-modal-meta").textContent = "暂无数据";
           return;
         }
-        $("brief-meta").textContent = `${brief.kind} · ${fmtTime(brief.created_at, true)}`;
+        $("brief-modal-meta").textContent = `${brief.trade_date} · ${fmtTime(brief.created_at, true)} · ${brief.kind}`;
+        $("brief-meta").textContent = `最新 ${title} · ${fmtTime(brief.created_at, true)}`;
         $("brief-export").href = `/api/briefs/${brief.id}/markdown`;
         $("brief-print").href = `/api/briefs/${brief.id}/print`;
-        $("brief").innerHTML = renderBriefMarkdown(brief.markdown);      } catch (err) {
+        $("brief").innerHTML = renderBriefMarkdown(brief.markdown);
+      } catch (err) {
         $("brief").innerHTML = `<span class="err">${esc(err.message)}</span>`;
       }
     }
@@ -840,6 +875,15 @@
       html = html.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
       html = html.replace(/`\[D:([0-9a-f]{32})\]`/g, (_, id) =>
         `<a href="#" onclick="openDoc('${id}');return false;">[证据]</a>`);
+      html = html.replace(/([+-]\d+(?:\.\d+)?%)/g, (match) => {
+        const value = Number(match.replace("%", ""));
+        const cls = value > 0 ? "up" : value < 0 ? "down" : "flat";
+        return `<span class="${cls}">${match}</span>`;
+      });
+      html = html.replace(/(上涨|下跌)\s*(\d+(?:\.\d+)?%)/g, (match, word, pct) => {
+        const cls = word === "上涨" ? "up" : "down";
+        return `${word} <span class="${cls}">${pct}</span>`;
+      });
       return html;
     }
 
@@ -1624,12 +1668,14 @@
     tick();
     initSectionNav();
     initHistoryRanges();
-    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadBrief(); loadAnalytics(); loadDecisions(); loadTheses(); loadAlerts(); loadQuality(); loadJournal(); loadCalendar(); loadPositions(); loadEvents(); loadAcceptance(); loadWatchlist(); loadWatchCandidates();
+    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadAnalytics(); loadDecisions(); loadTheses(); loadAlerts(); loadQuality(); loadJournal(); loadCalendar(); loadPositions(); loadEvents(); loadAcceptance(); loadWatchlist(); loadWatchCandidates();
+    const briefParam = new URLSearchParams(location.search).get("brief");
+    if (briefParam) setTimeout(() => openBrief(briefParam), 800);
     const docParam = new URLSearchParams(location.search).get("doc");
     if (docParam) openDoc(docParam);
     setInterval(tick, 1000);
     setInterval(() => { loadHealth(); loadQuotes(); loadJobs(); }, 15000);
-    setInterval(() => { loadMacro(); loadNews(); loadSources(); loadBrief(); }, 60000);
+    setInterval(() => { loadMacro(); loadNews(); loadSources(); }, 60000);
     setInterval(loadAnalytics, 120000);
     setInterval(loadDecisions, 60000);
     setInterval(loadTheses, 120000);

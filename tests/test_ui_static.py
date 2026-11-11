@@ -37,3 +37,14 @@ def test_snapshot_split_and_te_category_order():
     assert '"XAUUSD", "GC", "AU", "SI", "AG", "HG", "CU", "I"' in HTML
 
 
+def test_brief_modal_and_emphasis():
+    assert 'id="brief-modal"' in HTML
+    assert "openBrief('daily')" in HTML
+    assert "openBrief('weekly')" in HTML
+    assert "openBrief('monthly')" in HTML
+    assert "brief-mainline" in HTML
+    assert "inlineBrief" in HTML
+    assert 'class="up"' not in HTML or "--up-color" in HTML
+
+
+
