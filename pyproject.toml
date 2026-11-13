@@ -37,7 +37,9 @@ packages = ["app"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["backend"]
-addopts = "-p no:cacheprovider"
+# --basetemp keeps tmp_path inside the workspace (git-ignored under data/);
+# otherwise pytest may create pytest-of-<user>/ in the repo root on Windows.
+addopts = "-p no:cacheprovider --basetemp=data/test/tmp"
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
