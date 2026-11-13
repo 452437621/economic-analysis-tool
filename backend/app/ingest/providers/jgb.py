@@ -18,7 +18,7 @@ SERIES = {"JP2Y": 2, "JP10Y": 10, "JP30Y": 14}
 
 
 def fetch_rates(client: HttpClient, start_year: int | None = None) -> dict[str, list[MacroPoint]]:
-    start_year = start_year or (datetime.now().year - 4)
+    start_year = start_year or (datetime.now(timezone.utc).year - 4)
     resp = client.get(HIST_URL)
     resp.raise_for_status()
     text = resp.content.decode("utf-8", errors="replace")

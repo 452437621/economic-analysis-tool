@@ -13,7 +13,6 @@ from app.models.core import (
     DataCheck,
     JournalEntry,
     Outcome,
-    Prediction,
     Signal,
     TradePlan,
 )

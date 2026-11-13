@@ -76,3 +76,35 @@ def test_all_read_endpoints_do_not_500():
             if response.status_code >= 500:
                 failures.append((f"/api/theses/{theses[0]['id']}", response.status_code, ""))
     assert not failures, failures
+
+
+def test_write_endpoints_do_not_500():
+    """Mutating endpoints must answer with 2xx/4xx, never a server error."""
+    with TestClient(app) as client:
+        cases = [
+            ("post", "/api/journal", {"content": "smoke test journal entry"}),
+            ("post", "/api/alerts/does-not-exist/ack", None),
+            ("patch", "/api/theses/does-not-exist", {"posterior": 0.6}),
+            ("post", "/api/watchlist", {"symbol": "NOT_A_SYMBOL"}),
+            ("post", "/api/watchlist/reorder", {"symbols": ["NOT_A_SYMBOL"]}),
+            ("post", "/api/watchlist/NOT_A_SYMBOL/move", {"direction": "up"}),
+            ("delete", "/api/watchlist/NOT_A_SYMBOL", None),
+        ]
+        failures = []
+        for method, path, body in cases:
+            response = getattr(client, method)(path, json=body) if body is not None else getattr(client, method)(path)
+            if response.status_code >= 500:
+                failures.append((method.upper(), path, response.status_code, response.text[:120]))
+    assert not failures, failures
+
+
+def test_missing_resources_return_404():
+    with TestClient(app) as client:
+        assert client.get("/api/briefs/unknown-id").status_code == 404
+        assert client.get("/api/documents/unknown-id").status_code == 404
+        assert client.get("/api/theses/unknown-id").status_code == 404
+        assert client.get("/api/market/bars?symbol=NOPE&timeframe=1d").status_code == 404
+        assert client.get("/api/macro/series?code=NOPE").status_code == 404
+        assert client.get("/api/briefs/unknown-id/markdown").status_code == 404
+        assert client.get("/api/briefs/unknown-id/print").status_code == 404
+

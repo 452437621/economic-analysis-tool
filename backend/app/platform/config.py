@@ -8,6 +8,8 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app import __version__
+
 ROOT_DIR = Path(__file__).resolve().parents[3]
 
 
@@ -20,7 +22,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "EPIC"
-    app_version: str = "1.0.0-rc1"
+    app_version: str = __version__
     env: str = "local"
     host: str = "127.0.0.1"
     port: int = 8765

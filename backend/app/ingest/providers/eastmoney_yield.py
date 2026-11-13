@@ -22,7 +22,7 @@ FIELDS = {
 
 
 def fetch_rates(client: HttpClient, start_year: int | None = None) -> dict[str, list[MacroPoint]]:
-    start_year = start_year or (datetime.now().year - 4)
+    start_year = start_year or (datetime.now(timezone.utc).year - 4)
     resp = client.get(
         URL,
         params={

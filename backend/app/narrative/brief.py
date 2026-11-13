@@ -55,6 +55,18 @@ def _md_cell(value: object) -> str:
     return str(value).replace("|", "｜").replace("\n", " ").strip()
 
 
+def local_time(ts: datetime) -> datetime:
+    """Render a stored timestamp in local time.
+
+    SQLite returns naive datetimes that are **UTC**; calling ``astimezone()``
+    on them directly would treat them as local and shift the clock by the
+    timezone offset (8h in Asia/Shanghai).
+    """
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone()
+
+
 def _latest_quotes(session: Session) -> list[dict]:
     instruments = session.scalars(select(Instrument).where(Instrument.active.is_(True))).all()
     rows = session.scalars(select(Quote).order_by(Quote.ts_utc.desc()).limit(3000)).all()
@@ -286,7 +298,7 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
     lines.append("| 品种 | 代码 | 最新 | 涨跌幅 | 数据源 | 时点 |")
     lines.append("|---|---|---|---|---|---|")
     for row in top:
-        ts = row["ts"].astimezone().strftime("%m-%d %H:%M")
+        ts = local_time(row["ts"]).strftime("%m-%d %H:%M")
         pct = "—" if row["change_pct"] is None else f"{row['change_pct']:+.2f}%"
         lines.append(
             f"| **{row['name']}** | {row['symbol']} | {_fmt_num(row['price'], 2)} | {pct} | {row['source'] or '—'} | {ts} |"
@@ -297,7 +309,7 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
     lines.append("| 国家 | 序列 | 最新 | 时点 |")
     lines.append("|---|---|---|---|")
     for row in order_rate_rows(macro):
-        ts = row["ts"].astimezone().strftime("%m-%d")
+        ts = local_time(row["ts"]).strftime("%m-%d")
         lines.append(f"| {row['country']} | {row['name']}（{row['code']}） | {row['value']:.2f}% | {ts} |")
     lines.append("")
 

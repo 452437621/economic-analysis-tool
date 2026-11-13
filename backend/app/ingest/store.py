@@ -6,7 +6,6 @@ import hashlib
 import logging
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert

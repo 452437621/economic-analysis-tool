@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import datetime, timezone
 
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
@@ -37,26 +38,74 @@ def _create_engine():
 engine = _create_engine()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, class_=Session)
 
+LEGACY_ENABLE_JOBS = (
+    "collect_daily_bars",
+    "collect_rates",
+    "brief_premarket",
+    "brief_postmarket",
+)
+
+
+def _migration_applied(conn, name: str) -> bool:
+    conn.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS app_migrations ("
+            "name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)"
+        )
+    )
+    return conn.execute(text("SELECT 1 FROM app_migrations WHERE name = :n"), {"n": name}).first() is not None
+
+
+def _mark_migration(conn, name: str) -> None:
+    conn.execute(
+        text("INSERT OR IGNORE INTO app_migrations (name, applied_at) VALUES (:n, :t)"),
+        {"n": name, "t": datetime.now(timezone.utc).isoformat()},
+    )
+
+
+def _migrate_watchlist_sort_order(conn) -> None:
+    columns = {row[1] for row in conn.execute(text("PRAGMA table_info(watchlist)"))}
+    if not columns or "sort_order" in columns:
+        return
+    conn.execute(text("ALTER TABLE watchlist ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"))
+    rows = conn.execute(text("SELECT id FROM watchlist ORDER BY priority ASC, id ASC")).all()
+    for index, row in enumerate(rows):
+        conn.execute(
+            text("UPDATE watchlist SET sort_order = :order WHERE id = :id"),
+            {"order": index, "id": row[0]},
+        )
+
+
+def _migrate_enable_legacy_jobs(conn) -> None:
+    """Old seeds left scheduler jobs disabled while the scheduler ignored the flag.
+
+    Now that ``Job.enabled`` is authoritative, one-time enable those rows so a
+    fresh install and an upgraded install behave the same. Later operator
+    toggles are preserved because this migration only ever runs once.
+    """
+    placeholders = ", ".join(f":n{i}" for i in range(len(LEGACY_ENABLE_JOBS)))
+    params = {f"n{i}": name for i, name in enumerate(LEGACY_ENABLE_JOBS)}
+    conn.execute(
+        text(f"UPDATE jobs SET enabled = 1 WHERE enabled = 0 AND name IN ({placeholders})"), params
+    )
+
+
+MIGRATIONS = (
+    ("watchlist.sort_order", _migrate_watchlist_sort_order),
+    ("jobs.enable_legacy_scheduler_jobs", _migrate_enable_legacy_jobs),
+)
+
 
 def _ensure_light_migrations() -> None:
-    """Small additive migrations for SQLite (no Alembic in this single-user app)."""
+    """Small, idempotent, additive migrations (single-user app, no Alembic runtime)."""
     if not settings.db_url.startswith("sqlite"):
         return
     with engine.begin() as conn:
-        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(watchlist)"))}
-        if not columns or "sort_order" in columns:
-            return
-        conn.execute(
-            text("ALTER TABLE watchlist ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
-        )
-        rows = conn.execute(
-            text("SELECT id FROM watchlist ORDER BY priority ASC, id ASC")
-        ).all()
-        for index, row in enumerate(rows):
-            conn.execute(
-                text("UPDATE watchlist SET sort_order = :order WHERE id = :id"),
-                {"order": index, "id": row[0]},
-            )
+        for name, migration in MIGRATIONS:
+            if _migration_applied(conn, name):
+                continue
+            migration(conn)
+            _mark_migration(conn, name)
 
 
 def init_db() -> None:

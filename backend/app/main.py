@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
@@ -30,6 +29,10 @@ async def lifespan(app: FastAPI):
 
     seed_instruments()
     seed_jobs()
+    # A run interrupted by the previous process would otherwise stay 'running'.
+    from app.jobs.runner import reconcile_stale_runs
+
+    reconcile_stale_runs(all_jobs=True)
     start_scheduler()
     try:
         yield

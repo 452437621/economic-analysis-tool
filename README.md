@@ -34,7 +34,7 @@ powershell -File .\scripts\start.ps1
 
 ---
 
-## 已接入的数据（2026-11-09 实测）
+## 已接入的数据（2026-11-13 实测）
 
 | 数据 | 来源 | 覆盖 |
 |---|---|---|
@@ -89,8 +89,22 @@ powershell -File .\scripts\start.ps1
 | [11 M6 试运行清单](docs/11-M6试运行清单.md) | 每日/每周清单、周度校准表、两周出口标准 |
 | [12 异常恢复演练](docs/12-异常恢复演练.md) | 降级场景、恢复手册、演练证据与待补项 |
 | [13 交付清单](docs/13-交付清单.md) | 交付内容、验证证据、待用户事项、已知限制 |
+| [14 全量核验与缺陷修复](docs/14-全量核验与缺陷修复.md) | 目标完成度核验、代码扫描结论、缺陷修复、DevOps 流程 |
+| [CHANGELOG](CHANGELOG.md) | 版本变更记录与发布约定 |
 
 ---
+
+## 质量与 DevOps
+
+| 环节 | 命令 / 文件 | 内容 |
+|---|---|---|
+| 静态检查 | `scripts/lint.py` | 语法、AST 异味、未用导入、编码、前端 id/handler 接线、JS 语法、文档链接、版本一致性 |
+| 测试 | `pytest -q` | 104 条：解析器、数据管道、分析、决策、API 冒烟（含写接口与 404）、降级、DevOps |
+| 本地门禁 | `scripts/ci.ps1` | lint → pytest → 运行时 health/acceptance/quality，非 0 即失败 |
+| CI | `.github/workflows/ci.yml` | Python 3.11/3.12 矩阵 + 安装导入冒烟 |
+| 版本 | `backend/app/__init__.py` | 单一来源，`pyproject.toml` 与 `/api/system/health` 必须一致 |
+| 运维 | `backup.ps1` / `restore.ps1` | 完整性校验、保留 14 份、恢复前安全副本 + DryRun |
+| 自愈 | 启动时 `reconcile_stale_runs()` | 中断任务自动标记 `interrupted`，任务开关真正生效 |
 
 ## 架构一览
 

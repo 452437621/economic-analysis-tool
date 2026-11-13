@@ -85,33 +85,48 @@ def seed_instruments() -> int:
     return created
 
 
+JOBS_DEFAULT: dict[str, str] = {
+    "heartbeat": "every 60s",
+    "collect_quotes": "every 5m",
+    "collect_news": "every 3m",
+    "collect_news_slow": "08:15",
+    "collect_rates": "every 6h",
+    "collect_calendar": "every 6h",
+    "collect_positions": "15:45",
+    "collect_bodies": "every 10m",
+    "collect_daily_bars": "15:40 / 06:30",
+    "extract_claims": "every 15m",
+    "extract_events": "every 30m",
+    "extract_claims_llm": "every 20m (需 LLM Key)",
+    "check_data_quality": "15:50",
+    "analyze": "16:10",
+    "decide": "16:30",
+    "theses": "16:35",
+    "scan_alerts": "every 5m",
+    "score_predictions": "17:00",
+    "brief_premarket": "07:30",
+    "brief_postmarket": "21:00",
+    "weekly_review": "周日 10:00",
+    "monthly_review": "每月 1 日 10:00",
+    "brief_manual": "manual",
+}
+
+
 def seed_jobs() -> int:
-    """Seed built-in job definitions (idempotent)."""
-    defaults = [
-        {"name": "heartbeat", "cron": "every 60s"},
-        {"name": "collect_quotes", "cron": "every 60s (trading hours)"},
-        {"name": "collect_news", "cron": "every 3m"},
-        {"name": "collect_rates", "cron": "every 6h"},
-        {"name": "collect_daily_bars", "cron": "15:40 / 06:30"},
-        {"name": "brief_premarket", "cron": "07:30"},
-        {"name": "brief_postmarket", "cron": "21:00"},
-    ]
+    """Seed the full built-in job registry (idempotent; never overrides user flags)."""
     created = 0
     with SessionLocal() as session:
         legacy = session.scalar(select(Job).where(Job.name == "collect_market"))
         if legacy is not None:
             session.delete(legacy)
-        for item in defaults:
-            exists = session.scalar(select(Job).where(Job.name == item["name"]))
-            if exists:
+        for name, cron in JOBS_DEFAULT.items():
+            exists = session.scalar(select(Job).where(Job.name == name))
+            if exists is not None:
+                # Keep operator-toggled enabled flag; refresh stale/blank labels.
+                if not exists.cron or exists.cron == "manual" and name != "brief_manual":
+                    exists.cron = cron
                 continue
-            session.add(
-                Job(
-                    name=item["name"],
-                    cron=item["cron"],
-                    enabled=item["name"] in {"heartbeat", "collect_quotes", "collect_news"},
-                )
-            )
+            session.add(Job(name=name, cron=cron, enabled=True))
             created += 1
         session.commit()
     return created

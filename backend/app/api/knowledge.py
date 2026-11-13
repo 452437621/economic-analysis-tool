@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
@@ -240,7 +240,7 @@ def export_evidence(document_id: str, session: Session = Depends(get_session)) -
             }
             for claim in claims
         ],
-        "exported_at": datetime.now().isoformat(),
+        "exported_at": datetime.now(timezone.utc).isoformat(),
     }
     filename = f"epic-evidence-{document.id[:8]}.json"
     return JSONResponse(

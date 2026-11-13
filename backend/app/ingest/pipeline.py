@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, func, select
 
 from app.ingest import store
-from app.ingest.contracts import Bar, MacroPoint, Quote
+from app.ingest.contracts import Bar, Quote
 from app.ingest.http import HttpClient
 from app.ingest.providers import (
     czce,

@@ -19,7 +19,7 @@ CONVERGENCE = {"FR10Y": "IRS/M.FR.L.L40.CI.0000.EUR.N.Z"}
 
 def fetch_france_rates(client: HttpClient, start_year: int | None = None) -> dict[str, list[MacroPoint]]:
     """France 10Y convergence rate (monthly, ECB IRS dataset)."""
-    start_year = start_year or (datetime.now().year - 4)
+    start_year = start_year or (datetime.now(timezone.utc).year - 4)
     out: dict[str, list[MacroPoint]] = {}
     for code, path in CONVERGENCE.items():
         url = f"https://data-api.ecb.europa.eu/service/data/{path}"
@@ -49,7 +49,7 @@ def fetch_france_rates(client: HttpClient, start_year: int | None = None) -> dic
 
 
 def fetch_rates(client: HttpClient, start_year: int | None = None) -> dict[str, list[MacroPoint]]:
-    start_year = start_year or (datetime.now().year - 4)
+    start_year = start_year or (datetime.now(timezone.utc).year - 4)
     out: dict[str, list[MacroPoint]] = {}
     for code, series_id in SERIES.items():
         url = BASE.format(series=series_id)

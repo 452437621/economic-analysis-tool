@@ -43,11 +43,21 @@ async def heartbeat_job() -> None:
         logger.exception("heartbeat job failed")
 
 
+def _job_enabled(name: str) -> bool:
+    """Job.enabled is the operator switch; missing rows default to enabled."""
+    with SessionLocal() as session:
+        job = session.scalar(select(Job).where(Job.name == name))
+        return True if job is None else bool(job.enabled)
+
+
 def _collector(name: str):
     async def _run() -> None:
         from app.jobs.runner import run_job
 
         try:
+            if not await asyncio.to_thread(_job_enabled, name):
+                logger.info("scheduled job skipped (disabled): %s", name)
+                return
             await asyncio.to_thread(run_job, name)
         except Exception:  # pragma: no cover - defensive
             logger.exception("scheduled job failed: %s", name)

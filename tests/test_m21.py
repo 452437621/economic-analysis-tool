@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from app.init_db import seed_instruments, seed_watchlist
-from app.narrative.brief import build_markdown, order_rate_rows
+from app.narrative.brief import build_markdown, local_time, order_rate_rows
 from app.platform.db import SessionLocal, init_db
 
 
@@ -39,3 +41,12 @@ def test_rate_rows_order_by_country_and_maturity():
         "FR10Y",
     ]
     assert ordered[-1]["country"] == "法国"
+
+
+def test_local_time_treats_naive_db_values_as_utc():
+    naive_utc = datetime(2026, 11, 10, 14, 0)  # SQLite stores UTC without tzinfo
+    aware_utc = naive_utc.replace(tzinfo=timezone.utc)
+    assert local_time(naive_utc) == aware_utc.astimezone()
+    assert local_time(aware_utc) == aware_utc.astimezone()
+    # A naive value must not be mistaken for an already-local timestamp.
+    assert local_time(naive_utc).utcoffset() is not None

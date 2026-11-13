@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import statistics
 
 import pandas as pd

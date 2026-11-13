@@ -13,6 +13,7 @@ import json
 import logging
 import sys
 import time
+from datetime import timedelta
 
 from sqlalchemy import select
 
@@ -33,6 +34,10 @@ from app.platform.db import SessionLocal
 from app.platform.logging import setup_logging
 
 logger = logging.getLogger(__name__)
+
+# A CLI job killed by Ctrl+C / a restart leaves its row 'running'; after this
+# long we consider it abandoned and rewrite it as 'interrupted'.
+STALE_RUN_MINUTES = 90
 
 JOBS = {
     "collect_quotes": pipeline.collect_quotes,
@@ -60,9 +65,36 @@ JOBS = {
 }
 
 
+def reconcile_stale_runs(*, all_jobs: bool = False, stale_minutes: int = STALE_RUN_MINUTES) -> int:
+    """Mark abandoned 'running' rows as 'interrupted'.
+
+    Runs interrupted by a process restart (or a killed CLI job) never reach the
+    finalizer, so their rows would otherwise stay 'running' forever and make the
+    dashboard look like jobs are still executing.
+    """
+    with SessionLocal() as session:
+        stmt = select(JobRun).where(JobRun.status == "running")
+        if not all_jobs:
+            stmt = stmt.where(JobRun.started_at < utcnow() - timedelta(minutes=stale_minutes))
+        rows = session.scalars(stmt).all()
+        for row in rows:
+            row.status = "interrupted"
+            row.finished_at = utcnow()
+            row.detail = json.dumps(
+                {"error": "interrupted (process restart or forced stop)"}, ensure_ascii=False
+            )
+        if rows:
+            session.commit()
+            logger.warning("reconciled %s stale job runs", len(rows))
+    return len(rows)
+
+
 def run_job(name: str) -> dict:
     if name not in JOBS:
         raise KeyError(f"unknown job: {name}")
+
+    # A killed run of the same job must not overlap its replacement in the UI.
+    reconcile_stale_runs(stale_minutes=STALE_RUN_MINUTES)
 
     with SessionLocal() as session:
         job = session.scalar(select(Job).where(Job.name == name))
