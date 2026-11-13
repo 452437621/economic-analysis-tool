@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -53,3 +54,37 @@ def test_ci_workflow_is_valid_yaml():
 def test_scripts_expose_ci_entrypoints():
     for name in ("ci.ps1", "selfcheck.ps1", "lint.py", "backup.ps1", "restore.ps1"):
         assert (ROOT / "scripts" / name).exists(), name
+
+
+def test_windows_lifecycle_scripts():
+    """One-click start/stop/restart must exist, share helpers and document usage."""
+    scripts = ROOT / "scripts"
+    for name in ("start.ps1", "stop.ps1", "restart.ps1", "_common.ps1"):
+        path = scripts / name
+        assert path.exists(), name
+        assert path.read_bytes().startswith(b"\xef\xbb\xbf"), f"{name} needs a UTF-8 BOM for PowerShell 5.1"
+
+    start = (scripts / "start.ps1").read_text(encoding="utf-8-sig")
+    assert "Foreground" in start and "NoBrowser" in start
+    assert "app.serve" in start, "background start must launch the detached launcher"
+    assert "Win32_Process" in start, "background start must detach via WMI"
+
+    stop = (scripts / "stop.ps1").read_text(encoding="utf-8-sig")
+    assert "server_pid" in stop, "stop must prefer the real server PID"
+    assert "Force" in stop
+
+    assert (ROOT / "backend" / "app" / "serve.py").exists()
+
+
+def test_detached_launcher_module_runs():
+    result = subprocess.run(
+        [sys.executable, "-m", "app.serve", "--help"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+        cwd=ROOT / "backend",
+        env={**os.environ, "PYTHONPATH": str(ROOT / "backend")},
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--port" in result.stdout

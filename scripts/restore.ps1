@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$BackupDir = "",
   [switch]$Force,
   [switch]$DryRun

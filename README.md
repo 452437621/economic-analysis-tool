@@ -14,18 +14,39 @@
 # 1) 初始化（自动引导 Python 3.12、创建 .venv、安装依赖、建库、写入种子数据）
 powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
 
-# 2) 启动（后台会自动开始采集）
-powershell -File .\scripts\start.ps1
+# 2) 启动（后台运行，自动打开浏览器）
+powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
 ```
 
 浏览器打开 **http://127.0.0.1:8765**。
 
+### Windows 一键启动 / 停止
+
+| 操作 | 命令 | 说明 |
+|---|---|---|
+| 启动 | `.\scripts\start.ps1` | 后台运行，写 `data\run\epic.pid`，就绪后自动打开浏览器 |
+| 停止 | `.\scripts\stop.ps1` | 停止并释放端口，清理 PID 文件 |
+| 重启 | `.\scripts\restart.ps1` | 停止（若在运行）后重新启动 |
+| 前台运行 | `.\scripts\start.ps1 -Foreground` | 占用当前终端，Ctrl+C 停止 |
+| 调试热重载 | `.\scripts\start.ps1 -Reload` | 改代码自动重载（前台） |
+| 换端口 | `.\scripts\start.ps1 -Port 8766` | 也可在 `.env` 设 `EPIC_PORT` |
+| 不弹浏览器 | `.\scripts\start.ps1 -NoBrowser` | CI / 远程场景 |
+| 强制停止 | `.\scripts\stop.ps1 -Force` | 仅当确认占用端口的是本项目服务 |
+
+脚本行为要点：
+
+- 已在运行时再次 `start` 会直接提示并退出（幂等），不会起第二个实例。
+- 端口被其他程序占用时**拒绝启动**并打印占用进程，不会误杀。
+- 启动就绪判定 = `/healthz` 200 **且** 端口归属在本次进程树内，避免"假成功"。
+- 后台模式通过 WMI 脱离控制台/管道，脚本立即返回；日志写入 `data\logs\server.{out,err}.log`。
+- `stop` 优先杀真实服务进程（`server_pid`），失败再兜底 `taskkill /T /F`，并校验是本项目进程。
+- 所有 `.ps1` 均为 UTF-8 BOM，兼容 Windows PowerShell 5.1（中文不会乱码/解析失败）。
+
 - 首次启动 30 秒内完成行情/利率/新闻的自动回补与入库（约 4 万根日线、1.8 万条宏观观测、13 品种会员持仓）。
 - 手动跑任务：`.\.venv\Scripts\python.exe -m app.jobs.runner --list` / `--job collect_quotes` / `--job brief_manual` / `--all`
-- 生成简报：`--job brief_manual`，然后打开看板「每日简报」，或调用 `/api/briefs/latest`
+- 生成简报：`--job brief_manual`，然后打开看板「简报 → 日报」
 - 证据链：点击任意新闻 → 正文弹窗 + 数字断言高亮；也可用 `http://127.0.0.1:8765/?doc=<document_id>` 深链
-- 开发模式：`.\scripts\start.ps1 -Reload`
-- 自检：`powershell -ExecutionPolicy Bypass -File .\scripts\selfcheck.ps1`（测试 + 健康 + 验收 + 质检）
+- 自检：`powershell -ExecutionPolicy Bypass -File .\scripts\selfcheck.ps1`（lint + 测试 + 健康 + 验收 + 质检）
 - 验收：`powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1`（跑测试 + 14 项 DoD）
 - 备份：`.\scripts\backup.ps1` → `data/backup/<时间戳>/`
 - 测试：`.\.venv\Scripts\python.exe -m pytest -q`

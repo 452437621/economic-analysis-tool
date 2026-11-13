@@ -194,12 +194,48 @@ def check_env_example() -> None:
             warn(f"env: .env.example lacks {key}")
 
 
+def check_powershell() -> None:
+    """Windows scripts must be BOM-prefixed (5.1 misparses UTF-8 Chinese) and syntactically valid."""
+    scripts = sorted((ROOT / "scripts").glob("*.ps1"))
+    if not scripts:
+        return
+    for path in scripts:
+        data = path.read_bytes()
+        if not data.startswith(b"\xef\xbb\xbf") and any(byte > 0x7F for byte in data):
+            err(f"powershell: {path.name} contains non-ASCII text without UTF-8 BOM")
+
+    shell = shutil.which("powershell") or shutil.which("pwsh")
+    if not shell:
+        warn("powershell: no PowerShell interpreter found, syntax check skipped")
+        return
+    checker = ROOT / "scripts" / "_lint_ps.ps1"
+    result = subprocess.run(
+        [
+            shell,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(checker),
+            "-Files",
+            ",".join(str(path) for path in scripts),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    if result.returncode != 0:
+        err(f"powershell: syntax errors:\n{result.stdout.strip()[:600]}")
+
+
 CHECKS = (
     ("syntax", check_python_syntax),
     ("ast", check_ast_smells),
     ("imports", check_unused_imports),
     ("encoding", check_encoding),
     ("frontend", check_frontend),
+    ("powershell", check_powershell),
     ("docs", check_docs_links),
     ("version", check_version),
     ("env", check_env_example),

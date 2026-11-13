@@ -1,4 +1,4 @@
-param()
+﻿param()
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $venvPy = Join-Path $root ".venv\Scripts\python.exe"
