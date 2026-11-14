@@ -3,22 +3,34 @@ import { deleteJson, getJson, patchJson, postJson } from "./client";
 import type {
   Acceptance,
   AlertItem,
+  AlertListResponse,
   AnalyticsOverview,
   BarsResponse,
   Brief,
+  BriefKindsResponse,
+  BriefListResponse,
   BriefSummary,
   CalendarEvent,
+  CalendarPage,
+  CalendarQuery,
   DecisionsReview,
   DecisionsSummary,
   DocumentDetail,
   EventItem,
+  EventPage,
+  EventQuery,
   Health,
   JobRow,
   JournalEntry,
+  LatestBriefResponse,
   MacroLatestItem,
   MacroSeriesResponse,
   NewsItem,
+  NewsPage,
+  NewsQuery,
+  OverviewResponse,
   PositionMembersResponse,
+  PositionProductsResponse,
   PositionsResponse,
   QualityResponse,
   SnapshotResponse,
@@ -28,7 +40,9 @@ import type {
   TradePlan,
   WatchCandidate,
   WatchlistItem,
+  WatchPatch,
 } from "./types";
+
 
 /* 系统 */
 export const getHealth = () => getJson<Health>("/api/system/health");
@@ -36,6 +50,9 @@ export const getJobs = () => getJson<{ data: JobRow[] }>("/api/system/jobs");
 export const getSources = () => getJson<{ data: SourceHealth[] }>("/api/system/sources");
 export const getQuality = () => getJson<QualityResponse>("/api/system/data-quality");
 export const getAcceptance = () => getJson<Acceptance>("/api/system/acceptance");
+
+/* 总览聚合（单请求） */
+export const getOverview = () => getJson<OverviewResponse>("/api/overview");
 
 /* 市场 */
 export const getSnapshot = () => getJson<SnapshotResponse>("/api/market/snapshot");
@@ -45,12 +62,45 @@ export const getMacroLatest = () => getJson<{ data: MacroLatestItem[] }>("/api/m
 export const getMacroSeries = (code: string, limit = 5000) =>
   getJson<MacroSeriesResponse>("/api/macro/series", { params: { code, limit } });
 export const getPositions = () => getJson<PositionsResponse>("/api/positions");
+export const getPositionProducts = () =>
+  getJson<PositionProductsResponse>("/api/positions/products");
 export const getPositionMembers = (product: string, limit = 20) =>
   getJson<PositionMembersResponse>("/api/positions/members", { params: { product, limit } });
-export const getCalendar = (days = 14, limit = 20) =>
-  getJson<{ data: CalendarEvent[] }>("/api/calendar", { params: { days, limit } });
-export const getNews = (limit = 12) => getJson<{ data: NewsItem[] }>("/api/news", { params: { limit } });
-export const getEvents = (limit = 12) => getJson<{ data: EventItem[] }>("/api/events", { params: { limit } });
+
+/* 日历 / 新闻 / 事件：保留旧的按数量调用，新增带筛选的查询 */
+function toParams(value: object): Record<string, string | number | boolean | undefined | null> {
+  return value as unknown as Record<string, string | number | boolean | undefined | null>;
+}
+
+export function getCalendar(days?: number, limit?: number): Promise<{ data: CalendarEvent[] }>;
+export function getCalendar(query: CalendarQuery): Promise<CalendarPage>;
+export function getCalendar(
+  daysOrQuery: number | CalendarQuery = 14,
+  limitArg = 20,
+): Promise<{ data: CalendarEvent[] } | CalendarPage> {
+  const params =
+    typeof daysOrQuery === "number"
+      ? { days: daysOrQuery, limit: limitArg }
+      : toParams(daysOrQuery);
+  return getJson<CalendarPage>("/api/calendar", { params });
+}
+
+export function getNews(limit?: number): Promise<{ data: NewsItem[] }>;
+export function getNews(query: NewsQuery): Promise<NewsPage>;
+export function getNews(limitOrQuery: number | NewsQuery = 12): Promise<{ data: NewsItem[] } | NewsPage> {
+  const params = typeof limitOrQuery === "number" ? { limit: limitOrQuery } : toParams(limitOrQuery);
+  return getJson<NewsPage>("/api/news", { params });
+}
+
+export function getEvents(limit?: number): Promise<{ data: EventItem[] }>;
+export function getEvents(query: EventQuery): Promise<EventPage>;
+export function getEvents(
+  limitOrQuery: number | EventQuery = 12,
+): Promise<{ data: EventItem[] } | EventPage> {
+  const params = typeof limitOrQuery === "number" ? { limit: limitOrQuery } : toParams(limitOrQuery);
+  return getJson<EventPage>("/api/events", { params });
+}
+
 
 /* 自选 */
 export const getWatchlist = () => getJson<{ data: WatchlistItem[] }>("/api/watchlist");
@@ -64,6 +114,11 @@ export const moveWatch = (symbol: string, direction: "up" | "down") =>
   postJson<{ ok: boolean }>(`/api/watchlist/${encodeURIComponent(symbol)}/move`, { direction });
 export const reorderWatch = (symbols: string[]) =>
   postJson<{ ok: boolean }>("/api/watchlist/reorder", { symbols });
+export const updateWatch = (symbol: string, patch: WatchPatch) =>
+  patchJson<{ symbol: string; saved: boolean }>(
+    `/api/watchlist/${encodeURIComponent(symbol)}`,
+    patch,
+  );
 
 /* 分析 */
 export const getAnalytics = () => getJson<AnalyticsOverview>("/api/analytics/overview");
@@ -83,9 +138,13 @@ export const updateThesisStatus = (id: string, status: string) =>
 
 /* 简报 / 文档 */
 export const getLatestBrief = (kind?: "daily" | "weekly" | "monthly") =>
-  getJson<{ data: Brief | null }>("/api/briefs/latest", {
-    params: kind && kind !== "daily" ? { kind } : undefined,
+  getJson<LatestBriefResponse>("/api/briefs/latest", {
+    params: kind ? { kind } : undefined,
   });
+export const getBriefList = (kind?: "daily" | "weekly" | "monthly", limit = 20, offset = 0) =>
+  getJson<BriefListResponse>("/api/briefs", { params: { kind, limit, offset } });
+export const getBriefKinds = () => getJson<BriefKindsResponse>("/api/briefs/kinds");
+export const getBrief = (id: string) => getJson<Brief>(`/api/briefs/${encodeURIComponent(id)}`);
 export const getBriefs = (limit = 10) =>
   getJson<{ data: BriefSummary[] }>("/api/briefs", { params: { limit } });
 export const getDocument = (id: string) =>
@@ -93,7 +152,7 @@ export const getDocument = (id: string) =>
 
 /* 告警 */
 export const getAlerts = (limit = 10) =>
-  getJson<{ data: AlertItem[] }>("/api/alerts", { params: { limit } });
+  getJson<AlertListResponse>("/api/alerts", { params: { limit } });
 export const ackAlert = (id: string) =>
   postJson<{ ok: boolean }>(`/api/alerts/${encodeURIComponent(id)}/ack`, {});
 

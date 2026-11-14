@@ -14,6 +14,7 @@ from app.models.base import utcnow
 from app.models.core import Instrument, Job, WatchItem
 from app.platform.config import ROOT_DIR, settings
 from app.platform.db import SessionLocal, init_db
+from app.platform.instrument_units import UNIT_BY_SYMBOL
 
 logger = logging.getLogger(__name__)
 
@@ -72,13 +73,16 @@ def seed_instruments() -> int:
                     session.add(exists)
                     created += 1
                 spec = CONTRACT_SPECS.get(symbol)
+                extra = dict(exists.extra or {})
                 if spec:
                     exists.contract_size = spec["contract_size"]
                     exists.margin_pct = spec["margin_pct"]
-                    extra = dict(exists.extra or {})
                     extra.update(
                         {key: value for key, value in spec.items() if key not in ("contract_size", "margin_pct")}
                     )
+                if symbol in UNIT_BY_SYMBOL:
+                    extra["unit"] = UNIT_BY_SYMBOL[symbol]
+                if extra:
                     exists.extra = extra
         session.commit()
     logger.info("seeded/updated %s instruments", created)

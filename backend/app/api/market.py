@@ -8,7 +8,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.base import utcnow
 from app.models.core import (
     Document,
     EconomicEvent,
@@ -22,6 +21,7 @@ from app.models.core import (
     Source,
     SourceHealth,
 )
+from app.api.serializers import snapshot_payload
 from app.platform.db import get_session
 
 router = APIRouter(prefix="/api", tags=["market"])
@@ -51,38 +51,8 @@ def _latest_quotes(session: Session) -> tuple[list[Instrument], dict[str, Quote]
 
 @router.get("/market/snapshot")
 def snapshot(session: Session = Depends(get_session)) -> dict:
-    instruments, latest = _latest_quotes(session)
-    source_names = {row.id: row.name for row in session.scalars(select(Source)).all()}
-    now = utcnow()
-    data = []
-    for instrument in instruments:
-        quote = latest.get(instrument.id)
-        item = {
-            "symbol": instrument.symbol,
-            "name": instrument.name,
-            "asset_class": instrument.asset_class,
-            "exchange": instrument.exchange,
-            "currency": instrument.currency,
-        }
-        if quote is not None:
-            ts = quote.ts_utc
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
-            item.update(
-                {
-                    "price": quote.price,
-                    "change_pct": quote.change_pct,
-                    "prev_close": quote.prev_close,
-                    "ts": _iso(ts),
-                    "stale_sec": max(0, int((now - ts).total_seconds())),
-                    "delay_sec": quote.delay_sec,
-                    "source": source_names.get(quote.source_id),
-                }
-            )
-        data.append(item)
-    data.sort(key=lambda row: (ASSET_ORDER.index(row["asset_class"]) if row["asset_class"] in ASSET_ORDER else 99, row["symbol"]))
-    asof = max((row["ts"] for row in data if row.get("ts")), default=None)
-    return {"data": data, "meta": {"asof": asof, "count": len(data), "with_quote": sum(1 for row in data if row.get("price"))}}
+    """活跃标的 + 最新行情（含显示单位 unit、合约乘数、延迟信息）。"""
+    return snapshot_payload(session)
 
 
 @router.get("/market/bars")
@@ -198,6 +168,23 @@ def positions(session: Session = Depends(get_session)) -> dict:
     }
 
 
+@router.get("/positions/products")
+def position_products(session: Session = Depends(get_session)) -> dict:
+    """会员持仓可选的品种列表（供前端下拉框使用，避免从前端推测）。"""
+    latest_date = session.scalar(select(func.max(PositionSnapshot.trade_date)))
+    if latest_date is None:
+        return {"trade_date": None, "data": []}
+    rows = session.scalars(
+        select(PositionSnapshot)
+        .where(PositionSnapshot.trade_date == latest_date)
+        .order_by(PositionSnapshot.product.asc())
+    ).all()
+    return {
+        "trade_date": latest_date.isoformat(),
+        "data": [{"product": row.product, "name": row.name} for row in rows],
+    }
+
+
 @router.get("/positions/members")
 def position_members(
     product: str = Query(..., min_length=1, max_length=20),
@@ -240,16 +227,29 @@ def position_members(
 def calendar(
     days: int = Query(14, ge=1, le=60),
     limit: int = Query(100, ge=1, le=300),
+    offset: int = Query(0, ge=0),
+    country: str | None = Query(None, max_length=20),
+    category: str | None = Query(None, max_length=40),
+    importance_min: int | None = Query(None, ge=1, le=3),
     session: Session = Depends(get_session),
 ) -> dict:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+    conditions = [
+        EconomicEvent.ts_utc >= now - timedelta(hours=6),
+        EconomicEvent.ts_utc <= now + timedelta(days=days),
+    ]
+    if country:
+        conditions.append(EconomicEvent.country.like(f"%{country}%"))
+    if category:
+        conditions.append(EconomicEvent.category.like(f"%{category}%"))
+    if importance_min is not None:
+        conditions.append(EconomicEvent.importance >= importance_min)
+    total = int(session.scalar(select(func.count()).select_from(EconomicEvent).where(*conditions)) or 0)
     rows = session.scalars(
         select(EconomicEvent)
-        .where(
-            EconomicEvent.ts_utc >= now - timedelta(hours=6),
-            EconomicEvent.ts_utc <= now + timedelta(days=days),
-        )
+        .where(*conditions)
         .order_by(EconomicEvent.ts_utc.asc())
+        .offset(offset)
         .limit(limit)
     ).all()
     return {
@@ -263,25 +263,47 @@ def calendar(
                 "importance": row.importance,
             }
             for row in rows
-        ]
+        ],
+        "meta": {"count": len(rows), "total": total, "days": days, "offset": offset},
     }
 
 
 @router.get("/news")
 def news(
     limit: int = Query(30, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     q: str | None = Query(None, description="title keyword"),
+    source: str | None = Query(None, description="source name keyword"),
+    tier: str | None = Query(None, description="source tier, e.g. S1"),
+    since_days: int | None = Query(None, ge=1, le=3650, description="published within N days"),
     session: Session = Depends(get_session),
 ) -> dict:
-    stmt = (
+    conditions: list = []
+    if q:
+        conditions.append(Document.title.like(f"%{q}%"))
+    if source:
+        conditions.append(Source.name.like(f"%{source}%"))
+    if tier:
+        conditions.append(Source.tier == tier)
+    if since_days:
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=since_days)
+        conditions.append(func.coalesce(Document.published_at, Document.fetched_at) >= cutoff)
+    base = (
         select(Document, Source)
         .join(Source, Document.source_id == Source.id, isouter=True)
-        .order_by(func.coalesce(Document.published_at, Document.fetched_at).desc())
-        .limit(limit)
     )
-    if q:
-        stmt = stmt.where(Document.title.like(f"%{q}%"))
-    rows = session.execute(stmt).all()
+    count_stmt = select(func.count()).select_from(Document).join(
+        Source, Document.source_id == Source.id, isouter=True
+    )
+    if conditions:
+        base = base.where(*conditions)
+        count_stmt = count_stmt.where(*conditions)
+    total = int(session.scalar(count_stmt) or 0)
+    rows = session.execute(
+        base.order_by(func.coalesce(Document.published_at, Document.fetched_at).desc())
+        .offset(offset)
+        .limit(limit)
+    ).all()
     return {
         "data": [
             {
@@ -290,11 +312,13 @@ def news(
                 "url": document.url,
                 "published_at": _iso(document.published_at or document.fetched_at),
                 "source": source.name if source else None,
+                "source_id": document.source_id,
                 "tier": source.tier if source else None,
                 "summary": (document.meta or {}).get("summary") if document.meta else None,
             }
             for document, source in rows
-        ]
+        ],
+        "meta": {"count": len(rows), "total": total, "offset": offset},
     }
 
 

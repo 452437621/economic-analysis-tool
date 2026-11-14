@@ -9,7 +9,19 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.api import alerts, analytics, decisions, events, journal, knowledge, market, system, theses, watchlist
+from app.api import (
+    alerts,
+    analytics,
+    decisions,
+    events,
+    journal,
+    knowledge,
+    market,
+    overview,
+    system,
+    theses,
+    watchlist,
+)
 from app.platform.config import ROOT_DIR, settings
 from app.platform.db import init_db
 from app.platform.logging import setup_logging
@@ -47,6 +59,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(system.router)
+app.include_router(overview.router)
 app.include_router(market.router)
 app.include_router(knowledge.router)
 app.include_router(analytics.router)

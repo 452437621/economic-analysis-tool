@@ -3,7 +3,8 @@
     <div class="page-head">
       <div>
         <div class="page-eyebrow">
-          内容 · 简报 · {{ brief ? `生成于 ${fmtDateTime(brief.created_at)}` : "等待生成" }}
+          内容 · 简报 · 真实历史期次 ·
+          {{ brief ? `生成于 ${fmtDateTime(brief.created_at)}` : "等待生成" }}
         </div>
         <h1 class="page-h1">简报与日志 <span class="page-sub">{{ pageSub }}</span></h1>
       </div>
@@ -26,7 +27,7 @@
       </div>
     </div>
 
-    <!-- 工具条：日报 / 周报 / 月报 + 期次 -->
+    <!-- 工具条：日报 / 周报 / 月报 + 期次（真实上一期 / 下一期） -->
     <section class="card brief-toolbar">
       <div class="seg">
         <button
@@ -36,23 +37,57 @@
           :class="{ active: kind === option.value }"
           @click="setKind(option.value)"
         >
-          {{ option.label }}
+          {{ option.label }}<span class="tab-count">{{ kindCounts[option.value] }}</span>
         </button>
       </div>
       <div class="brief-date-nav">
-        <button class="btn btn--icon btn--sm" type="button" title="上一期" @click="notifyNoHistory">
-          <svg class="ic"><use href="#i-chevron-left" /></svg>
+        <button
+          class="btn btn--icon btn--sm"
+          type="button"
+          :title="prevTitle"
+          :disabled="!prevId || loading"
+          @click="goPrev"
+        >
+          <svg class="ic" :class="{ spin: navLoading === 'prev' }"><use href="#i-chevron-left" /></svg>
         </button>
         <span class="date-chip">{{ brief?.trade_date ?? "—" }} <span>{{ weekdayLabel }}</span></span>
-        <button class="btn btn--icon btn--sm" type="button" title="下一期" @click="notifyNoHistory">
-          <svg class="ic"><use href="#i-chevron-right" /></svg>
+        <button
+          class="btn btn--icon btn--sm"
+          type="button"
+          :title="nextTitle"
+          :disabled="!nextId || loading"
+          @click="goNext"
+        >
+          <svg class="ic" :class="{ spin: navLoading === 'next' }"><use href="#i-chevron-right" /></svg>
         </button>
-        <button class="btn btn--sm btn--ghost" type="button" :disabled="loading" @click="reload">
+        <span v-if="issueNo" class="issue-pos">第 {{ issueNo }} / {{ issueTotal }} 期</span>
+        <button
+          class="btn btn--sm btn--ghost"
+          type="button"
+          :disabled="loading"
+          title="回到本组最新一期"
+          @click="goLatest"
+        >
           <svg class="ic"><use href="#i-refresh" /></svg>最新
         </button>
       </div>
+      <select
+        v-if="issueHistory.length"
+        class="select issue-select"
+        :value="brief?.id ?? ''"
+        :disabled="loading"
+        title="按期次跳转（本组历史）"
+        @change="onSelectIssue"
+      >
+        <option v-for="(row, index) in issueHistory" :key="row.id" :value="row.id">
+          {{ issueTotal - index }}. {{ row.trade_date }} · {{ kindLabel(row.kind) }} ·
+          {{ fmtInt(row.chars) }} 字
+        </option>
+      </select>
       <div class="tool-right">
-        <span class="tool-note"><span class="dot dot--live"></span>页面内三栏阅读 · 旧版弹框阅读已并入本页</span>
+        <span class="tool-note">
+          <span class="dot dot--live"></span>真实历史期次 · 上一期 / 下一期读取同组相邻简报
+        </span>
         <button class="btn btn--sm" type="button" :disabled="!brief?.markdown" @click="copyFull">
           <svg class="ic"><use href="#i-copy" /></svg>复制全文
         </button>
@@ -67,7 +102,7 @@
       <ErrorState :error="error" @retry="reload" />
     </section>
     <section v-else-if="!brief" class="card">
-      <EmptyState text="暂无简报" hint="运行 brief_manual 任务，或等待每日 17:30 的定时生成后查看。">
+      <EmptyState :text="emptyText" :hint="emptyHint">
         <RouterLink class="btn btn--sm" style="margin-top: 6px" to="/system">
           <svg class="ic"><use href="#i-tasks" /></svg>去系统页运行任务
         </RouterLink>
@@ -252,12 +287,15 @@ import { fmtDateTime, fmtInt, fmtPct, fmtTime, trendClass } from "@/composables/
 import {
   briefMarkdownUrl,
   briefPrintUrl,
+  getBrief,
+  getBriefKinds,
+  getBriefList,
   getJournal,
   getLatestBrief,
   getWatchlist,
   saveJournal,
 } from "@/api/endpoints";
-import type { Brief, JournalEntry, WatchlistItem } from "@/api/types";
+import type { Brief, BriefSummary, JournalEntry, WatchlistItem } from "@/api/types";
 import { useEvidenceStore } from "@/stores/evidence";
 import { useHistoryStore } from "@/stores/history";
 import { usePrefsStore } from "@/stores/prefs";
@@ -289,6 +327,9 @@ const KIND_TABS: Array<{ value: BriefKind; label: string }> = [
   { value: "weekly", label: "周报" },
   { value: "monthly", label: "月报" },
 ];
+
+/** 每类最多拉取的历史条数（后端 /api/briefs 上限 50） */
+const HISTORY_LIMIT = 50;
 
 const KIND_LABEL: Record<string, string> = {
   daily: "日报",
@@ -323,6 +364,16 @@ const activeHeadingId = ref("");
 const articleRef = ref<HTMLElement | null>(null);
 const watchlist = ref<WatchlistItem[]>([]);
 
+/* 历史期次 / 上一期下一期 */
+const kindCounts = ref<Record<BriefKind, number>>({ daily: 0, weekly: 0, monthly: 0 });
+const issueHistory = ref<BriefSummary[]>([]);
+const latestId = ref<string | null>(null);
+const latestNeighbors = ref<{ previous_id: string | null; next_id: string | null }>({
+  previous_id: null,
+  next_id: null,
+});
+const navLoading = ref<"" | "prev" | "next">("");
+
 const journal = ref<JournalEntry[]>([]);
 const journalDraft = ref("");
 const journalLoading = ref(false);
@@ -344,7 +395,7 @@ function kindFromQuery(value: unknown): BriefKind {
 const pageSub = computed(() =>
   brief.value
     ? `${kindLabel(brief.value.kind)} · ${brief.value.trade_date} ${weekdayLabel.value}`
-    : "日报 / 周报 / 月报 · 交易日志",
+    : "日报 / 周报 / 月报 · 真实历史期次 · 交易日志",
 );
 
 const weekdayLabel = computed(() => {
@@ -358,6 +409,62 @@ const weekdayLabel = computed(() => {
 const updownLabel = computed(() => (prefs.updown === "green" ? "绿涨红跌" : "红涨绿跌"));
 
 const relatedWatch = computed<WatchlistItem[]>(() => watchlist.value.slice(0, 5));
+
+/* ---------- 历史期次导航 ---------- */
+
+/** 当前简报在历史列表中的位置（0 = 本组最新一期，越大越早） */
+const issueIndex = computed(() => {
+  const id = brief.value?.id;
+  if (!id) return -1;
+  return issueHistory.value.findIndex((row) => row.id === id);
+});
+
+/** 本组总期数：优先用 /briefs/kinds 的分组计数，回退到已加载条数 */
+const issueTotal = computed(() => {
+  const counted = kindCounts.value[kind.value] ?? 0;
+  return counted > issueIndex.value ? counted : issueHistory.value.length;
+});
+
+/** 期号（从最早一期开始数），当前简报不在历史窗口内时为 null */
+const issueNo = computed(() => {
+  if (issueIndex.value < 0 || !issueTotal.value) return null;
+  return Math.max(1, issueTotal.value - issueIndex.value);
+});
+
+/**
+ * 上一期 / 下一期 id：
+ * 当前简报正好是最新一期时直接用 /briefs/latest 返回的 neighbors；
+ * 翻阅到历史期次后按历史列表相邻位置计算（同组、同排序）。
+ */
+const prevId = computed<string | null>(() => {
+  const current = brief.value?.id;
+  if (!current) return null;
+  if (latestId.value === current) return latestNeighbors.value.previous_id;
+  const index = issueIndex.value;
+  return index >= 0 ? issueHistory.value[index + 1]?.id ?? null : null;
+});
+
+const nextId = computed<string | null>(() => {
+  const current = brief.value?.id;
+  if (!current) return null;
+  if (latestId.value === current) return latestNeighbors.value.next_id;
+  const index = issueIndex.value;
+  return index > 0 ? issueHistory.value[index - 1]?.id ?? null : null;
+});
+
+const prevTitle = computed(() =>
+  prevId.value ? "上一期（更早一期）" : "已是本组最早一期，无更早期次",
+);
+const nextTitle = computed(() =>
+  nextId.value ? "下一期（更新一期）" : "已是最新一期，无更新期次",
+);
+
+const emptyText = computed(() => (kind.value === "daily" ? "暂无简报" : `暂无${kindLabel(kind.value)}`));
+const emptyHint = computed(() =>
+  kind.value === "daily"
+    ? "运行 brief_manual 任务，或等待每日 17:30 的定时生成后查看；日报聚合 manual / premarket / postmarket。"
+    : `${kindLabel(kind.value)}按周 / 月生成，运行对应简报任务或等待定时生成后查看。`,
+);
 
 /* ---------- Markdown 渲染（markdown-it + DOMPurify） ---------- */
 
@@ -576,21 +683,100 @@ function updateActiveHeading(): void {
 
 /* ---------- 取数 ---------- */
 
-async function loadBrief(): Promise<void> {
+function scrollToTop(): void {
+  window.scrollTo({ top: 0, behavior: "auto" });
+}
+
+/** 同步 URL query（kind / brief），便于刷新与分享后保持当前期次 */
+function syncQuery(patch: Record<string, string | null>): void {
+  const query: Record<string, string | string[]> = {};
+  for (const [key, value] of Object.entries(route.query)) {
+    if (typeof value === "string") query[key] = value;
+    else if (Array.isArray(value)) query[key] = value.filter((item): item is string => typeof item === "string");
+  }
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null || value === "") delete query[key];
+    else query[key] = value;
+  }
+  void router.replace({ query });
+}
+
+/** 各分组期数（tab 徽标） */
+async function loadKindCounts(): Promise<void> {
+  try {
+    const payload = await getBriefKinds();
+    const groups = payload.data?.groups;
+    if (groups) {
+      kindCounts.value = {
+        daily: groups.daily ?? 0,
+        weekly: groups.weekly ?? 0,
+        monthly: groups.monthly ?? 0,
+      };
+    }
+  } catch {
+    /* 徽标失败不影响正文 */
+  }
+}
+
+/** 本组历史列表（用于期号下拉与历史期次的相邻计算） */
+async function loadIssueHistory(requested: BriefKind = kind.value): Promise<void> {
+  try {
+    const payload = await getBriefList(requested, HISTORY_LIMIT, 0);
+    if (requested !== kind.value) return;
+    issueHistory.value = payload.data ?? [];
+  } catch {
+    if (requested !== kind.value) return;
+    issueHistory.value = [];
+  }
+}
+
+/** 载入某分组最新一期：正文 + neighbors（上一期 / 下一期 id） */
+async function loadLatest(announce = false): Promise<void> {
   const requested = kind.value;
   loading.value = true;
   error.value = null;
   try {
     const payload = await getLatestBrief(requested);
     if (requested !== kind.value) return;
+    latestId.value = payload.data?.id ?? null;
+    latestNeighbors.value = payload.neighbors ?? { previous_id: null, next_id: null };
     brief.value = payload.data;
     applyBrief();
+    scrollToTop();
+    void loadIssueHistory(requested);
+    if (announce) {
+      toast.info(payload.data ? "已回到本组最新一期" : "本组暂无简报");
+    }
   } catch (err) {
     if (requested !== kind.value) return;
     error.value = err instanceof Error ? err : new Error(String(err));
     brief.value = null;
+    latestId.value = null;
+    latestNeighbors.value = { previous_id: null, next_id: null };
     safeHtml.value = "";
     rendered.value = null;
+  } finally {
+    if (requested === kind.value) loading.value = false;
+  }
+}
+
+/** 按 id 打开某一期（上一期 / 下一期 / 期号下拉 / URL 深链） */
+async function openBrief(id: string, syncUrl = true): Promise<void> {
+  if (!id || id === brief.value?.id) return;
+  const requested = kind.value;
+  loading.value = true;
+  error.value = null;
+  try {
+    const detail = await getBrief(id);
+    if (requested !== kind.value) return;
+    brief.value = detail;
+    applyBrief();
+    scrollToTop();
+    if (syncUrl) syncQuery({ brief: detail.id });
+  } catch (err) {
+    if (requested !== kind.value) return;
+    error.value = err instanceof Error ? err : new Error(String(err));
+    toast.bad(`该期简报加载失败：${err instanceof Error ? err.message : String(err)}`);
   } finally {
     if (requested === kind.value) loading.value = false;
   }
@@ -641,23 +827,60 @@ function setKind(next: BriefKind, syncUrl = true): void {
   safeHtml.value = "";
   rendered.value = null;
   activeHeadingId.value = "";
-  void loadBrief();
-  if (syncUrl) {
-    const query = { ...route.query };
-    if (next === "daily") delete query.kind;
-    else query.kind = next;
-    void router.replace({ query });
-  }
+  latestId.value = null;
+  latestNeighbors.value = { previous_id: null, next_id: null };
+  issueHistory.value = [];
+  scrollToTop();
+  void loadLatest();
+  if (syncUrl) syncQuery({ kind: next === "daily" ? null : next, brief: null });
 }
 
 function reload(): void {
-  void loadBrief();
+  void loadKindCounts();
+  void loadLatest();
+  void loadIssueHistory();
   void loadJournal();
   toast.info(`已刷新${KIND_TABS.find((option) => option.value === kind.value)?.label ?? "简报"}`);
 }
 
-function notifyNoHistory(): void {
-  toast.info("暂无历史期次缓存：当前仅展示每类最新一期，可用「日报 / 周报 / 月报」切换。");
+async function goPrev(): Promise<void> {
+  const id = prevId.value;
+  if (!id || loading.value) return;
+  navLoading.value = "prev";
+  try {
+    await openBrief(id);
+  } finally {
+    navLoading.value = "";
+  }
+}
+
+async function goNext(): Promise<void> {
+  const id = nextId.value;
+  if (!id || loading.value) return;
+  navLoading.value = "next";
+  try {
+    await openBrief(id);
+  } finally {
+    navLoading.value = "";
+  }
+}
+
+/** 回到本组最新一期（同时清掉 URL 上的 brief 参数） */
+async function goLatest(): Promise<void> {
+  if (loading.value) return;
+  if (latestId.value && brief.value?.id === latestId.value) {
+    syncQuery({ brief: null });
+    return;
+  }
+  await loadLatest(true);
+  syncQuery({ brief: null });
+}
+
+/** 期号下拉跳转 */
+function onSelectIssue(event: Event): void {
+  const target = event.target as HTMLSelectElement | null;
+  const id = target?.value ?? "";
+  if (id) void openBrief(id);
 }
 
 function printBrief(): void {
@@ -691,11 +914,19 @@ function onArticleClick(event: MouseEvent): void {
 
 /* ---------- 生命周期 ---------- */
 
-onMounted(() => {
+async function bootstrap(): Promise<void> {
   kind.value = kindFromQuery(route.query.kind);
-  void loadBrief();
+  void loadKindCounts();
   void loadWatchlist();
   void loadJournal();
+  await loadLatest();
+  // URL 深链：?brief=<id> 直接打开某一期历史简报
+  const wanted = typeof route.query.brief === "string" ? route.query.brief : "";
+  if (wanted && wanted !== brief.value?.id) await openBrief(wanted, false);
+}
+
+onMounted(() => {
+  void bootstrap();
   window.addEventListener("scroll", updateActiveHeading, { passive: true });
   window.addEventListener("resize", updateActiveHeading);
 });
@@ -709,6 +940,24 @@ onBeforeUnmount(() => {
 <style scoped>
 /* ---------- 工具条补充 ---------- */
 .brief-toolbar .tool-note { white-space: nowrap; }
+.brief-toolbar .seg button .tab-count {
+  margin-left: 5px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--dim);
+}
+.brief-toolbar .seg button.active .tab-count { color: var(--accent); }
+.issue-pos {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.issue-select {
+  max-width: 240px;
+  min-width: 190px;
+  font-size: 10.5px;
+}
 .toc-item { overflow: hidden; }
 .toc-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .toc-empty { padding: 6px 7px; font-size: 10px; color: var(--dim); }

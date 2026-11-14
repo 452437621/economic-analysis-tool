@@ -8,14 +8,19 @@ export const useAlertsStore = defineStore("alerts", () => {
   const loading = ref(false);
   const error = ref<string | null>(null);
   const open = ref(false);
+  const unreadTotal = ref(0);
 
-  const unread = computed(() => items.value.filter((item) => !item.acknowledged).length);
+  // 全库未确认数优先（与总览页口径一致），接口未返回时退回当前列表计数
+  const unread = computed(
+    () => unreadTotal.value || items.value.filter((item) => !item.acknowledged).length,
+  );
 
   async function refresh(): Promise<void> {
     loading.value = true;
     try {
       const payload = await getAlerts(10);
       items.value = payload.data ?? [];
+      unreadTotal.value = payload.meta?.unread ?? 0;
       error.value = null;
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err);

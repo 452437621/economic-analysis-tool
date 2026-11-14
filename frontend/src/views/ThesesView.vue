@@ -223,8 +223,27 @@
     <section v-else-if="tab === 'events'" class="card">
       <div class="card-head">
         <span class="card-title">事件驱动</span>
-        <span class="card-sub">官方公告与新闻中规则识别 · 按时间倒序</span>
-        <div class="card-actions"><span class="badge badge--sm">{{ events.length }} 条</span></div>
+        <span class="card-sub">官方公告与新闻中规则识别 · 按时间倒序 · 类型筛选</span>
+        <div class="card-actions"><span class="badge badge--sm">命中 {{ eventsTotal }} 条</span></div>
+      </div>
+      <div class="list-tools">
+        <div class="chip-row">
+          <button
+            v-for="option in EVENT_TYPE_OPTIONS"
+            :key="option.value || 'all'"
+            class="chip"
+            :class="{ active: eventsType === option.value }"
+            type="button"
+            @click="setEventsType(option.value)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+        <div class="tool-right">
+          <span class="tool-note">
+            当前显示 {{ events.length }} / {{ eventsTotal }} 条 · 点击含证据的事件行打开抽屉
+          </span>
+        </div>
       </div>
       <ErrorState v-if="eventsError && !events.length" :error="eventsError" @retry="eventsPoll.refresh" />
       <div v-else-if="eventsLoading && !events.length" class="card-body">
@@ -232,27 +251,48 @@
       </div>
       <EmptyState
         v-else-if="!events.length"
-        text="暂无事件数据"
-        hint="事件由规则从官方公告与新闻中识别，运行采集任务后生成。"
+        :text="eventsType ? '该类型暂无事件' : '暂无事件数据'"
+        :hint="
+          eventsType
+            ? '切换事件类型筛选查看其它事件。'
+            : '事件由规则从官方公告与新闻中识别，运行采集任务后生成。'
+        "
       />
       <div v-else class="event-list">
-        <div v-for="event in events" :key="event.id" class="event-row">
+        <button
+          v-for="event in events"
+          :key="event.id"
+          class="event-row"
+          :class="{ 'event-row--link': !!event.document_id }"
+          type="button"
+          :disabled="!event.document_id"
+          :title="event.document_id ? '点击打开证据抽屉（来源文档 + 断言高亮）' : '该事件暂无关联证据文档'"
+          @click="openEventEvidence(event)"
+        >
           <span class="event-date mono">{{ fmtTime(event.event_date, true) }}</span>
           <span class="badge badge--sm event-type">{{ eventTypeLabel(event.type) }}</span>
-          <div class="event-main">
-            <div class="event-title">{{ event.title }}</div>
-            <div v-if="event.summary" class="event-summary">{{ event.summary }}</div>
-          </div>
+          <span class="event-main">
+            <span class="event-title">{{ event.title }}</span>
+            <span v-if="readableSummary(event.summary)" class="event-summary">
+              {{ readableSummary(event.summary) }}
+            </span>
+          </span>
+          <span class="event-impact" :class="'is-' + impactLevel(event.impact)">
+            <span class="badge badge--sm" :class="impactBadgeClass(event.impact)">
+              影响 {{ impactLabel(event.impact) }}
+            </span>
+          </span>
           <span class="event-tags">
             <span v-for="instrument in event.instruments.slice(0, 3)" :key="instrument" class="badge badge--sm">
               {{ instrument }}
             </span>
             <span v-if="!event.instruments.length" class="dim">关联 —</span>
+            <svg v-if="event.document_id" class="ic event-go"><use href="#i-chevron-right" /></svg>
           </span>
-        </div>
+        </button>
       </div>
       <div class="card-foot">
-        <span class="dot dot--off"></span>事件暂未关联文档 ID，仅供驱动线索参考（新闻 tab 可打开证据原文）。
+        <span class="dot dot--live"></span>事件已关联来源文档：点击整行 → 右侧证据抽屉；影响强度按规则打分映射低 / 中 / 高。
       </div>
     </section>
 
@@ -260,14 +300,51 @@
     <section v-else-if="tab === 'news'" class="card">
       <div class="card-head">
         <span class="card-title">新闻与政策</span>
-        <span class="card-sub">官方一手来源 · 点击整行打开证据抽屉（原文 + 断言高亮）</span>
-        <div class="card-actions"><span class="badge badge--sm">{{ news.length }} 条</span></div>
+        <span class="card-sub">官方一手来源 · 标题搜索 · 点击整行打开证据抽屉（原文 + 断言高亮）</span>
+        <div class="card-actions"><span class="badge badge--sm">命中 {{ newsTotal }} 条</span></div>
+      </div>
+      <div class="list-tools">
+        <label class="field field--search">
+          <svg class="ic"><use href="#i-search" /></svg>
+          <input
+            v-model="newsKeyword"
+            type="search"
+            placeholder="搜索标题关键词，例如 United / ECB"
+            autocomplete="off"
+            @keydown.enter.prevent="applyNewsSearch"
+          />
+        </label>
+        <button class="btn btn--sm btn--primary" type="button" :disabled="newsLoading" @click="applyNewsSearch">
+          <svg class="ic"><use href="#i-search" /></svg>搜索
+        </button>
+        <button
+          class="btn btn--sm btn--ghost"
+          type="button"
+          :disabled="!newsKeyword && !newsQuery"
+          @click="clearNewsSearch"
+        >
+          <svg class="ic"><use href="#i-close" /></svg>清空
+        </button>
+        <div class="tool-right">
+          <span class="tool-note">
+            <template v-if="newsQuery">标题检索「<b class="mono">{{ newsQuery }}</b>」· </template>
+            命中 <b class="mono">{{ newsTotal }}</b> 条 · 当前显示 {{ news.length }} 条
+          </span>
+        </div>
       </div>
       <ErrorState v-if="newsError && !news.length" :error="newsError" @retry="newsPoll.refresh" />
       <div v-else-if="newsLoading && !news.length" class="card-body">
         <SkeletonBlock :rows="6" :cells="3" />
       </div>
-      <EmptyState v-else-if="!news.length" text="暂无新闻" hint="运行新闻采集任务后，最新官方来源会显示在这里。" />
+      <EmptyState
+        v-else-if="!news.length"
+        :text="newsQuery ? '未找到匹配的新闻标题' : '暂无新闻'"
+        :hint="
+          newsQuery
+            ? '换个关键词试试；标题多为官方原文（如 United / ECB / rate）。'
+            : '运行新闻采集任务后，最新官方来源会显示在这里。'
+        "
+      />
       <div v-else class="news-list">
         <button v-for="item in news" :key="item.id" class="news-row" type="button" @click="openEvidence(item.id)">
           <span class="news-side">
@@ -291,14 +368,56 @@
     <section v-else class="card">
       <div class="card-head">
         <span class="card-title">财经日历</span>
-        <span class="card-sub">未来 14 天 · 重要事件与数据发布</span>
-        <div class="card-actions"><span class="badge badge--sm">{{ calendar.length }} 项</span></div>
+        <span class="card-sub">未来 14 天 · 国家筛选 · 仅高重要性开关</span>
+        <div class="card-actions"><span class="badge badge--sm">命中 {{ calendarTotal }} 项</span></div>
+      </div>
+      <div class="list-tools">
+        <div class="chip-row">
+          <button
+            class="chip"
+            :class="{ active: calendarCountry === '' }"
+            type="button"
+            @click="setCalendarCountry('')"
+          >
+            全部<em>{{ calendarFacetTotal }}</em>
+          </button>
+          <button
+            v-for="item in calendarCountries"
+            :key="item.country"
+            class="chip"
+            :class="{ active: calendarCountry === item.country }"
+            type="button"
+            @click="setCalendarCountry(item.country)"
+          >
+            {{ item.country }}<em>{{ item.count }}</em>
+          </button>
+        </div>
+        <label class="switch-wrap" title="仅显示重要性为 3 星（高）的事项">
+          <span class="switch">
+            <input v-model="calendarHighOnly" type="checkbox" @change="applyCalendarHighOnly" />
+            <i></i>
+          </span>
+          <span>仅高重要性</span>
+        </label>
+        <div class="tool-right">
+          <span class="tool-note">
+            未来 14 天 · 命中 <b class="mono">{{ calendarTotal }}</b> 项 · 当前显示 {{ calendar.length }} 项
+          </span>
+        </div>
       </div>
       <ErrorState v-if="calendarError && !calendar.length" :error="calendarError" @retry="calendarPoll.refresh" />
       <div v-else-if="calendarLoading && !calendar.length" class="card-body">
         <SkeletonBlock :rows="6" :cells="4" />
       </div>
-      <EmptyState v-else-if="!calendar.length" text="暂无日历数据" hint="财经日历源采集后，未来 14 天的重要事件会显示在这里。" />
+      <EmptyState
+        v-else-if="!calendar.length"
+        :text="calendarCountry || calendarHighOnly ? '当前筛选下暂无日历事项' : '暂无日历数据'"
+        :hint="
+          calendarCountry || calendarHighOnly
+            ? '切换国家或关闭「仅高重要性」查看其它事项。'
+            : '财经日历源采集后，未来 14 天的重要事件会显示在这里。'
+        "
+      />
       <div v-else class="calendar-list">
         <template v-for="group in calendarGroups" :key="group.date">
           <div class="cal-sep">{{ group.date }} · {{ group.weekday }} · {{ group.items.length }} 项</div>
@@ -311,7 +430,7 @@
           </div>
         </template>
       </div>
-      <div class="card-foot">重要性 ●●● 高 / ●●○ 中 / ●○○ 低 · 时间按浏览器本地时区显示。</div>
+      <div class="card-foot">重要性 ●●● 高 / ●●○ 中 / ●○○ 低 · 时间按浏览器本地时区显示 · 国家来自日历源前 8 个。</div>
     </section>
   </div>
 </template>
@@ -345,18 +464,82 @@ const toast = useToast();
 const tab = ref<TabKey>("theses");
 const statusFilter = ref<string>("all");
 
+/* ---------- 新闻 / 事件 / 日历筛选状态 ---------- */
+const newsKeyword = ref("");
+const newsQuery = ref("");
+const eventsType = ref("");
+const calendarCountry = ref("");
+const calendarHighOnly = ref(false);
+
+/**
+ * 事件类型 chips：后端 Event.type 的实际枚举是
+ * trade / monetary_policy / supply / geopolitical / data_release
+ * （任务里的 monetary、data 是简称，直接传会返回 0 条，这里映射到真实取值）。
+ */
+const EVENT_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "全部" },
+  { value: "trade", label: "贸易" },
+  { value: "monetary_policy", label: "货币" },
+  { value: "supply", label: "供给" },
+  { value: "geopolitical", label: "地缘" },
+  { value: "data_release", label: "数据" },
+];
+
 /* ---------- 轮询（论点 / 复核 120s；事件 / 新闻 60s；日历 300s） ---------- */
 const thesesPoll = usePolling(() => getTheses(20), { interval: 120000 });
 const reviewPoll = usePolling(() => getThesisReview(), { interval: 120000 });
-const eventsPoll = usePolling(() => getEvents(24), { interval: 60000 });
-const newsPoll = usePolling(() => getNews(20), { interval: 60000 });
-const calendarPoll = usePolling(() => getCalendar(14, 40), { interval: 300000 });
+const eventsPoll = usePolling(
+  () => getEvents({ type: eventsType.value || undefined, limit: 24 }),
+  { interval: 60000 },
+);
+const newsPoll = usePolling(() => getNews({ q: newsQuery.value || undefined, limit: 20 }), {
+  interval: 60000,
+});
+const calendarPoll = usePolling(
+  () =>
+    getCalendar({
+      days: 14,
+      limit: 40,
+      country: calendarCountry.value || undefined,
+      importance_min: calendarHighOnly.value ? 3 : undefined,
+    }),
+  { interval: 300000 },
+);
+/** 国家分面：单独拉一份未筛选的 14 天日历，用于生成国家筛选 chips（前 8 个） */
+const calendarFacetsPoll = usePolling(() => getCalendar({ days: 14, limit: 300 }), {
+  interval: 300000,
+});
 
 const theses = computed<Thesis[]>(() => thesesPoll.data.value?.data ?? []);
 const review = computed<ThesisReview | null>(() => reviewPoll.data.value?.data ?? null);
 const events = computed<EventItem[]>(() => eventsPoll.data.value?.data ?? []);
 const news = computed<NewsItem[]>(() => newsPoll.data.value?.data ?? []);
 const calendar = computed<CalendarEvent[]>(() => calendarPoll.data.value?.data ?? []);
+
+/** 命中总数（后端 meta.total，与当前页条数区分） */
+const newsTotal = computed(() => newsPoll.data.value?.meta?.total ?? news.value.length);
+const eventsTotal = computed(() => eventsPoll.data.value?.meta?.total ?? events.value.length);
+const calendarTotal = computed(() => calendarPoll.data.value?.meta?.total ?? calendar.value.length);
+const calendarFacetTotal = computed(
+  () => calendarFacetsPoll.data.value?.meta?.total ?? 0,
+);
+
+/** 国家筛选 chips：按 14 天内事项数取前 8 个国家（数据驱动，不写死） */
+const calendarCountries = computed<Array<{ country: string; count: number }>>(() => {
+  const counts = new Map<string, number>();
+  for (const row of calendarFacetsPoll.data.value?.data ?? []) {
+    if (!row.country) continue;
+    counts.set(row.country, (counts.get(row.country) ?? 0) + 1);
+  }
+  const items = Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([country, count]) => ({ country, count }));
+  if (calendarCountry.value && !items.some((item) => item.country === calendarCountry.value)) {
+    items.push({ country: calendarCountry.value, count: 0 });
+  }
+  return items;
+});
 
 const thesesLoading = computed(() => thesesPoll.loading.value || reviewPoll.loading.value);
 const thesesError = computed(() => thesesPoll.error.value ?? reviewPoll.error.value);
@@ -499,9 +682,101 @@ const calendarGroups = computed<Array<{ date: string; weekday: string; items: Ca
   return groups;
 });
 
+/* ---------- impact 强度（低 / 中 / 高） ---------- */
+type ImpactLevel = "high" | "mid" | "low" | "none";
+
+const IMPACT_LABEL: Record<ImpactLevel, string> = { high: "高", mid: "中", low: "低", none: "—" };
+
+function impactLevel(impact: number | null | undefined): ImpactLevel {
+  if (impact === null || impact === undefined || !Number.isFinite(impact)) return "none";
+  if (impact >= 0.7) return "high";
+  if (impact >= 0.4) return "mid";
+  return "low";
+}
+
+function impactLabel(impact: number | null | undefined): string {
+  return IMPACT_LABEL[impactLevel(impact)];
+}
+
+function impactBadgeClass(impact: number | null | undefined): string {
+  const level = impactLevel(impact);
+  if (level === "high") return "badge--warn";
+  if (level === "mid") return "badge--accent";
+  return "";
+}
+
+/** 事件摘要多为抽取文本：PDF / HTML / 二进制噪声不展示，避免正文变成乱码 */
+function readableSummary(text: string | null | undefined): string {
+  if (!text) return "";
+  const sample = text.slice(0, 220);
+  if (/^\s*(%PDF|PK[\u0003\u0004]|GIF8|\u0089PNG)/.test(sample)) return "";
+  if (/<html|<body|<script|<\/?(?:Filer|Document|Type)\b/i.test(sample)) return "";
+  const noise = (sample.match(/[\u0000-\u0008\u000E-\u001F\uFFFD]/g) ?? []).length;
+  if (noise > 4) return "";
+  return text;
+}
+
 /* ---------- 交互 ---------- */
+interface Refreshable {
+  loading: { value: boolean };
+  refresh: () => Promise<void>;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+/**
+ * 改筛选后立即重取：usePolling 有 inflight 保护，若上一请求还在跑，
+ * refresh() 会被静默丢弃，这里先等它结束再刷新，保证筛选结果一定生效。
+ */
+async function refreshFiltered(poll: Refreshable): Promise<void> {
+  let guard = 0;
+  while (poll.loading.value && guard < 100) {
+    await sleep(40);
+    guard += 1;
+  }
+  await poll.refresh();
+}
+
 function openEvidence(documentId: string): void {
   void evidence.show(documentId);
+}
+
+function openEventEvidence(event: EventItem): void {
+  if (event.document_id) void evidence.show(event.document_id);
+}
+
+/** 新闻：回车 / 按钮触发标题搜索（清空恢复默认列表） */
+async function applyNewsSearch(): Promise<void> {
+  newsQuery.value = newsKeyword.value.trim();
+  await refreshFiltered(newsPoll);
+}
+
+async function clearNewsSearch(): Promise<void> {
+  if (!newsKeyword.value && !newsQuery.value) return;
+  newsKeyword.value = "";
+  newsQuery.value = "";
+  await refreshFiltered(newsPoll);
+}
+
+/** 事件：类型 chips */
+async function setEventsType(value: string): Promise<void> {
+  if (eventsType.value === value) return;
+  eventsType.value = value;
+  await refreshFiltered(eventsPoll);
+}
+
+/** 日历：国家 chips */
+async function setCalendarCountry(value: string): Promise<void> {
+  if (calendarCountry.value === value) return;
+  calendarCountry.value = value;
+  await refreshFiltered(calendarPoll);
+}
+
+/** 日历：仅高重要性（importance_min=3） */
+async function applyCalendarHighOnly(): Promise<void> {
+  await refreshFiltered(calendarPoll);
 }
 
 function refreshAll(): void {
@@ -511,6 +786,7 @@ function refreshAll(): void {
     eventsPoll.refresh(),
     newsPoll.refresh(),
     calendarPoll.refresh(),
+    calendarFacetsPoll.refresh(),
   ]);
   toast.info("已刷新论点与证据数据");
 }
@@ -619,23 +895,68 @@ function refreshAll(): void {
 .rr-since { color: var(--dim); font-size: 9.5px; }
 .rr-return { text-align: right; font-size: 10.5px; font-weight: 600; }
 
+/* ---------- 列表筛选条（新闻 / 事件 / 日历共用） ---------- */
+.list-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 13px;
+  border-bottom: 1px solid var(--border);
+}
+.list-tools .field--search { width: 260px; }
+.list-tools .tool-note { white-space: nowrap; }
+.list-tools .tool-note b { color: var(--text); }
+.switch-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
 /* ---------- 事件 ---------- */
 .event-list { padding: 2px 13px 4px; }
 .event-row {
   display: grid;
-  grid-template-columns: 78px 62px minmax(0, 1fr) auto;
+  grid-template-columns: 78px 62px minmax(0, 1fr) 74px auto;
   gap: 9px;
   align-items: start;
-  padding: 6px 0;
+  width: 100%;
+  padding: 6px 4px;
+  border: 0;
   border-bottom: 1px dashed var(--border);
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: background .12s;
 }
 .event-row:last-child { border-bottom: 0; }
+.event-row--link { cursor: pointer; }
+.event-row--link:hover { background: color-mix(in srgb, var(--surface-2) 65%, transparent); }
+.event-row:disabled { cursor: default; }
 .event-date { font-size: 9.5px; color: var(--accent); padding-top: 2px; white-space: nowrap; }
 .event-type { margin-top: 1px; }
-.event-main { min-width: 0; }
+.event-main { min-width: 0; display: flex; flex-direction: column; }
 .event-title { font-size: 11.5px; line-height: 1.45; color: var(--text); }
-.event-summary { margin-top: 1px; font-size: 9.5px; line-height: 1.5; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.event-tags { display: flex; gap: 4px; flex-wrap: nowrap; padding-top: 1px; font-size: 9.5px; }
+.event-summary {
+  margin-top: 1px;
+  min-width: 0;
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.event-impact { padding-top: 1px; white-space: nowrap; }
+.event-tags { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: nowrap; padding-top: 1px; font-size: 9.5px; white-space: nowrap; }
+.event-tags > * { flex: none; }
+.event-go { width: 11px; height: 11px; color: var(--dim); flex: none; }
 
 /* ---------- 新闻 ---------- */
 .news-list { padding: 2px 13px 4px; }

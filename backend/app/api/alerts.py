@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.base import utcnow
@@ -23,6 +23,12 @@ def list_alerts(
     if not include_acked:
         stmt = stmt.where(Alert.acknowledged.is_(False))
     rows = session.scalars(stmt).all()
+    unread_total = int(
+        session.scalar(
+            select(func.count()).select_from(Alert).where(Alert.acknowledged.is_(False))
+        )
+        or 0
+    )
     return {
         "data": [
             {
@@ -35,7 +41,8 @@ def list_alerts(
                 "created_at": row.created_at.isoformat(),
             }
             for row in rows
-        ]
+        ],
+        "meta": {"count": len(rows), "unread": unread_total},
     }
 
 

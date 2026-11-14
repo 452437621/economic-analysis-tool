@@ -15,6 +15,8 @@
       </div>
     </div>
 
+    <ErrorState v-if="overviewError" class="overview-error" :error="overviewError" @retry="refreshOverview" />
+
     <!-- 今日主线 + 市场时钟 -->
     <div class="hero-grid">
       <article class="hero">
@@ -88,15 +90,15 @@
           <span class="kpi-icon"><svg class="ic"><use href="#i-cpu" /></svg></span>
           <span class="kpi-label">系统状态</span>
           <span class="kpi-flag">
-            <span class="badge badge--sm" :class="health.healthy ? 'badge--live' : 'badge--warn'">
-              {{ health.healthy ? "正常" : health.error ? "未连接" : "连接中" }}
+            <span class="badge badge--sm" :class="healthy ? 'badge--live' : 'badge--warn'">
+              {{ healthBadgeText }}
             </span>
           </span>
         </div>
-        <div class="kpi-value">{{ health.healthy ? "6 / 6" : "—" }}<small>{{ health.healthy ? "在线" : "" }}</small></div>
-        <div class="kpi-sub">后端 · 数据库 · 调度器 · {{ health.health?.env ?? "local" }}</div>
+        <div class="kpi-value">{{ healthOnline }}<small>{{ healthy ? "在线" : "" }}</small></div>
+        <div class="kpi-sub">后端 · 数据库 · 调度器 · {{ healthInfo?.env ?? "local" }}</div>
         <div class="kpi-meter">
-          <i :class="health.healthy ? 'ok' : 'warn'" :style="{ width: health.healthy ? '100%' : '30%' }"></i>
+          <i :class="healthy ? 'ok' : 'warn'" :style="{ width: healthy ? '100%' : '30%' }"></i>
           <i class="track"></i>
         </div>
       </article>
@@ -141,10 +143,10 @@
             </span>
           </span>
         </div>
-        <div class="kpi-value">{{ jobs.length }}<small>个任务</small></div>
-        <div class="kpi-sub">{{ health.nextJob ? `下一任务 ${fmtTime(health.nextJob.next_run, true)}` : "等待调度" }}</div>
+        <div class="kpi-value">{{ jobsInfo.total }}<small>个任务</small></div>
+        <div class="kpi-sub">{{ jobsInfo.next_run ? `下一任务 ${fmtTime(jobsInfo.next_run, true)}` : "等待调度" }}</div>
         <div class="kpi-meter">
-          <i class="ok" :style="{ width: jobs.length ? '88%' : '10%' }"></i>
+          <i class="ok" :style="{ width: jobsInfo.total ? '88%' : '10%' }"></i>
           <i class="track"></i>
         </div>
       </article>
@@ -177,7 +179,7 @@
           <span class="w-code">{{ item.symbol }}</span>
         </div>
         <div class="w-price">
-          {{ fmtPrice(item.price, item.asset_class) }}
+          {{ fmtPrice(item.price, item.asset_class) }}<small v-if="prefs.showUnits && item.unit">{{ item.unit }}</small>
         </div>
         <div class="w-sub">
           <span class="w-chg" :class="trendClass(item.change_pct)">
@@ -189,7 +191,7 @@
           </span>
         </div>
         <div class="w-spark">
-          <Sparkline :values="sparkFor(item.symbol)" :positive="(item.change_20d ?? 0) >= 0" />
+          <Sparkline :values="item.spark ?? []" :positive="(item.change_20d ?? 0) >= 0" />
         </div>
       </article>
       <EmptyState v-if="!watchlist.length" text="暂无自选" hint="在 config/default.yaml 配置，或在市场页添加。" />
@@ -254,14 +256,14 @@
       <section class="card">
         <div class="card-head">
           <span class="card-title">告警</span>
-          <span class="badge badge--sm">{{ alerts.unread }} 条未确认</span>
+          <span class="badge badge--sm">{{ alertUnread }} 条未确认</span>
           <div class="card-actions">
             <span class="card-sub">阈值 / 利差 / 延迟 / 持仓异动</span>
             <button class="link-btn" type="button" @click="alerts.open = true">全部</button>
           </div>
         </div>
         <div class="alerts-body">
-          <div v-for="alert in alerts.items.slice(0, 4)" :key="alert.id" class="alert-row">
+          <div v-for="alert in alertItems.slice(0, 4)" :key="alert.id" class="alert-row">
             <span class="sev" :class="severityClass(alert.level)"></span>
             <div>
               <div class="alert-text">{{ alert.title }}</div>
@@ -272,7 +274,7 @@
             </div>
             <span class="alert-time">{{ fmtTime(alert.created_at, true) }}</span>
           </div>
-          <EmptyState v-if="!alerts.items.length" text="暂无告警" />
+          <EmptyState v-if="!alertItems.length" text="暂无告警" />
         </div>
       </section>
 
@@ -301,26 +303,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import Sparkline from "@/components/ui/Sparkline.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
+import ErrorState from "@/components/ui/ErrorState.vue";
 import WatchlistManager from "@/components/domain/WatchlistManager.vue";
 import { usePolling } from "@/composables/usePolling";
-import { fmtInt, fmtPct, fmtPrice, fmtSigned, fmtTime, stars, trendClass } from "@/composables/useFormat";
+import { fmtInt, fmtMacro, fmtPct, fmtPrice, fmtSigned, fmtTime, stars, trendClass } from "@/composables/useFormat";
 import { SNAPSHOT_CATEGORIES } from "@/utils/market";
-import {
-  briefPrintUrl,
-  getBars,
-  getCalendar,
-  getJobs,
-  getLatestBrief,
-  getMacroLatest,
-  getMacroSeries,
-  getSnapshot,
-  getWatchlist,
-} from "@/api/endpoints";
-import type { Brief, JobRow, SnapshotItem, WatchlistItem } from "@/api/types";
+import { briefPrintUrl, getOverview } from "@/api/endpoints";
+import type { Brief, SnapshotItem, WatchlistItem } from "@/api/types";
 import { usePrefsStore } from "@/stores/prefs";
 import { useHealthStore } from "@/stores/health";
 import { useAlertsStore } from "@/stores/alerts";
@@ -333,29 +326,60 @@ const alerts = useAlertsStore();
 const historyStore = useHistoryStore();
 const toast = useToast();
 
-const brief = ref<Brief | null>(null);
 const watchManagerOpen = ref(false);
-const jobs = ref<JobRow[]>([]);
-const calendar = ref<Awaited<ReturnType<typeof getCalendar>>["data"]>([]);
-const sparkMap = ref<Record<string, number[]>>({});
-const rateSparks = ref<Record<string, number[]>>({});
 
-const { data: snapshotPayload, refresh: refreshSnapshot } = usePolling(getSnapshot, {
+/* ---------- 主数据源：GET /api/overview（单请求聚合） ---------- */
+const {
+  data: overview,
+  error: overviewError,
+  loading: overviewLoading,
+  refresh: refreshOverview,
+} = usePolling(getOverview, {
   interval: () => prefs.refreshInterval * 1000,
 });
-const { data: watchPayload, refresh: refreshWatchlist } = usePolling(getWatchlist, {
-  interval: () => prefs.refreshInterval * 1000,
-});
-const { data: macroPayload, refresh: refreshMacro } = usePolling(getMacroLatest, {
-  interval: 60000,
+
+const brief = computed<Brief | null>(() => overview.value?.brief ?? null);
+const snapshot = computed<SnapshotItem[]>(() => overview.value?.snapshot?.data ?? []);
+const snapshotMeta = computed(() => overview.value?.snapshot?.meta ?? {});
+const watchlist = computed<WatchlistItem[]>(() => overview.value?.watchlist?.data ?? []);
+const macroRows = computed(() => overview.value?.macro?.latest ?? []);
+const rateSparks = computed<Record<string, number[]>>(() => overview.value?.macro?.sparks ?? {});
+const alertItems = computed(() => overview.value?.alerts?.items ?? []);
+const alertUnread = computed(() => overview.value?.alerts?.unread ?? 0);
+const calendar = computed(() => overview.value?.calendar ?? []);
+const jobsInfo = computed(
+  () => overview.value?.jobs ?? { total: 0, failed: 0, scheduler_running: false, next_run: null },
+);
+const healthInfo = computed(() => overview.value?.health ?? null);
+const healthy = computed(() => healthInfo.value?.status === "ok");
+
+const healthBadgeText = computed(() => {
+  if (healthy.value) return "正常";
+  if (healthInfo.value) return "降级";
+  return overviewLoading.value ? "连接中" : "未连接";
 });
 
-const snapshot = computed<SnapshotItem[]>(() => snapshotPayload.value?.data ?? []);
-const snapshotMeta = computed(() => snapshotPayload.value?.meta ?? {});
-const watchlist = computed<WatchlistItem[]>(() => watchPayload.value?.data ?? []);
-const macroRows = computed(() => macroPayload.value?.data ?? []);
+/** 系统自检项：后端 / 数据库 / 调度器 / 行情 / 新闻 / 日线 */
+const healthChecks = computed(() => {
+  const info = healthInfo.value;
+  if (!info) return { passed: 0, total: 6 };
+  const counts = info.counts;
+  const checks = [
+    info.status === "ok",
+    Boolean(info.database?.ok),
+    Boolean(info.scheduler?.running),
+    (counts?.quotes ?? 0) > 0,
+    (counts?.documents ?? 0) > 0,
+    (counts?.market_bars ?? 0) > 0,
+  ];
+  return { passed: checks.filter(Boolean).length, total: checks.length };
+});
 
-const counts = computed(() => health.counts);
+const healthOnline = computed(() =>
+  healthy.value ? `${healthChecks.value.passed} / ${healthChecks.value.total}` : "—",
+);
+
+const counts = computed(() => healthInfo.value?.counts);
 const quoteGap = computed(() => {
   const total = snapshotMeta.value.count ?? 0;
   const quoted = snapshotMeta.value.with_quote ?? 0;
@@ -366,7 +390,7 @@ const coveragePct = computed(() => {
   if (!total) return 0;
   return Math.round(((snapshotMeta.value.with_quote ?? 0) / total) * 100);
 });
-const jobErrors = computed(() => jobs.value.filter((job) => job.last_status === "error").length);
+const jobErrors = computed(() => jobsInfo.value.failed ?? 0);
 
 const todayLabel = computed(() => {
   const date = new Date();
@@ -524,7 +548,7 @@ function heatStyle(change: number | null | undefined): Record<string, string> {
   };
 }
 
-/* ---------- 利率快照 ---------- */
+/* ---------- 利率快照（macro.latest + macro.sparks） ---------- */
 const RATE_CODES = [
   { code: "SOFR", label: "SOFR" },
   { code: "EFFR", label: "EFFR" },
@@ -560,7 +584,7 @@ const rateRows = computed(() => {
       code: meta.code,
       label: meta.label,
       isSub: meta.isSub,
-      value: row.unit === "%" ? `${row.value.toFixed(2)}%` : row.value.toFixed(2),
+      value: fmtMacro(row.value, row.unit === "%" ? "%" : null),
       chg: chgValue === null ? "—" : fmtSigned(chgValue, 2),
       chgValue,
       chgClass: trendClass(chgValue),
@@ -570,74 +594,9 @@ const rateRows = computed(() => {
   return rows;
 });
 
-const macroAsOf = computed(() => macroRows.value[0]?.ts ?? "");
+const macroAsOf = computed(() => macroRows.value[0]?.ts ?? overview.value?.asof ?? "");
 
-/* ---------- 数据加载 ---------- */
-async function loadBrief(): Promise<void> {
-  try {
-    const payload = await getLatestBrief();
-    brief.value = payload.data;
-  } catch (err) {
-    brief.value = null;
-  }
-}
-
-async function loadJobs(): Promise<void> {
-  try {
-    jobs.value = (await getJobs()).data ?? [];
-  } catch {
-    jobs.value = [];
-  }
-}
-
-async function loadCalendar(): Promise<void> {
-  try {
-    calendar.value = (await getCalendar(14, 20)).data ?? [];
-  } catch {
-    calendar.value = [];
-  }
-}
-
-async function loadSparks(): Promise<void> {
-  const symbols = watchlist.value.map((item) => item.symbol);
-  await Promise.all(
-    symbols.map(async (symbol) => {
-      if (sparkMap.value[symbol]?.length) return;
-      try {
-        const bars = await getBars(symbol, "1d", 60);
-        sparkMap.value = {
-          ...sparkMap.value,
-          [symbol]: bars.data.map((bar) => Number(bar.close)).filter((value) => Number.isFinite(value)),
-        };
-      } catch {
-        /* 单标的失败不影响其它卡片 */
-      }
-    }),
-  );
-}
-
-async function loadRateSparks(): Promise<void> {
-  const codes = RATE_CODES.map((item) => item.code).slice(0, 8);
-  await Promise.all(
-    codes.map(async (code) => {
-      if (rateSparks.value[code]?.length) return;
-      try {
-        const series = await getMacroSeries(code, 45);
-        rateSparks.value = {
-          ...rateSparks.value,
-          [code]: series.data.map((point) => point.value),
-        };
-      } catch {
-        /* ignore */
-      }
-    }),
-  );
-}
-
-function sparkFor(symbol: string): number[] {
-  return sparkMap.value[symbol] ?? [];
-}
-
+/* ---------- 交互 ---------- */
 function openHistory(item: WatchlistItem): void {
   void historyStore.openHistory("instrument", item.symbol, item.name);
 }
@@ -663,42 +622,12 @@ async function copyMainline(): Promise<void> {
 }
 
 function refreshAll(): void {
-  void Promise.all([
-    refreshSnapshot(),
-    refreshWatchlist(),
-    refreshMacro(),
-    loadBrief(),
-    loadJobs(),
-    loadCalendar(),
-    health.refresh(),
-    alerts.refresh(),
-  ]);
-  void loadSparks();
-  void loadRateSparks();
+  void Promise.all([refreshOverview(), health.refresh(), alerts.refresh()]);
   toast.info("已刷新总览数据");
 }
 
-watch(watchlist, () => void loadSparks(), { deep: false });
-watch(macroRows, () => void loadRateSparks(), { deep: false });
-
-let refreshTimer: number | null = null;
-
 onMounted(() => {
-  void loadBrief();
-  void loadJobs();
-  void loadCalendar();
-  void loadSparks();
-  void loadRateSparks();
   if (new URLSearchParams(location.search).get("watch") === "1") watchManagerOpen.value = true;
-  refreshTimer = window.setInterval(() => {
-    void loadBrief();
-    void loadJobs();
-    void loadCalendar();
-  }, 120000);
-});
-
-onBeforeUnmount(() => {
-  if (refreshTimer !== null) window.clearInterval(refreshTimer);
 });
 </script>
 
@@ -708,5 +637,8 @@ onBeforeUnmount(() => {
 }
 .dim {
   color: var(--dim);
+}
+.overview-error {
+  margin: 0 0 8px;
 }
 </style>

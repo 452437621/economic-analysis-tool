@@ -22,24 +22,72 @@
         class="wm-item"
         :data-symbol="item.symbol"
       >
-        <span class="wm-drag" title="拖拽排序">⋮⋮</span>
-        <div class="wm-main">
-          <div class="wm-name">
-            {{ item.name }}
-            <span class="wm-code">{{ item.symbol }}</span>
-            <span v-if="item.group" class="badge badge--sm">{{ item.group }}</span>
-            <span class="badge badge--sm">P{{ item.priority }}</span>
+        <div class="wm-row">
+          <span class="wm-drag" title="拖拽排序">⋮⋮</span>
+          <div class="wm-main">
+            <div class="wm-name">
+              {{ item.name }}
+              <span class="wm-code">{{ item.symbol }}</span>
+              <span v-if="item.group" class="badge badge--sm">{{ item.group }}</span>
+              <span class="badge badge--sm">P{{ item.priority }}</span>
+            </div>
+            <div class="wm-sub">
+              <span>
+                最新 <b>{{ fmtPrice(item.price, item.asset_class) }}</b>
+                <span class="wm-unit">{{ item.unit ?? "—" }}</span>
+              </span>
+              <span :class="trendClass(item.change_pct)">{{ fmtPct(item.change_pct) }}</span>
+              <span v-if="item.note" class="dim">{{ item.note }}</span>
+            </div>
           </div>
-          <div class="wm-sub">
-            <span>最新 <b>{{ fmtPrice(item.price, item.asset_class) }}</b></span>
-            <span :class="trendClass(item.change_pct)">{{ fmtPct(item.change_pct) }}</span>
-            <span v-if="item.note" class="dim">{{ item.note }}</span>
+          <div class="wm-actions">
+            <button
+              class="icon-btn"
+              type="button"
+              :title="editingSymbol === item.symbol ? '收起编辑' : '编辑分组 / 优先级 / 备注'"
+              @click="toggleEdit(item)"
+            >
+              <svg class="ic"><use href="#i-settings" /></svg>
+            </button>
+            <button class="icon-btn" type="button" title="上移" @click="move(item.symbol, 'up')">↑</button>
+            <button class="icon-btn" type="button" title="下移" @click="move(item.symbol, 'down')">↓</button>
+            <button class="icon-btn" type="button" title="移出自选" @click="remove(item.symbol)">×</button>
           </div>
         </div>
-        <div class="wm-actions">
-          <button class="icon-btn" type="button" title="上移" @click="move(item.symbol, 'up')">↑</button>
-          <button class="icon-btn" type="button" title="下移" @click="move(item.symbol, 'down')">↓</button>
-          <button class="icon-btn" type="button" title="移出自选" @click="remove(item.symbol)">×</button>
+
+        <div v-if="editingSymbol === item.symbol" class="wm-edit">
+          <label class="wm-edit-field">
+            <span>分组</span>
+            <input
+              v-model="editForm.group"
+              class="wm-input"
+              placeholder="如 贵金属"
+              @keydown.enter.prevent="saveEdit(item)"
+            />
+          </label>
+          <label class="wm-edit-field">
+            <span>优先级</span>
+            <select v-model.number="editForm.priority" class="wm-input wm-priority">
+              <option v-for="level in [1, 2, 3, 4, 5]" :key="level" :value="level">P{{ level }}</option>
+            </select>
+          </label>
+          <label class="wm-edit-field wm-edit-note">
+            <span>备注</span>
+            <input
+              v-model="editForm.note"
+              class="wm-input"
+              placeholder="可选"
+              @keydown.enter.prevent="saveEdit(item)"
+            />
+          </label>
+          <div class="wm-edit-actions">
+            <button class="btn btn--sm btn--ghost" type="button" :disabled="editSaving" @click="cancelEdit">
+              取消
+            </button>
+            <button class="btn btn--sm btn--primary" type="button" :disabled="editSaving" @click="saveEdit(item)">
+              {{ editSaving ? "保存中…" : "保存" }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -86,6 +134,7 @@ import {
   moveWatch,
   removeWatch,
   reorderWatch,
+  updateWatch,
 } from "@/api/endpoints";
 import type { WatchCandidate, WatchlistItem } from "@/api/types";
 import { fmtPct, fmtPrice, trendClass } from "@/composables/useFormat";
@@ -106,8 +155,14 @@ const listRef = ref<HTMLElement | null>(null);
 const form = ref({ symbol: "", group: "", priority: 3 });
 let sortable: Sortable | null = null;
 
+/** 内联编辑态：同一时间只展开一项 */
+const editingSymbol = ref<string | null>(null);
+const editSaving = ref(false);
+const editForm = ref({ group: "", priority: 3, note: "" });
+
 const statusText = computed(() => {
   if (dirty.value) return "顺序已修改，尚未保存";
+  if (editingSymbol.value) return `正在编辑 ${editingSymbol.value} · 保存后刷新分组 / 优先级`;
   return `${items.value.length} 个自选 · 拖拽或 ↑↓ 调整`;
 });
 
@@ -198,7 +253,47 @@ async function add(): Promise<void> {
   }
 }
 
+/** 展开 / 收起某一项的内联编辑；展开时用当前值初始化表单 */
+function toggleEdit(item: WatchlistItem): void {
+  if (editingSymbol.value === item.symbol) {
+    editingSymbol.value = null;
+    return;
+  }
+  editingSymbol.value = item.symbol;
+  editForm.value = {
+    group: item.group ?? "",
+    priority: item.priority || 3,
+    note: item.note ?? "",
+  };
+}
+
+function cancelEdit(): void {
+  editingSymbol.value = null;
+}
+
+/** 保存：PATCH /api/watchlist/{symbol}，成功 toast + reload 看到新分组 / 优先级 */
+async function saveEdit(item: WatchlistItem): Promise<void> {
+  if (editSaving.value) return;
+  editSaving.value = true;
+  try {
+    // 后端 PATCH 仅在字段非 null 时更新，且 "" 视为清空；故空值传空串而非 null
+    await updateWatch(item.symbol, {
+      group: editForm.value.group.trim(),
+      priority: editForm.value.priority,
+      note: editForm.value.note.trim(),
+    });
+    toast.ok(`${item.symbol} 分组 / 优先级已保存`);
+    editingSymbol.value = null;
+    await reload();
+  } catch (err) {
+    toast.bad(err instanceof Error ? err.message : String(err));
+  } finally {
+    editSaving.value = false;
+  }
+}
+
 function close(): void {
+  editingSymbol.value = null;
   if (dirty.value) {
     toast.warn("顺序未保存，已按服务端顺序关闭");
     reload().catch(() => undefined);
@@ -246,12 +341,56 @@ onBeforeUnmount(() => {
 }
 .wm-item {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   padding: 7px 9px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface-2);
+}
+.wm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wm-unit {
+  margin-left: 4px;
+  font-family: var(--sans);
+  font-size: 9px;
+  color: var(--dim);
+}
+.wm-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface);
+}
+.wm-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 9.5px;
+  color: var(--dim);
+}
+.wm-edit-field .wm-input {
+  width: 128px;
+  height: 26px;
+  font-size: 10.5px;
+}
+.wm-edit-note {
+  flex: 1 1 150px;
+}
+.wm-edit-note .wm-input {
+  width: 100%;
+}
+.wm-edit-actions {
+  display: flex;
+  gap: 5px;
+  margin-left: auto;
 }
 .wm-ghost {
   opacity: 0.4;

@@ -140,8 +140,8 @@
               >
                 <td><span class="sym">{{ item.symbol }}</span></td>
                 <td class="nm">{{ item.name }}</td>
-                <td class="num">
-                  {{ fmtPrice(item.price, item.asset_class) }}<span v-if="prefs.showUnits && unitFor(item)" class="unit">{{ unitFor(item) }}</span>
+                <td class="num" :title="contractTitle(item)">
+                  {{ fmtPrice(item.price, item.asset_class) }}<span v-if="prefs.showUnits" class="unit">{{ unitOf(item) }}</span>
                 </td>
                 <td class="num">
                   <span :class="trendClass(changeAbs(item))">{{ changeAbsText(item) }}</span>
@@ -256,17 +256,21 @@
           <select
             v-model="memberProduct"
             class="select member-select"
-            :disabled="!positions.length"
+            :disabled="!products.length"
             aria-label="切换会员持仓品种"
           >
-            <option v-for="row in positions" :key="row.product" :value="row.product">
+            <option v-if="!products.length" value="">
+              {{ productsLoading ? "加载中…" : productsError ? "加载失败" : "暂无品种" }}
+            </option>
+            <option v-for="row in products" :key="row.product" :value="row.product">
               {{ row.name }}（{{ row.product.toUpperCase() }}）
             </option>
           </select>
         </div>
       </div>
 
-      <ErrorState v-if="memberError" :error="memberError" @retry="loadMembers" />
+      <ErrorState v-if="productsError" :error="productsError" @retry="refreshProducts" />
+      <ErrorState v-else-if="memberError" :error="memberError" @retry="loadMembers" />
       <template v-else>
         <div class="members-body">
           <div class="member-col">
@@ -341,12 +345,14 @@ import {
 } from "@/utils/market";
 import {
   getPositionMembers,
+  getPositionProducts,
   getPositions,
   getSnapshot,
 } from "@/api/endpoints";
 import type {
   ApiMeta,
   PositionMember,
+  PositionProductsResponse,
   PositionRow,
   SnapshotItem,
 } from "@/api/types";
@@ -389,48 +395,16 @@ for (const chip of CATEGORY_CHIPS) {
   }
 }
 
-/** 单位：真实响应无 unit 字段，按品种 / 币种映射（价格展示用） */
-const UNIT_BY_SYMBOL: Record<string, string> = {
-  AU: "元/克",
-  AG: "元/千克",
-  GC: "美元/盎司",
-  SI: "美元/盎司",
-  XAUUSD: "美元/盎司",
-  CU: "元/吨",
-  AL: "元/吨",
-  ZN: "元/吨",
-  NI: "元/吨",
-  HG: "美元/吨",
-  AL_LME: "美元/吨",
-  ZN_LME: "美元/吨",
-  NI_LME: "美元/吨",
-  CL: "美元/桶",
-  BZ: "美元/桶",
-  SC: "元/桶",
-  I: "元/吨",
-  M: "元/吨",
-  P: "元/吨",
-  CF: "元/吨",
-  SR: "元/吨",
-  DXY: "点",
-  "000300": "点",
-  SPX: "点",
-  NDX: "点",
-  DJIA: "点",
-  HSI: "点",
-  "603993": "元/股",
-};
+/** 单位：直接使用后端快照字段 unit（如 元/克、美元/盎司、元/吨、点、汇率），缺失显示 — */
+function unitOf(item: SnapshotItem): string {
+  const unit = item.unit?.trim();
+  return unit ? unit : "—";
+}
 
-function unitFor(item: SnapshotItem): string {
-  const known = UNIT_BY_SYMBOL[item.symbol];
-  if (known) return known;
-  if (item.asset_class === "fx") return "";
-  if (item.asset_class === "equity") return item.currency === "CNY" ? "元/股" : "";
-  if (item.asset_class === "energy") return item.currency === "CNY" ? "元/桶" : "美元/桶";
-  if (item.asset_class === "metal" || item.asset_class === "agri" || item.asset_class === "black") {
-    return item.currency === "CNY" ? "元/吨" : "美元/吨";
-  }
-  return "";
+/** 合约乘数 tooltip：不新增列，不影响列宽 */
+function contractTitle(item: SnapshotItem): string {
+  if (item.contract_size === null || item.contract_size === undefined) return "";
+  return `合约乘数 ${item.contract_size}`;
 }
 
 /** 绝对涨跌 = 最新 − 昨收（两者都有值时） */
@@ -607,17 +581,40 @@ const memberTradeDate = ref<string | null>(null);
 const memberLoading = ref(false);
 const memberError = ref<Error | null>(null);
 
+/** 会员品种下拉：来自 GET /api/positions/products（不再从持仓行推导） */
+const {
+  data: productsPayload,
+  loading: productsLoading,
+  error: productsError,
+  refresh: refreshProducts,
+} = usePolling(getPositionProducts, { interval: 300000 });
+
+const products = computed<PositionProductsResponse["data"]>(
+  () => productsPayload.value?.data ?? [],
+);
+
+const productsTradeDate = computed(() => productsPayload.value?.trade_date ?? null);
+
 const memberLong = computed(() => members.value.filter((row) => row.side === "long"));
 const memberShort = computed(() => members.value.filter((row) => row.side === "short"));
 
+/** 持仓结构行：用于净持仓 / 多空比（products 只含 product+name） */
 const selectedPosition = computed<PositionRow | undefined>(() =>
   positions.value.find((row) => row.product === memberProduct.value),
 );
 
+const selectedProduct = computed(() =>
+  products.value.find((row) => row.product === memberProduct.value),
+);
+
 const memberSub = computed(() => {
-  const name = selectedPosition.value?.name ?? "";
+  const name =
+    selectedProduct.value?.name ??
+    selectedPosition.value?.name ??
+    (memberProduct.value ? "" : "选择品种");
   const code = memberProduct.value ? memberProduct.value.toUpperCase() : "—";
-  return `${name}（${code}）· ${memberTradeDate.value ?? "—"} · 净持仓 = 多 − 空`;
+  const date = memberTradeDate.value ?? productsTradeDate.value ?? "—";
+  return `${name}（${code}）· ${date} · 净持仓 = 多 − 空`;
 });
 
 const longShortRatio = computed(() => {
@@ -643,7 +640,7 @@ async function loadMembers(): Promise<void> {
 }
 
 watch(
-  positions,
+  products,
   (list) => {
     if (!list.length) return;
     const exists = list.some((row) => row.product === memberProduct.value);
@@ -691,6 +688,7 @@ watch(
 function refreshAll(): void {
   void refreshSnapshot();
   void refreshPositions();
+  void refreshProducts();
   if (memberProduct.value) void loadMembers();
   toast.info("正在刷新行情与持仓数据");
 }

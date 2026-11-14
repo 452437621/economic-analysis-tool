@@ -6,11 +6,37 @@
 
 ## [Unreleased]
 
-### 计划中（V1.2 候选）
+### 计划中（V1.3 候选）
 
 - LLM 全链路实跑（断言/事件/简报编辑/论点证据）——需 `DEEPSEEK_API_KEY`。
 - 港股/A 股扩展、组合级风控、PDF 服务端渲染、移动端单独设计。
 - 大商所官方持仓、LME 日线、美国财政部新闻源替代方案。
+
+## [1.2.0] - 2026-11-14
+
+### 新增（后端接口补齐，满足前端全部数据需求）
+
+- `GET /api/overview`：总览页聚合接口（health + 最新简报 + 快照 + 自选含 sparkline + 宏观利率与迷你走势 + 告警 + 日历 + 任务健康），前端首屏请求由 20+ 降为 1。
+- 行情单位：`instruments.extra.unit` 落库（`app/platform/instrument_units.py`），`/api/market/snapshot`、`/api/watchlist` 返回 `unit` 与 `contract_size`；前端不再硬编码单位映射。
+- 简报：`/api/briefs/latest?kind=daily` 聚合 manual/premarket/postmarket 并返回 `neighbors`（上一期/下一期 id）；`/api/briefs` 支持 `kind` 分组历史 + `offset` + `total/kinds`；新增 `/api/briefs/kinds`。
+- 事件：`/api/events` 支持 `q` / `instrument` / `offset` / `total`；每条事件返回 `document_id` / `document_ids`（证据链）与 `impact`。
+- 新闻：`/api/news` 支持 `source` / `tier` / `since_days` / `offset` 与 `meta.total`，返回 `source_id`。
+- 日历：`/api/calendar` 支持 `country` / `category` / `importance_min` / `offset` 与 `meta.total`。
+- 持仓：新增 `/api/positions/products`（会员持仓品种列表）。
+- 自选：新增 `PATCH /api/watchlist/{symbol}`（分组 / 优先级 / 备注），供自选管理内联编辑。
+- 测试：`tests/test_api_contracts.py`（9 条契约测试）+ `test_api_smoke.py` 覆盖新端点，共 115 条测试通过。
+
+### 修复
+
+- 前端全局 `<a>` 下划线/默认链接色泄漏到按钮式链接（「查看日报」「查看简报」「打印」「API 文档」等）的问题：`a.btn/a.link-btn/a.nav-item` 统一 `text-decoration: none`，`.btn` 显式声明字体/颜色继承。
+- `tests/test_release.py` 子进程输出按 UTF-8 解码，消除 Windows GBK 警告。
+
+### 前端联调
+
+- 总览页改用 `/api/overview` 单请求（自选迷你走势由后端返回）。
+- 简报页接入真实历史期次（上一期/下一期）与日报/周报/月报数量徽标。
+- 论点与证据页：新闻关键词搜索、事件类型筛选与证据链接、日历国家/高重要性筛选。
+- 市场页单位改为后端字段、会员持仓下拉改用 `/api/positions/products`；自选管理支持内联编辑分组/优先级/备注。
 
 ## [1.1.0] - 2026-11-14
 

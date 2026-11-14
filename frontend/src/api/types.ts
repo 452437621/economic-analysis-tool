@@ -106,6 +106,8 @@ export interface SnapshotItem {
   asset_class: string;
   exchange: string | null;
   currency: string | null;
+  unit?: string | null;
+  contract_size?: number | null;
   price?: number | null;
   change_pct?: number | null;
   prev_close?: number | null;
@@ -188,6 +190,11 @@ export interface PositionMembersResponse {
   data: PositionMember[];
 }
 
+export interface PositionProductsResponse {
+  trade_date: string | null;
+  data: Array<{ product: string; name: string }>;
+}
+
 export interface CalendarEvent {
   id: string;
   ts: string;
@@ -203,6 +210,7 @@ export interface NewsItem {
   url: string;
   published_at: string;
   source: string | null;
+  source_id?: string | null;
   tier: string | null;
   summary: string | null;
 }
@@ -214,7 +222,10 @@ export interface EventItem {
   event_date: string;
   title: string;
   summary: string | null;
+  impact?: number | null;
   instruments: string[];
+  document_id?: string | null;
+  document_ids?: string[];
 }
 
 export interface AlertItem {
@@ -227,12 +238,18 @@ export interface AlertItem {
   created_at: string;
 }
 
+export interface AlertListResponse {
+  data: AlertItem[];
+  meta: { count: number; unread: number };
+}
+
 /* ---------- 自选 ---------- */
 
 export interface WatchlistItem {
   symbol: string;
   name: string;
   asset_class: string;
+  unit?: string | null;
   group: string | null;
   priority: number;
   sort_order: number;
@@ -242,6 +259,8 @@ export interface WatchlistItem {
   quote_ts: string | null;
   change_20d: number | null;
   trend: string | null;
+  /** 最近 30 根日线收盘价（仅总览聚合接口返回） */
+  spark?: number[];
 }
 
 export interface WatchCandidate {
@@ -550,3 +569,123 @@ export interface JournalEntry {
   content: string;
   created_at?: string;
 }
+
+/* ---------- 分页 / 查询（V1.2 新增后端接口） ---------- */
+
+export interface PageMeta {
+  count: number;
+  total: number;
+  offset: number;
+  has_more?: boolean;
+}
+
+export interface NewsQuery {
+  limit?: number;
+  offset?: number;
+  q?: string;
+  source?: string;
+  tier?: string;
+  since_days?: number;
+}
+
+export interface NewsPage {
+  data: NewsItem[];
+  meta: PageMeta;
+}
+
+export interface EventQuery {
+  limit?: number;
+  offset?: number;
+  type?: string;
+  q?: string;
+  instrument?: string;
+}
+
+export interface EventPage {
+  data: EventItem[];
+  meta: PageMeta;
+}
+
+export interface CalendarQuery {
+  days?: number;
+  limit?: number;
+  offset?: number;
+  country?: string;
+  category?: string;
+  importance_min?: number;
+}
+
+export interface CalendarPage {
+  data: CalendarEvent[];
+  meta: PageMeta & { days: number };
+}
+
+export interface BriefListMeta extends PageMeta {
+  kinds: Record<string, number>;
+}
+
+export interface BriefListResponse {
+  data: BriefSummary[];
+  meta: BriefListMeta;
+}
+
+export interface BriefKindsResponse {
+  data: {
+    kinds: Record<string, number>;
+    groups: { daily: number; weekly: number; monthly: number };
+  };
+}
+
+export interface LatestBriefResponse {
+  data: Brief | null;
+  neighbors: { previous_id: string | null; next_id: string | null };
+}
+
+export interface WatchPatch {
+  group?: string | null;
+  priority?: number;
+  note?: string | null;
+}
+
+/* ---------- 总览聚合接口 ---------- */
+
+export interface OverviewAlert {
+  id: string;
+  level: string;
+  kind: string;
+  title: string;
+  message: string | null;
+  created_at: string | null;
+}
+
+export interface OverviewMacro {
+  latest: MacroLatestItem[];
+  sparks: Record<string, number[]>;
+}
+
+export interface OverviewResponse {
+  asof: string | null;
+  health: {
+    status: string;
+    version: string;
+    env: string;
+    llm_enabled: boolean;
+    time_local: string;
+    database: { ok: boolean; engine: string; error: string | null };
+    scheduler: { running: boolean; jobs: SchedulerJob[] };
+    counts: HealthCounts;
+  };
+  brief: Brief | null;
+  snapshot: SnapshotResponse;
+  watchlist: { data: WatchlistItem[] };
+  macro: OverviewMacro;
+  alerts: { unread: number; items: OverviewAlert[] };
+  calendar: CalendarEvent[];
+  jobs: {
+    total: number;
+    failed: number;
+    scheduler_running: boolean;
+    next_run: string | null;
+  };
+}
+

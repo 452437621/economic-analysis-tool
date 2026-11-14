@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.serializers import watchlist_payload
 from app.models.core import AnalyticsResult, Instrument, Quote, WatchItem
 from app.platform.db import get_session
 
@@ -17,6 +18,12 @@ class WatchIn(BaseModel):
     symbol: str = Field(min_length=1, max_length=20)
     group: str | None = Field(default=None, max_length=40)
     priority: int = Field(default=3, ge=1, le=5)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class WatchPatch(BaseModel):
+    group: str | None = Field(default=None, max_length=40)
+    priority: int | None = Field(default=None, ge=1, le=5)
     note: str | None = Field(default=None, max_length=500)
 
 
@@ -50,37 +57,8 @@ def _indicator_changes(session: Session) -> dict[str, dict]:
 
 @router.get("")
 def list_watchlist(session: Session = Depends(get_session)) -> dict:
-    items = session.execute(
-        select(WatchItem, Instrument)
-        .join(Instrument, Instrument.id == WatchItem.instrument_id)
-        .order_by(
-            WatchItem.sort_order.asc(),
-            WatchItem.priority.asc(),
-            Instrument.symbol.asc(),
-        )
-    ).all()
-    quotes = _latest_quotes(session)
-    indicators = _indicator_changes(session)
-    data = []
-    for item, instrument in items:
-        quote = quotes.get(instrument.id)
-        data.append(
-            {
-                "symbol": instrument.symbol,
-                "name": instrument.name,
-                "asset_class": instrument.asset_class,
-                "group": item.group,
-                "priority": item.priority,
-                "sort_order": item.sort_order,
-                "note": item.note,
-                "price": quote.price if quote else None,
-                "change_pct": quote.change_pct if quote else None,
-                "quote_ts": quote.ts_utc.isoformat() if quote else None,
-                "change_20d": indicators.get(instrument.symbol, {}).get("change_20d"),
-                "trend": indicators.get(instrument.symbol, {}).get("trend"),
-            }
-        )
-    return {"data": data}
+    """自选列表（含显示单位 / 最新价 / 20 日变动；排序与前端一致）。"""
+    return watchlist_payload(session)
 
 
 @router.get("/candidates")
@@ -176,6 +154,40 @@ def move_watch(
         item.sort_order = order
     session.commit()
     return {"symbol": symbol, "moved": True}
+
+
+@router.patch("/{symbol}")
+def update_watch(
+    symbol: str,
+    payload: WatchPatch,
+    session: Session = Depends(get_session),
+) -> dict:
+    """修改自选的分组 / 优先级 / 备注（前端自选管理内联编辑）。
+
+    语义：字段「未提供」= 不修改；显式 null 或空串 = 清空（group/note）；
+    priority 显式 null 视为不修改。
+    """
+    instrument = session.scalar(select(Instrument).where(Instrument.symbol == symbol))
+    if instrument is None:
+        raise HTTPException(status_code=404, detail=f"instrument not found: {symbol}")
+    item = session.scalar(select(WatchItem).where(WatchItem.instrument_id == instrument.id))
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"not in watchlist: {symbol}")
+    provided = payload.model_fields_set
+    if "group" in provided:
+        item.group = payload.group or None
+    if "priority" in provided and payload.priority is not None:
+        item.priority = payload.priority
+    if "note" in provided:
+        item.note = payload.note or None
+    session.commit()
+    return {
+        "symbol": symbol,
+        "saved": True,
+        "group": item.group,
+        "priority": item.priority,
+        "note": item.note,
+    }
 
 
 @router.delete("/{symbol}")

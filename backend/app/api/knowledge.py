@@ -6,9 +6,10 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.serializers import DAILY_KINDS, brief_payload, brief_summary, kind_filter
 from app.models.core import Brief, Claim, Document, DocumentBody, DocumentSpan, Source
 from app.platform.db import get_session
 
@@ -104,20 +105,49 @@ def claims(
 @router.get("/briefs")
 def list_briefs(
     limit: int = Query(10, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+    kind: str | None = Query(None, description="daily/weekly/monthly/manual/premarket/postmarket"),
     session: Session = Depends(get_session),
 ) -> dict:
-    rows = session.scalars(select(Brief).order_by(Brief.created_at.desc()).limit(limit)).all()
+    """简报历史列表（支持日报/周报/月报分组与分页，供前端上一期/下一期使用）。"""
+    kinds = kind_filter(kind)
+    stmt = select(Brief)
+    count_stmt = select(func.count()).select_from(Brief)
+    if kinds:
+        stmt = stmt.where(Brief.kind.in_(kinds))
+        count_stmt = count_stmt.where(Brief.kind.in_(kinds))
+    total = int(session.scalar(count_stmt) or 0)
+    rows = session.scalars(
+        stmt.order_by(Brief.trade_date.desc(), Brief.created_at.desc()).offset(offset).limit(limit)
+    ).all()
+    kind_counts = dict(
+        session.execute(select(Brief.kind, func.count()).group_by(Brief.kind)).all()
+    )
     return {
-        "data": [
-            {
-                "id": row.id,
-                "kind": row.kind,
-                "trade_date": row.trade_date.isoformat(),
-                "created_at": _iso(row.created_at),
-                "chars": len(row.markdown),
-            }
-            for row in rows
-        ]
+        "data": [brief_summary(row) for row in rows],
+        "meta": {
+            "count": len(rows),
+            "total": total,
+            "offset": offset,
+            "has_more": offset + len(rows) < total,
+            "kinds": {key: int(value) for key, value in kind_counts.items()},
+        },
+    }
+
+
+@router.get("/briefs/kinds")
+def brief_kinds(session: Session = Depends(get_session)) -> dict:
+    """可用简报类型与分组计数（前端 tab 徽标 / 空态判断）。"""
+    counts = dict(session.execute(select(Brief.kind, func.count()).group_by(Brief.kind)).all())
+    return {
+        "data": {
+            "kinds": {key: int(value) for key, value in counts.items()},
+            "groups": {
+                "daily": sum(int(counts.get(kind, 0)) for kind in DAILY_KINDS),
+                "weekly": int(counts.get("weekly", 0)),
+                "monthly": int(counts.get("monthly", 0)),
+            },
+        }
     }
 
 
@@ -126,30 +156,47 @@ def latest_brief(
     kind: str | None = Query(None),
     session: Session = Depends(get_session),
 ) -> dict:
-    if kind:
-        stmt = select(Brief).where(Brief.kind == kind).order_by(Brief.created_at.desc()).limit(1)
-    else:
-        # 看板默认展示日常简报，周报只在显式查询时返回
+    """最新一期简报。``kind=daily`` 聚合 manual/premarket/postmarket。"""
+    kinds = kind_filter(kind)
+    if kinds:
         stmt = (
             select(Brief)
-            .where(Brief.kind != "weekly")
+            .where(Brief.kind.in_(kinds))
+            .order_by(Brief.created_at.desc(), Brief.trade_date.desc())
+            .limit(1)
+        )
+    else:
+        # 看板默认展示日常简报，周报/月报只在显式查询时返回
+        stmt = (
+            select(Brief)
+            .where(Brief.kind.in_(DAILY_KINDS))
             .order_by(Brief.created_at.desc())
             .limit(1)
         )
     brief = session.scalar(stmt)
-    if brief is None and not kind:
+    if brief is None and not kinds:
         brief = session.scalar(select(Brief).order_by(Brief.created_at.desc()).limit(1))
     if brief is None:
-        return {"data": None}
+        return {"data": None, "neighbors": {"previous_id": None, "next_id": None}}
+    group = kinds or DAILY_KINDS
+    previous = session.scalar(
+        select(Brief)
+        .where(Brief.kind.in_(group), Brief.trade_date < brief.trade_date)
+        .order_by(Brief.trade_date.desc())
+        .limit(1)
+    )
+    following = session.scalar(
+        select(Brief)
+        .where(Brief.kind.in_(group), Brief.trade_date > brief.trade_date)
+        .order_by(Brief.trade_date.asc())
+        .limit(1)
+    )
     return {
-        "data": {
-            "id": brief.id,
-            "kind": brief.kind,
-            "trade_date": brief.trade_date.isoformat(),
-            "created_at": _iso(brief.created_at),
-            "markdown": brief.markdown,
-            "meta": brief.meta,
-        }
+        "data": brief_payload(brief),
+        "neighbors": {
+            "previous_id": previous.id if previous else None,
+            "next_id": following.id if following else None,
+        },
     }
 
 
@@ -158,14 +205,7 @@ def get_brief(brief_id: str, session: Session = Depends(get_session)) -> dict:
     brief = session.get(Brief, brief_id)
     if brief is None:
         raise HTTPException(status_code=404, detail="brief not found")
-    return {
-        "id": brief.id,
-        "kind": brief.kind,
-        "trade_date": brief.trade_date.isoformat(),
-        "created_at": _iso(brief.created_at),
-        "markdown": brief.markdown,
-        "meta": brief.meta,
-    }
+    return brief_payload(brief)
 
 
 @router.get("/briefs/{brief_id}/print", response_class=HTMLResponse)
