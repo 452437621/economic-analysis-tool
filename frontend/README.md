@@ -30,7 +30,7 @@ frontend/src/
 ├─ stores/         prefs / health / alerts / evidence / history / toast（Pinia）
 ├─ styles/         app.css（设计系统：token + 组件样式，自 mockup 提炼）、tailwind.css
 ├─ utils/market.ts 快照分类、内外盘判定、宏观分组
-└─ views/          Overview / Market / Rates / Analysis / Signals / Theses / Briefs / System
+└─ views/          Overview / Market / Rates / Analysis / Signals / Gold / Theses / Briefs / System
 ```
 
 ## 约定（新增页面必须遵守）

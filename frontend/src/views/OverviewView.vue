@@ -9,9 +9,6 @@
         <button class="btn btn--sm" type="button" @click="refreshAll">
           <svg class="ic"><use href="#i-refresh" /></svg>刷新
         </button>
-        <RouterLink class="btn btn--sm btn--primary" to="/briefs">
-          <svg class="ic"><use href="#i-file" /></svg>查看简报
-        </RouterLink>
       </div>
     </div>
 

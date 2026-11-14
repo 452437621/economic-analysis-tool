@@ -19,6 +19,8 @@ import type {
   EventItem,
   EventPage,
   EventQuery,
+  GoldOverviewResponse,
+  GoldSeriesResponse,
   Health,
   JobRow,
   JournalEntry,
@@ -119,6 +121,19 @@ export const updateWatch = (symbol: string, patch: WatchPatch) =>
     `/api/watchlist/${encodeURIComponent(symbol)}`,
     patch,
   );
+
+/* 黄金监控（V1.3） */
+export const getGoldOverview = () => getJson<GoldOverviewResponse>("/api/gold/overview");
+export const getGoldSeries = (code: string, limit = 240) =>
+  getJson<GoldSeriesResponse>("/api/gold/series", { params: { code, limit } });
+export const refreshGold = () => postJson<{ accepted: boolean }>("/api/gold/refresh", {});
+export const saveGoldMetric = (payload: {
+  code: string;
+  value: number;
+  as_of?: string;
+  source?: string;
+  note?: string;
+}) => postJson<{ saved: boolean }>("/api/gold/metrics", payload);
 
 /* 分析 */
 export const getAnalytics = () => getJson<AnalyticsOverview>("/api/analytics/overview");

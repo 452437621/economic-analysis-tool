@@ -13,11 +13,73 @@
           <svg class="ic" style="width: 11px; height: 11px"><use href="#i-alert" /></svg>刷新失败
         </span>
         <span class="badge badge--sm"><span class="dot"></span>更新于 {{ updatedLabel }}</span>
-        <button class="btn btn--sm" type="button" :disabled="loading" @click="refresh()">
+        <button class="btn btn--sm" type="button" :disabled="loading" @click="refreshAll()">
           <svg class="ic" :class="{ spin: loading }"><use href="#i-refresh" /></svg>刷新
         </button>
       </div>
     </div>
+
+    <!-- 黄金研判（独立轮询 /api/gold/overview，不阻塞下方分析区块） -->
+    <section class="card gold-card">
+      <div class="card-head">
+        <span class="card-title">黄金研判</span>
+        <span v-if="goldError && gold" class="badge badge--warn badge--sm">
+          <svg class="ic" style="width: 11px; height: 11px"><use href="#i-alert" /></svg>刷新失败
+        </span>
+        <div class="card-actions">
+          <span v-if="goldScore" class="card-sub">生成于 {{ goldGeneratedLabel }}</span>
+        </div>
+      </div>
+
+      <div v-if="goldLoading && !gold" class="card-body">
+        <SkeletonBlock :rows="2" :cells="4" :height="16" :gap="10" />
+      </div>
+
+      <ErrorState v-else-if="goldError && !gold" :error="goldError" @retry="refreshGold" />
+
+      <div v-else-if="goldScore" class="card-body gold-body">
+        <div class="gold-main">
+          <div class="gold-score-line">
+            <span class="gold-score" :class="goldTone">{{ goldScoreText }}</span>
+            <span class="gold-scale">/ 100</span>
+            <span class="badge badge--sm" :class="goldLabelClass">{{ goldLabel }}</span>
+          </div>
+          <div class="gold-meta">
+            覆盖率 <b>{{ goldCoverageText }}</b>
+            <span class="gold-meta-sep">·</span>
+            已获取权重 <b>{{ goldAvailableWeight }}</b> / {{ goldTotalWeight }}
+          </div>
+          <div class="gold-sub">
+            {{ goldAvailableCount }}/{{ goldTotalCount }} 因子可用 · 评分区间 −100 ～ +100
+          </div>
+          <RouterLink class="link-btn gold-link" to="/gold">查看完整黄金研判 →</RouterLink>
+        </div>
+
+        <div class="gold-factors">
+          <div v-for="factor in goldTopFactors" :key="factor.code" class="gold-factor">
+            <div class="gf-top">
+              <span class="gf-name" :title="`${factor.name} · ${factor.category_label}`">{{ factor.name }}</span>
+              <span class="badge badge--sm" :class="goldSignalClass(factor.signal)">{{ goldSignalText(factor.signal) }}</span>
+            </div>
+            <div class="gf-value" :title="factor.explain">{{ goldFactorValue(factor) }}</div>
+            <div class="gf-foot">
+              <span class="gf-contrib" :class="trendClass(factor.contribution)">贡献 {{ fmtSigned(factor.contribution, 2) }}</span>
+              <span class="gf-cat">{{ factor.category_label }}</span>
+            </div>
+          </div>
+          <EmptyState v-if="!goldTopFactors.length" text="暂无可评分因子" hint="等待黄金监控任务产出因子数据。" />
+        </div>
+      </div>
+
+      <div v-else class="card-body">
+        <EmptyState text="黄金评分暂不可用" hint="等待黄金监控任务产出评分。" />
+      </div>
+
+      <div v-if="goldScore" class="card-foot gold-foot">
+        <svg class="ic"><use href="#i-info" /></svg>
+        <span class="gold-method" :title="goldMethodology">{{ goldMethodology }}</span>
+      </div>
+    </section>
 
     <!-- 首次加载骨架 -->
     <template v-if="!overview && loading">
@@ -342,13 +404,14 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { RouterLink } from "vue-router";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import SkeletonBlock from "@/components/ui/SkeletonBlock.vue";
 import { usePolling } from "@/composables/usePolling";
 import { fmtDate, fmtInt, fmtMacro, fmtNumber, fmtPct, fmtSigned, fmtTime, trendClass } from "@/composables/useFormat";
-import { getAnalytics } from "@/api/endpoints";
-import type { CalendarStudyGroup, Regime } from "@/api/types";
+import { getAnalytics, getGoldOverview } from "@/api/endpoints";
+import type { CalendarStudyGroup, GoldFactor, Regime } from "@/api/types";
 import { useHistoryStore } from "@/stores/history";
 
 const historyStore = useHistoryStore();
@@ -356,6 +419,76 @@ const historyStore = useHistoryStore();
 const { data: overview, error, loading, lastUpdated, refresh } = usePolling(getAnalytics, {
   interval: 120000,
 });
+
+/** 黄金研判：独立轮询，失败/加载都不影响下方分析区块 */
+const { data: gold, error: goldError, loading: goldLoading, refresh: refreshGold } = usePolling(
+  getGoldOverview,
+  { interval: 60000 },
+);
+
+const goldScore = computed(() => gold.value?.score ?? null);
+const goldLabel = computed(() => goldScore.value?.label ?? "—");
+const goldScoreText = computed(() => (goldScore.value ? fmtSigned(goldScore.value.score, 1) : "—"));
+/** 正分涨色 / 负分跌色 / 中性或 0 用 muted（与后端 ±18 分档一致） */
+const goldTone = computed(() => {
+  const score = goldScore.value;
+  if (!score) return "flat";
+  if (score.label === "中性") return "flat";
+  if (score.score > 0) return "up";
+  if (score.score < 0) return "down";
+  return "flat";
+});
+const goldLabelClass = computed(() => {
+  if (goldLabel.value === "强多" || goldLabel.value === "偏多") return "badge--up";
+  if (goldLabel.value === "强空" || goldLabel.value === "偏空") return "badge--down";
+  return "";
+});
+const goldCoverageText = computed(() =>
+  goldScore.value ? fmtMacro(goldScore.value.coverage, "%", 0) : "—",
+);
+const goldAvailableCount = computed(
+  () => (goldScore.value?.factors ?? []).filter((factor) => factor.available).length,
+);
+const goldTotalCount = computed(() => goldScore.value?.factors.length ?? 0);
+const goldAvailableWeight = computed(() => goldScore.value?.available_weight ?? 0);
+const goldTotalWeight = computed(() => goldScore.value?.total_weight ?? 0);
+const goldGeneratedLabel = computed(() => (goldScore.value ? fmtTime(goldScore.value.generated_at, true) : "—"));
+const goldMethodology = computed(() => goldScore.value?.methodology ?? "");
+
+/** 取 |贡献| 最大的前 4 个可用因子 */
+const goldTopFactors = computed<GoldFactor[]>(() => {
+  const factors = goldScore.value?.factors ?? [];
+  return factors
+    .filter((factor) => factor.available && factor.value !== null && factor.value !== undefined)
+    .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))
+    .slice(0, 4);
+});
+
+function goldFactorValue(factor: GoldFactor): string {
+  if (factor.value === null || factor.value === undefined) return "—";
+  const digits = factor.unit === "%" ? 2 : Math.abs(factor.value) >= 1000 ? 0 : 2;
+  const text = fmtNumber(factor.value, digits);
+  if (factor.unit === "%") return `${text}%`;
+  return factor.unit ? `${text} ${factor.unit}` : text;
+}
+
+function goldSignalText(signal: string): string {
+  if (signal === "bullish") return "利多";
+  if (signal === "bearish") return "利空";
+  if (signal === "neutral") return "中性";
+  return "—";
+}
+
+function goldSignalClass(signal: string): string {
+  if (signal === "bullish") return "badge--up";
+  if (signal === "bearish") return "badge--down";
+  return "";
+}
+
+/** 刷新按钮同时刷新分析引擎与黄金研判 */
+function refreshAll(): void {
+  void Promise.all([refresh(), refreshGold()]);
+}
 
 /** 归因资产展示名（后端只返回 symbol） */
 const SYMBOL_NAMES: Record<string, string> = {
@@ -969,6 +1102,171 @@ function openHistory(symbol: string, name: string): void {
   }
   .analysis-mid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- 黄金研判 ---------- */
+.gold-card {
+  margin-bottom: 10px;
+}
+.gold-body {
+  display: flex;
+  align-items: stretch;
+  gap: 18px;
+  padding: 11px 13px 12px;
+}
+.gold-main {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-width: 208px;
+  max-width: 252px;
+  padding-right: 18px;
+  border-right: 1px solid var(--border);
+}
+.gold-score-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.gold-score {
+  font-family: var(--mono);
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -1px;
+  line-height: 1.05;
+}
+.gold-scale {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+}
+.gold-score-line .badge {
+  margin-left: auto;
+  flex: none;
+}
+.gold-meta {
+  margin-top: 4px;
+  font-size: 9.5px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.gold-meta b {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 650;
+  color: var(--text);
+}
+.gold-meta-sep {
+  padding: 0 3px;
+  color: var(--dim);
+}
+.gold-sub {
+  margin-top: 3px;
+  font-size: 9px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+.gold-link {
+  align-self: flex-start;
+  margin-top: auto;
+  padding-top: 6px;
+}
+.gold-factors {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+.gold-factor {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 7px 9px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.gf-top {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.gf-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gf-top .badge {
+  flex: none;
+  margin-left: auto;
+}
+.gf-value {
+  margin-top: 5px;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.3px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gf-foot {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 2px;
+  font-size: 9px;
+  color: var(--dim);
+}
+.gf-contrib {
+  flex: none;
+  font-family: var(--mono);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.gf-cat {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gold-foot {
+  min-width: 0;
+}
+.gold-method {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 1240px) {
+  .gold-factors {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .gold-body {
+    flex-direction: column;
+  }
+  .gold-main {
+    max-width: none;
+    padding-right: 0;
+    padding-bottom: 9px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .gold-link {
+    margin-top: 6px;
   }
 }
 </style>

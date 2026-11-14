@@ -272,6 +272,22 @@ def _register_collectors() -> None:
         max_instances=1,
         coalesce=True,
     )
+    # 首次启动回补黄金监控指标（WGC/LBMA/CFTC/东财 + 派生），之后每日 16:40 更新
+    scheduler.add_job(
+        _collector("collect_gold"),
+        trigger=DateTrigger(run_date=now + timedelta(seconds=45)),
+        id="collect_gold_bootstrap",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        _collector("collect_gold"),
+        trigger=CronTrigger(hour=16, minute=40, timezone=CST),
+        id="collect_gold",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     # 首次启动回补日线，之后按收盘时点更新
     scheduler.add_job(
         _collector("collect_daily_bars"),

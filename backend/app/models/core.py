@@ -533,3 +533,32 @@ class PositionSnapshot(Base):
     short_chg: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+
+class GoldMetric(Base):
+    """Gold monitoring indicator observations (one row per code + as_of)."""
+
+    __tablename__ = "gold_metrics"
+    __table_args__ = (UniqueConstraint("code", "as_of", name="uq_gold_metric_code_as_of"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    code: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    value: Mapped[float] = mapped_column(Float, nullable=False)
+    source: Mapped[str | None] = mapped_column(String(40))
+    extra: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class GoldProviderRun(Base):
+    """Last run status per gold provider (for the data-source monitor)."""
+
+    __tablename__ = "gold_provider_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    provider: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    ok: Mapped[bool] = mapped_column(Boolean, default=True)
+    records: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+

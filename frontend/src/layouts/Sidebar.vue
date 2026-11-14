@@ -64,6 +64,7 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   {
     label: "研究分析",
     items: [
+      { to: "/gold", label: "黄金研判", icon: "#i-flame" },
       { to: "/rates", label: "利率与流动性", icon: "#i-rates" },
       { to: "/analysis", label: "分析引擎", icon: "#i-cpu" },
       { to: "/signals", label: "交易信号", icon: "#i-activity" },

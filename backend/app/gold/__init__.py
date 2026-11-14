@@ -1,0 +1,1 @@
+"""Gold monitoring domain package."""

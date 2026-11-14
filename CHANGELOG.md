@@ -6,11 +6,29 @@
 
 ## [Unreleased]
 
-### 计划中（V1.3 候选）
+### 计划中（V1.4 候选）
 
 - LLM 全链路实跑（断言/事件/简报编辑/论点证据）——需 `DEEPSEEK_API_KEY`。
 - 港股/A 股扩展、组合级风控、PDF 服务端渲染、移动端单独设计。
 - 大商所官方持仓、LME 日线、美国财政部新闻源替代方案。
+- 黄金监控：WGC 央行购金官方下载（Cloudflare）绕行、CME COMEX 库存镜像、SGE 库存数据源、BIS 报告解析。
+
+## [1.3.0] - 2026-11-14
+
+### 新增（黄金监控与综合研判）
+
+- 新增黄金监控模块 `backend/app/gold/`：22 个指标（19 个参与评分）+ 数据源健康 + 综合评分 + 手动录入，详见 [17 黄金监控与综合研判](docs/17-黄金监控与综合研判.md)。
+- 自动采集（每日 16:40 + 启动回补）：LBMA 伦敦金库（XLSX）、WGC 全球黄金 ETF（JSON）、CFTC COMEX 黄金分类持仓（年度 ZIP）、东方财富中国央行黄金储备（JSON）、本地派生（上海金溢价、COMEX 期现基差、租赁紧张度代理、实际利率、美元、20 日动量）。
+- 新增 API：`GET /api/gold/overview`、`/api/gold/series`、`/api/gold/providers`、`POST /api/gold/refresh`、`POST /api/gold/metrics`（手动录入 BIS/COMEX/SGE/银行净合约等不可自动获取指标）。
+- 综合评分：权重 × 标准化因子 × 方向，按可得数据重新归一；中国黄金储备剔除金价重估后作为“购金代理”；输出 `coverage` 体现置信度。
+- 前端：新页面 `/gold`「黄金研判」（评分环、5 组因子卡、5 个 ECharts、因子明细、数据源监控、手动录入、方法论）；侧边栏/命令面板/路由；分析引擎页新增黄金评分卡。
+- 调度：`collect_gold` 加入 `JOBS_DEFAULT`（16:40）与 APScheduler（启动回补 + 每日 16:40）。
+- 测试：`tests/test_gold.py` 7 条（provider 离线解析、评分、API 契约、手动录入），全库 122 passed。
+
+### 修复
+
+- 首页右上角「查看简报」与 Hero「查看日报」指向同一页面的重复入口：移除页头按钮，仅保留 Hero 主 CTA。
+- 按钮统一：`.btn` 对 `<a>`/`<button>` 统一 `font: inherit`、`appearance: none`、`text-align`、`user-select`、焦点环与下划线；按钮式链接与原生按钮视觉一致。
 
 ## [1.2.0] - 2026-11-14
 

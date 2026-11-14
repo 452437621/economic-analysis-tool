@@ -32,6 +32,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: "交易信号", group: "研究分析" },
   },
   {
+    path: "/gold",
+    name: "gold",
+    component: () => import("@/views/GoldView.vue"),
+    meta: { title: "黄金研判", group: "研究分析" },
+  },
+  {
     path: "/theses",
     name: "theses",
     component: () => import("@/views/ThesesView.vue"),

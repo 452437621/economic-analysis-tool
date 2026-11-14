@@ -14,6 +14,7 @@ from app.api import (
     analytics,
     decisions,
     events,
+    gold,
     journal,
     knowledge,
     market,
@@ -60,6 +61,7 @@ app = FastAPI(
 )
 app.include_router(system.router)
 app.include_router(overview.router)
+app.include_router(gold.router)
 app.include_router(market.router)
 app.include_router(knowledge.router)
 app.include_router(analytics.router)

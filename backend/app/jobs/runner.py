@@ -23,6 +23,7 @@ from app.decision.runner import run_decision
 from app.decision.scoring import score_predictions
 from app.knowledge import events as event_mod
 from app.decision.theses import generate_theses
+from app.gold.runner import collect_gold
 from app.ingest import pipeline
 from app.models.base import utcnow
 from app.models.core import Job, JobRun
@@ -47,6 +48,7 @@ JOBS = {
     "collect_positions": pipeline.collect_positions,
     "collect_news": pipeline.collect_news,
     "collect_news_slow": lambda: pipeline.collect_news(slow=True),
+    "collect_gold": collect_gold,
     "collect_bodies": pipeline.collect_bodies,
     "extract_claims": pipeline.extract_claims,
     "extract_events": event_mod.extract_events,
