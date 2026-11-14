@@ -1,7 +1,7 @@
 """Offline static checks (no third-party deps).
 
 Covers the blind spots unit tests miss: syntax/AST smells, unused imports,
-frontend id/handler wiring, JS syntax, markdown links and version drift.
+Vue 前端结构与构建产物、外部资源引用、markdown links and version drift.
 
 Usage:
     python scripts/lint.py            # full check, exit 1 on errors
@@ -22,6 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "backend" / "app"
 WEB = ROOT / "web" / "index.html"
+FRONTEND = ROOT / "frontend"
 
 errors: list[str] = []
 warnings: list[str] = []
@@ -108,6 +109,8 @@ def check_unused_imports() -> None:
 
 def check_encoding() -> None:
     for path in [*_py_files(), WEB, *sorted((ROOT / "docs").glob("*.md"))]:
+        if not path.exists():
+            continue
         raw = path.read_bytes()
         try:
             text = raw.decode("utf-8")
@@ -119,36 +122,52 @@ def check_encoding() -> None:
 
 
 def check_frontend() -> None:
-    if not WEB.exists():
-        err("frontend: web/index.html missing")
+    """Vue 前端：源码结构 + 依赖 + 无外部 CDN + 构建产物（存在时校验）。"""
+    if not FRONTEND.exists():
+        err("frontend: frontend/ 目录缺失")
         return
-    html = WEB.read_text(encoding="utf-8")
-    ids = set(re.findall(r'\bid="([^"]+)"', html))
-    if len(ids) != len(re.findall(r'\bid="([^"]+)"', html)):
-        dupes = {i for i in ids if len(re.findall(rf'\bid="{re.escape(i)}"', html)) > 1}
-        err(f"frontend: duplicate element ids: {sorted(dupes)}")
-    for ref in sorted(set(re.findall(r'\$\("([^"]+)"\)', html))):
-        if ref not in ids:
-            err(f"frontend: $(\"{ref}\") has no matching id")
-    defined = set(re.findall(r"function\s+([A-Za-z_$][\w$]*)\s*\(", html))
-    defined |= set(re.findall(r"(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(", html))
-    for handler in sorted(set(re.findall(r'on(?:click|change)="([A-Za-z_$][\w$]*)\s*\(', html))):
-        if handler not in defined and handler != "if":
-            err(f"frontend: inline handler {handler}() is not defined")
 
-    match = re.search(r"<script>(.*)</script>", html, re.S)
-    if match and shutil.which("node"):
-        tmp = ROOT / "data" / "lint-script.js"
-        tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(match.group(1), encoding="utf-8")
-        result = subprocess.run(
-            ["node", "--check", str(tmp)], capture_output=True, text=True, timeout=60, check=False
-        )
-        tmp.unlink(missing_ok=True)
-        if result.returncode != 0:
-            err(f"frontend: JS syntax error: {result.stderr.strip().splitlines()[:2]}")
-    elif match:
-        warn("frontend: node not found, JS syntax check skipped")
+    package = FRONTEND / "package.json"
+    if not package.exists():
+        err("frontend: frontend/package.json 缺失")
+        return
+    try:
+        data = json.loads(package.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        err(f"frontend: package.json 解析失败: {exc}")
+        return
+    deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+    for required in ("vue", "vue-router", "pinia", "vite", "typescript", "echarts", "tailwindcss"):
+        if required not in deps:
+            err(f"frontend: package.json 缺少依赖 {required}")
+    for required_file in ("src/main.ts", "src/App.vue", "src/router/index.ts", "vite.config.ts", "index.html"):
+        if not (FRONTEND / required_file).exists():
+            err(f"frontend: 缺少 {required_file}")
+
+    allowed_hosts = ("w3.org", "127.0.0.1", "localhost", "vuejs.org", "example.com")
+    for path in (FRONTEND / "src").rglob("*"):
+        if not path.is_file() or path.suffix not in {".ts", ".vue", ".css"}:
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for url in re.findall(r"https?://[^\s\"'`)]+", text):
+            if any(host in url for host in allowed_hosts):
+                continue
+            err(f"frontend: {path.relative_to(ROOT)} 引用外部资源 {url}")
+
+    if WEB.exists():
+        html = WEB.read_text(encoding="utf-8")
+        if 'id="app"' not in html:
+            err('frontend: web/index.html 不是 Vue 入口（缺少 id="app"）')
+        if "/assets/" not in html:
+            err("frontend: web/index.html 未引用 /assets（构建产物异常）")
+        assets = ROOT / "web" / "assets"
+        if not assets.exists() or not any(assets.glob("*.js")):
+            err("frontend: web/assets 缺少构建产物")
+    else:
+        warn("frontend: web/index.html 尚未构建（运行 scripts\\build.ps1）")
+
+    if not (ROOT / "web-legacy" / "index.html").exists():
+        warn("frontend: web-legacy/index.html 缺失（过渡期回退入口）")
 
 
 def check_docs_links() -> None:

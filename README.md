@@ -2,23 +2,34 @@
 
 > **Economic Positioning, Intelligence & Cycles** —— 本地运行、以证据为中心的个人宏观—市场—交易决策工作台。
 >
-> 状态：**V1.0-rc1 代码与文档完成；M6 试运行待真实使用与校准**（2026-11-11）。35 标的、4.2 万根日线（**35/35 标的有历史**）、1.8 万条宏观观测（**22/22 序列有历史**）、2,500+ 财经日历、13 品种会员持仓（**Top20 多空明细列表**）、194 篇官方新闻/3,400+ 条断言；**SOFR/EFFR 与利差监控、法国利率、国家/期限排序**；**市场快照按 TE 类别、外盘/国内分表**；**简报日报/周报/月报弹框（与页面同宽）、主次动力与重点关注表格化、涨跌幅着色、品种高亮**；**顶部区块导航**；**可配置重点关注（洛阳钼业等，↑↓ 微调 + 拖拽排序）**；**⚙ 设置面板：主题 + 红涨绿跌/绿涨红跌**；**自选/快照/利率历史趋势弹框**；M4 收尾（论点/情景/复核）；事件/持仓/日历/价格告警、月报/周报/交易日志、验收上墙与自检脚本；LLM 待 Key。
+> 状态：**V1.1.0 — 前端已重构为 Vue 3 + Vite（2026-11-14）**；M6 试运行待真实使用与校准。35 标的、6.5 万根日线、2.2 万条宏观观测、2,500+ 财经日历、13 品种会员持仓（**Top20 多空明细**）、267 篇官方新闻/3,689 条断言；**8 个路由页面**（总览 / 市场 / 利率 / 分析 / 交易信号 / 论点与证据 / 简报与日志 / 系统）；**深色终端风 + 浅色/护眼/跟随系统**、红涨绿跌可切；**证据抽屉、ECharts 历史走势、Ctrl+K 命令面板、自选拖拽排序、打印/导出**；后端 API 契约不变；旧版看板保留在 `/legacy`；LLM 待 Key。
 
-![M25 看板](docs/assets/m25-dashboard.png)
+![V1.1 总览](docs/assets/vue/vue-overview.png)
 
 ---
 
 ## 快速开始
 
 ```powershell
-# 1) 初始化（自动引导 Python 3.12、创建 .venv、安装依赖、建库、写入种子数据）
+# 1) 初始化（引导 Python 3.12、创建 .venv、安装依赖、建库、写入种子数据、构建前端）
 powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
 
 # 2) 启动（后台运行，自动打开浏览器）
 powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
 ```
 
-浏览器打开 **http://127.0.0.1:8765**。
+浏览器打开 **http://127.0.0.1:8765**（Vue 前端）；旧版零构建看板在 **http://127.0.0.1:8765/legacy**。
+
+### 前端开发 / 构建
+
+| 操作 | 命令 | 说明 |
+|---|---|---|
+| 构建前端 | `.\scripts\build.ps1` | `vue-tsc` + `vite build` → `web/`（FastAPI 直接托管） |
+| 前端开发模式 | `.\scripts\dev.ps1` | 后端未跑会先拉起；Vite `:5173`，`/api` 代理到 8765 |
+| 类型检查 | `cd frontend; npm.cmd run typecheck` | vue-tsc |
+| 依赖安装 | `cd frontend; npm.cmd install` | registry 已固定为 npmmirror（`frontend/.npmrc`） |
+
+> 本机 `npm.ps1` 被执行策略拦截，请使用 `npm.cmd`；首次构建前如无 `frontend/node_modules`，`build.ps1` 会自动安装。
 
 ### Windows 一键启动 / 停止
 
@@ -111,6 +122,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
 | [12 异常恢复演练](docs/12-异常恢复演练.md) | 降级场景、恢复手册、演练证据与待补项 |
 | [13 交付清单](docs/13-交付清单.md) | 交付内容、验证证据、待用户事项、已知限制 |
 | [14 全量核验与缺陷修复](docs/14-全量核验与缺陷修复.md) | 目标完成度核验、代码扫描结论、缺陷修复、DevOps 流程 |
+| [15 项目整理与前端改造方案](docs/15-前端改造方案.md) | 扫描结论、文件整理、UI 规范、Vue 技术方案、实施与验收 |
 | [CHANGELOG](CHANGELOG.md) | 版本变更记录与发布约定 |
 
 ---
@@ -119,20 +131,23 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
 
 | 环节 | 命令 / 文件 | 内容 |
 |---|---|---|
-| 静态检查 | `scripts/lint.py` | 语法、AST 异味、未用导入、编码、前端 id/handler 接线、JS 语法、文档链接、版本一致性 |
-| 测试 | `pytest -q` | 104 条：解析器、数据管道、分析、决策、API 冒烟（含写接口与 404）、降级、DevOps |
-| 本地门禁 | `scripts/ci.ps1` | lint → pytest → 运行时 health/acceptance/quality，非 0 即失败 |
-| CI | `.github/workflows/ci.yml` | Python 3.11/3.12 矩阵 + 安装导入冒烟 |
+| 静态检查 | `scripts/lint.py` | 语法、AST 异味、未用导入、编码、Vue 源码结构/外部 CDN/构建产物、PowerShell BOM、文档链接、版本一致性 |
+| 前端类型 | `cd frontend; npm.cmd run typecheck` | vue-tsc（构建时也会执行） |
+| 构建 | `scripts/build.ps1` | vue-tsc + vite build → `web/`；`ci.ps1` 与 CI 都会先构建 |
+| 测试 | `pytest -q` | 105 条：解析器、数据管道、分析、决策、API 冒烟（含写接口与 404）、降级、DevOps、前端源码/产物 |
+| 本地门禁 | `scripts/ci.ps1` | 前端构建 → lint → pytest → 运行时 health/acceptance/quality，非 0 即失败 |
+| CI | `.github/workflows/ci.yml` | Python 3.11/3.12 矩阵 + Node 22 构建 + 安装导入冒烟 |
 | 版本 | `backend/app/__init__.py` | 单一来源，`pyproject.toml` 与 `/api/system/health` 必须一致 |
 | 运维 | `backup.ps1` / `restore.ps1` | 完整性校验、保留 14 份、恢复前安全副本 + DryRun |
+| 清理 | `scripts/maintain.ps1` | `-DryRun`（默认）/`-Apply`/`-Verify`，清理可再生临时产物 |
 | 自愈 | 启动时 `reconcile_stale_runs()` | 中断任务自动标记 `interrupted`，任务开关真正生效 |
 
 ## 架构一览
 
 ```
-浏览器 (静态看板 → M2 起 React)
-   │ HTTP 127.0.0.1:8765
-FastAPI (api / SSE / 导出)
+浏览器（Vue 3 SPA，web/ 构建产物）
+   │ HTTP 127.0.0.1:8765（SPA 回退 + /api + /legacy 旧版）
+FastAPI（api / 导出 / 打印）
    │
 ├─ 采集适配层  sina / eastmoney / treasury / rss（限速、重试、快照、健康）
 ├─ 知识层      documents / claims / events / theses / evidence（M2）
@@ -142,7 +157,7 @@ FastAPI (api / SSE / 导出)
 └─ 存储        SQLite + DuckDB/Parquet + 文件快照
 ```
 
-技术栈：Python 3.12 + FastAPI + SQLAlchemy + APScheduler + DuckDB；前端 React/TS/ECharts（M2 起）；数据源见 [05](docs/05-数据源与接口清单.md)。
+技术栈：Python 3.12 + FastAPI + SQLAlchemy + APScheduler + DuckDB；前端 **Vue 3.5 + TypeScript + Vite 6 + Pinia + vue-router + ECharts 5 + Tailwind**（`frontend/`）；数据源见 [05](docs/05-数据源与接口清单.md)。
 
 ---
 
@@ -157,6 +172,7 @@ FastAPI (api / SSE / 导出)
 | M4 | 信号、情景、交易计划、风控、回测、预测账本 | ✅ 完成（v0.2：合约/手数/保证金、成本回测、预测对账、论点/情景管理） |
 | M5 | 告警、导出、系统页、性能、文档、安全 | ✅ 完成（v0.2：通知渠道、打印/PDF、LLM 接入、复核 API、验收文档） |
 | M6 | 两周试运行与校准 | 🟡 支持工具就绪（日志/周报/月报/验收/自检），待真实使用 |
+| V1.1 | Vue 3 前端重构（8 页路由 / 设计系统 / 证据抽屉 / ECharts / 命令面板）+ 工作区整理 | ✅ 完成（2026-11-14；旧版保留 `/legacy`） |
 
 ---
 
@@ -164,11 +180,13 @@ FastAPI (api / SSE / 导出)
 
 ```
 backend/app/        FastAPI 应用（api / ingest / jobs / platform / models）
-web/                零构建看板（M2 换 React）
+frontend/           Vue 3 + TS + Vite 源码（src/{api,components,composables,layouts,router,stores,styles,views}）
+web/                前端构建产物（index.html + assets/*，由 FastAPI 托管）
+web-legacy/         旧版零构建看板（/legacy，V1.2 删除）
 config/             默认配置（关注清单、宏观序列、新闻源、LLM）
-docs/               设计与进度文档（含看板截图）
-scripts/            setup / start / backup
-tests/              pytest（解析器离线测试 + smoke）
+docs/               设计与进度文档（含 Vue 版与旧版看板截图）
+scripts/            setup / build / dev / start / stop / restart / backup / restore / selfcheck / maintain / lint
+tests/              pytest（解析器离线测试 + smoke + 前端源码/产物）
 data/               运行时数据（gitignore）
 ```
 

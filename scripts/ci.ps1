@@ -1,9 +1,10 @@
 ﻿param(
   [switch]$SkipTests,
   [switch]$SkipLint,
-  [switch]$SkipRuntime
+  [switch]$SkipRuntime,
+  [switch]$SkipBuild
 )
-# Single release gate: static lint -> unit/integration tests -> live runtime checks.
+# Single release gate: frontend build -> static lint -> unit/integration tests -> live runtime checks.
 # Used locally (selfcheck.ps1) and by CI (.github/workflows/ci.yml).
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -14,6 +15,12 @@ $env:PYTHONIOENCODING = "utf-8"
 $env:EPIC_ENV = "test"
 Set-Location $root
 $failed = $false
+
+if (-not $SkipBuild) {
+  Write-Host "[ci] 前端构建 (scripts/build.ps1) ..."
+  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "build.ps1")
+  if ($LASTEXITCODE -ne 0) { $failed = $true }
+}
 
 if (-not $SkipLint) {
   Write-Host "[ci] 静态检查 (scripts/lint.py) ..."

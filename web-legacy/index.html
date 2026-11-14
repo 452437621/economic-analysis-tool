@@ -1,0 +1,1700 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark" data-updown="red">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EPIC · 个人市场分析工具</title>
+  <style>
+    :root {
+      --bg: #0b0f14; --panel: #121820; --panel-2: #18212c; --line: #24303d;
+      --text: #d7e1ea; --muted: #8fa3b5; --accent: #4cc2ff; --ok: #37d67a;
+      --warn: #ffb020; --bad: #ff5c5c;
+      --header-1: #0e141b; --header-2: #0b0f14; --group-bg: #0f151d;
+      --ok-border: #1f5c3a; --warn-border: #6b4d1f; --bad-border: #6b2626;
+      --mark-bg: rgba(76, 194, 255, .22);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color-scheme: dark;
+    }
+    html[data-theme="light"] {
+      --bg: #f3f6f9; --panel: #ffffff; --panel-2: #eaf0f5; --line: #d5dee6;
+      --text: #17232e; --muted: #5d6f80; --accent: #0b6fb3; --ok: #0f8a4b;
+      --warn: #a56900; --bad: #c0392b;
+      --header-1: #ffffff; --header-2: #f3f6f9; --group-bg: #eaf0f5;
+      --ok-border: #9ed3b3; --warn-border: #e5c98f; --bad-border: #e7aaa3;
+      --mark-bg: rgba(11, 111, 179, .15);
+      color-scheme: light;
+    }
+    html[data-theme="sepia"] {
+      --bg: #f4ecdc; --panel: #fffbf0; --panel-2: #eee2cb; --line: #d9c8a8;
+      --text: #3b3223; --muted: #7b6a4f; --accent: #9a5b00; --ok: #3f7d3f;
+      --warn: #9a6a00; --bad: #a33a2a;
+      --header-1: #fffbf0; --header-2: #f4ecdc; --group-bg: #eee2cb;
+      --ok-border: #b7d2a8; --warn-border: #ddc38c; --bad-border: #dfb0a3;
+      --mark-bg: rgba(154, 91, 0, .14);
+      color-scheme: light;
+    }
+    :root { --up-color: var(--bad); --down-color: var(--ok); }
+    html[data-updown="green"] { --up-color: var(--ok); --down-color: var(--bad); }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+      font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; font-size: 14px;
+      transition: background-color .15s ease, color .15s ease; }
+    html { scroll-behavior: smooth; }
+    .topbar { position: sticky; top: 0; z-index: 10; background: var(--bg); }
+    header { display: flex; align-items: center; gap: 16px; padding: 14px 22px;
+      border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--header-1), var(--header-2)); }
+    nav#section-nav { display: flex; gap: 4px; padding: 6px 18px; overflow-x: auto; white-space: nowrap;
+      border-bottom: 1px solid var(--line); background: var(--panel); scrollbar-width: thin; }
+    nav#section-nav a { color: var(--muted); text-decoration: none; font-size: 12px; padding: 4px 9px;
+      border-radius: 6px; transition: background .12s, color .12s; }
+    nav#section-nav a:hover { color: var(--text); background: var(--panel-2); }
+    nav#section-nav a.active { color: var(--accent); background: var(--panel-2); font-weight: 600; }
+    main > section, main > .grid.cards { scroll-margin-top: 128px; }
+    .theme-select { display: none; }
+    .icon-button { background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+      border-radius: 8px; width: 32px; height: 30px; cursor: pointer; font-size: 16px;
+      display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+    .icon-button:hover { border-color: var(--accent); color: var(--accent); }
+    .settings-panel { width: min(560px, 100%); }
+    .settings-section { margin-bottom: 20px; }
+    .settings-section h3 { margin: 0 0 10px; font-size: 14px; color: var(--text); }
+    .option-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+    .option-button { background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+      border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 13px; font-family: inherit; }
+    .option-button.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+    .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+    .logo { font-weight: 700; letter-spacing: .5px; font-size: 18px; }
+    .logo span { color: var(--accent); }
+    .sub { color: var(--muted); font-size: 12px; }
+    .spacer { flex: 1; }
+    .badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line);
+      background: var(--panel-2); white-space: nowrap; }
+    .badge.ok { color: var(--ok); border-color: var(--ok-border); }
+    .badge.bad { color: var(--bad); border-color: var(--bad-border); }
+    .badge.warn { color: var(--warn); border-color: var(--warn-border); }
+    main { max-width: 1320px; margin: 0 auto; padding: 22px; }
+    .snapshot-block { margin-bottom: 16px; }
+    .snapshot-title { font-size: 13px; margin: 0 0 8px; color: var(--text); font-weight: 600; }
+    .snapshot-title .hint { font-weight: 400; }
+    .grid { display: grid; gap: 14px; }
+    .cards { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 15px; }
+    .card h3 { margin: 0 0 10px; font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .3px; }
+    .metric { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .metric small { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+    .kv { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+    .kv:last-child { border-bottom: 0; }
+    .kv span:first-child { color: var(--muted); }
+    .kv span:last-child { font-family: var(--mono); }
+    section { margin-top: 22px; }
+    section > h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
+    .hint { font-size: 12px; color: var(--muted); font-weight: 400; }
+    table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 10px; overflow: hidden; }
+    th, td { text-align: center; padding: 8px 10px; border-bottom: 1px solid var(--line);
+      border-right: 1px solid var(--line); font-size: 13px; }
+    th:last-child, td:last-child { border-right: 0; }
+    th { color: var(--muted); font-weight: 600; background: var(--panel-2); }
+    tr.group td { background: var(--group-bg); color: var(--muted); font-size: 12px; letter-spacing: .5px; }
+    td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: center; }
+    .up { color: var(--up-color); } .down { color: var(--down-color); } .flat { color: var(--muted); }
+    .sym { font-family: var(--mono); font-weight: 600; }
+    .muted { color: var(--muted); }
+    .macro-grid { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+    .macro { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; cursor: pointer; transition: border-color .12s; }
+    .macro:hover { border-color: var(--accent); }
+    .history-link { cursor: pointer; }
+    .history-link:hover { color: var(--accent); text-decoration: underline; }
+    .history-panel { width: min(1040px, 100%); }
+    .history-toolbar { display: flex; gap: 10px; align-items: center; padding: 10px 18px;
+      border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+    .history-ranges { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+    .history-ranges button { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
+      border-radius: 6px; cursor: pointer; font-size: 12px; padding: 3px 9px; font-family: inherit; }
+    .history-ranges button.active { color: var(--accent); border-color: var(--accent); }
+    .history-chart { padding: 12px 18px 4px; }
+    .history-chart svg { width: 100%; height: auto; display: block; }
+    .history-chart .grid { stroke: var(--line); stroke-width: 1; }
+    .history-chart .axis-label { fill: var(--muted); font-size: 11px; }
+    .history-chart .line { fill: none; stroke: var(--accent); stroke-width: 2; }
+    .history-chart .area { fill: var(--accent); opacity: .10; }
+    .history-chart .dot { fill: var(--accent); }
+    .history-chart .last-label { fill: var(--text); font-size: 12px; font-family: var(--mono); }
+    .history-stats { display: flex; gap: 18px; flex-wrap: wrap; padding: 4px 18px 16px;
+      color: var(--muted); font-size: 12px; }
+    .history-stats b { color: var(--text); font-family: var(--mono); }
+    .macro .name { color: var(--muted); font-size: 12px; }
+    .macro .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 4px; }
+    .macro .ts { color: var(--muted); font-size: 11px; margin-top: 2px; }
+    ul.news { list-style: none; margin: 0; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+    ul.news li { padding: 10px 14px; border-bottom: 1px solid var(--line); }
+    ul.news li:last-child { border-bottom: 0; }
+    ul.news .meta { color: var(--muted); font-size: 11px; margin-bottom: 3px; }
+    ul.news a { color: var(--text); text-decoration: none; }
+    ul.news a:hover { color: var(--accent); }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+    .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); }
+    .placeholder { border: 1px dashed var(--line); border-radius: 8px; padding: 14px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+    .brief { background: transparent; border: 0; border-radius: 0; padding: 0; white-space: pre-wrap; font-size: 12.5px; line-height: 1.75; }
+    .brief a { color: var(--accent); }
+    .brief .brief-h { font-weight: 700; color: var(--text); margin: 10px 0 6px; font-size: 13.5px; }
+    .brief .brief-li { color: var(--muted); margin: 2px 0; }
+    .brief .brief-mainline { font-size: 18px; line-height: 1.65; font-weight: 700; color: var(--text);
+      border-left: 4px solid var(--accent); background: var(--panel-2); padding: 10px 14px;
+      margin: 4px 0 14px; border-radius: 6px; }
+    .brief .brief-mainline b { color: var(--accent); }
+    .brief b { color: var(--accent); }
+    .modal-panel.brief-modal-panel { width: min(1276px, 100%); }
+    .brief-modal-body { max-height: calc(84vh - 82px); overflow: auto; }
+    .brief-modal-body .brief { font-size: 13px; }
+    .brief-table { width: 100%; margin: 6px 0 10px; border-collapse: collapse; font-size: 12px; }
+    .brief-table th, .brief-table td { padding: 4px 8px; border-bottom: 1px solid var(--line); }
+    .brief-table th { color: var(--muted); font-weight: 600; }
+    .two-col { grid-template-columns: repeat(auto-fit, minmax(430px, 1fr)); }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+    .panel h3 { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+    .panel table th, .panel table td { font-size: 12px; padding: 6px 8px; }
+    .mini { color: var(--muted); font-size: 11px; line-height: 1.6; }
+    .journal-input { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+      border-radius: 8px; padding: 10px; font-family: inherit; font-size: 13px; line-height: 1.6; resize: vertical; }
+    .watch-input { background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+      border-radius: 8px; padding: 7px 9px; font-size: 12px; font-family: inherit; }
+    .watch-card h3 { display: flex; justify-content: space-between; align-items: center; }
+    .watch-actions { display: flex; gap: 2px; align-items: center; }
+    .drag-handle { display: none; color: var(--muted); margin-right: 6px; cursor: grab; user-select: none; }
+    .watch-card.editing { cursor: grab; border-style: dashed; }
+    .watch-card.editing .drag-handle { display: inline; }
+    .watch-card.editing .watch-move, .watch-card.editing .watch-remove { display: none; }
+    .watch-card.dragging { opacity: .45; }
+    .watch-move { background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 14px;
+      padding: 0 4px; line-height: 1; }
+    .watch-move:hover { color: var(--accent); }
+    .watch-remove { background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 16px; }
+    .watch-remove:hover { color: var(--bad); }
+    .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .72); display: none; align-items: flex-start; justify-content: center; padding: 40px 16px; z-index: 20; }
+    .modal.open { display: flex; }
+    .modal-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; width: min(980px, 100%); max-height: 84vh; display: flex; flex-direction: column; }
+    .modal-head { display: flex; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); align-items: flex-start; }
+    .modal-head h3 { margin: 0; font-size: 15px; line-height: 1.5; }
+    .modal-close { margin-left: auto; background: none; border: 1px solid var(--line); color: var(--text); border-radius: 6px; cursor: pointer; padding: 2px 10px; font-size: 14px; }
+    .modal-body { padding: 16px 18px; overflow: auto; line-height: 1.85; font-size: 13px; }
+    .modal-body mark { background: var(--mark-bg); color: var(--text); padding: 0 2px; border-radius: 3px; }
+    .claims { padding: 0 18px 16px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .claim { font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; color: var(--muted); }
+    .claim b { color: var(--text); }
+    li.doc { cursor: pointer; }
+    li.doc:hover { background: var(--panel-2); }
+    footer { color: var(--muted); font-size: 12px; text-align: center; padding: 30px 0 18px; }
+    .err { color: var(--bad); font-family: var(--mono); font-size: 12px; }
+    @media (max-width: 760px) {
+      main { padding: 14px; }
+      th, td { padding: 6px 7px; }
+      .grid.cards, .grid.two-col, .grid.macro-grid { grid-template-columns: 1fr; }
+      h2 { flex-wrap: wrap; }
+      .cards .metric { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+  <header>
+    <div>
+      <div class="logo">EPIC<span>.</span></div>
+      <div class="sub">Economic Positioning, Intelligence &amp; Cycles · 个人市场分析工具</div>
+    </div>
+    <div class="spacer"></div>
+    <button id="settings-btn" class="icon-button" title="设置" aria-label="设置" onclick="openSettings()">⚙</button>
+    <span id="clock" class="sub"></span>
+    <span id="status" class="badge">连接中…</span>
+  </header>
+  <nav id="section-nav" aria-label="页面导航"></nav>
+  </div>
+
+  <main>
+    <div class="grid cards">
+      <div class="card">
+        <h3>系统状态</h3>
+        <div class="metric" id="health">—</div>
+        <div class="kv"><span>版本</span><span id="version">—</span></div>
+        <div class="kv"><span>环境</span><span id="env">—</span></div>
+        <div class="kv"><span>LLM</span><span id="llm-status">—</span></div>
+        <div class="kv"><span>本地时间</span><span id="local-time">—</span></div>
+      </div>
+      <div class="card">
+        <h3>行情覆盖</h3>
+        <div class="metric" id="quoted">—<small>个标的</small></div>
+        <div class="kv"><span>合约总数</span><span id="count-instruments">—</span></div>
+        <div class="kv"><span>最新快照</span><span id="snapshot-asof">—</span></div>
+        <div class="kv"><span>数据延迟</span><span id="delay-note">—</span></div>
+      </div>
+      <div class="card">
+        <h3>数据量</h3>
+        <div class="metric" id="count-bars">—</div>
+        <div class="kv"><span>行情快照</span><span id="count-quotes">—</span></div>
+        <div class="kv"><span>利率观测</span><span id="count-macro">—</span></div>
+        <div class="kv"><span>新闻条目</span><span id="count-docs">—</span></div>
+        <div class="kv"><span>原文 / 断言</span><span id="count-bodies">—</span></div>
+      </div>
+      <div class="card">
+        <h3>调度器</h3>
+        <div class="metric" id="sched-state">—</div>
+        <div class="kv"><span>任务数</span><span id="sched-jobs">—</span></div>
+        <div class="kv"><span>下一任务</span><span id="sched-next">—</span></div>
+        <div class="kv"><span>错误任务</span><span id="job-errors">—</span></div>
+      </div>
+    </div>
+
+    <section>
+      <h2>告警 <span class="hint" id="alert-hint"></span></h2>
+      <ul class="news" id="alerts"><li>加载中…</li></ul>
+    </section>
+
+    <section>
+      <h2>重点关注 <span class="hint">自选标的 · 可增删 · 默认来自 config/default.yaml；设置 EPIC_WATCHLIST_ONLY=true 可让信号/计划只分析自选</span>
+        <span style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
+          <span class="hint" id="watch-mode-hint"></span>
+          <button id="watch-edit-btn" class="modal-close" onclick="enterWatchEditMode()">调整顺序</button>
+          <button id="watch-save-btn" class="modal-close" style="display: none;" onclick="saveWatchOrder()">保存顺序</button>
+          <button id="watch-cancel-btn" class="modal-close" style="display: none;" onclick="cancelWatchOrder()">取消</button>
+        </span>
+      </h2>
+      <div class="grid cards" id="watchlist"><div class="card muted">加载中…</div></div>
+      <div class="panel" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+        <select id="watch-symbol" class="watch-input"></select>
+        <input id="watch-group" class="watch-input" placeholder="分组（如 有色金属）" style="width: 150px;" />
+        <select id="watch-priority" class="watch-input">
+          <option value="1">优先级 1</option>
+          <option value="2">优先级 2</option>
+          <option value="3" selected>优先级 3</option>
+          <option value="4">优先级 4</option>
+          <option value="5">优先级 5</option>
+        </select>
+        <button class="modal-close" onclick="addWatch()">添加自选</button>
+        <span class="hint" id="watch-status"></span>
+      </div>
+    </section>
+
+    <section>
+      <h2>市场快照 <span class="hint" id="snapshot-hint">按 TradingEconomics 商品类别排序 · 外盘 / 国内分开 · 点击代码或价格看趋势</span></h2>
+      <div class="snapshot-block">
+        <h3 class="snapshot-title">外盘品种 <span class="hint">国外交易所 / 离岸 / 美股指数</span></h3>
+        <table>
+          <thead><tr><th>品种</th><th>名称</th><th>最新</th><th>涨跌幅</th><th>数据源</th><th>时点</th></tr></thead>
+          <tbody id="quotes-global"><tr><td colspan="6">加载中…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="snapshot-block">
+        <h3 class="snapshot-title">国内品种 <span class="hint">上期所 / 能源中心 / 大商所 / 郑商所 / A股</span></h3>
+        <table>
+          <thead><tr><th>品种</th><th>名称</th><th>最新</th><th>涨跌幅</th><th>数据源</th><th>时点</th></tr></thead>
+          <tbody id="quotes-domestic"><tr><td colspan="6">加载中…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>简报 <span class="hint" id="brief-meta">日报 / 周报 / 月报 · 弹框查看</span></h2>
+      <div class="panel" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <button class="option-button" onclick="openBrief('daily')">日报</button>
+        <button class="option-button" onclick="openBrief('weekly')">周报</button>
+        <button class="option-button" onclick="openBrief('monthly')">月报</button>
+        <span class="hint">点击按钮弹框查看；支持打印/PDF、导出 Markdown。</span>
+      </div>
+    </section>
+
+    <section>
+      <h2>分析引擎 <span class="hint">市场隐含周期 · 定价归因 · 风向 · 历史类比（v0，免费数据）</span></h2>
+      <div class="grid cards" id="analytics-cards"><div class="card muted">加载中…</div></div>
+      <div class="grid two-col" style="margin-top: 14px;">
+        <div class="panel">
+          <h3>定价归因（近 20 日贡献，%）</h3>
+          <table>
+            <thead><tr><th>资产</th><th>实际</th><th>R²</th><th>实际利率</th><th>盈亏平衡</th><th>曲线</th><th>美元</th><th>残差</th></tr></thead>
+            <tbody id="attribution"><tr><td colspan="8">加载中…</td></tr></tbody>
+          </table>
+          <div class="mini" id="attribution-note"></div>
+        </div>
+        <div class="panel">
+          <h3>历史类比（相似度 Top 5，未来收益 %）</h3>
+          <table>
+            <thead><tr><th>日期</th><th>距离</th><th>黄金20d</th><th>铜20d</th><th>原油20d</th><th>沪深300 20d</th></tr></thead>
+            <tbody id="analogs"><tr><td colspan="6">加载中…</td></tr></tbody>
+          </table>
+          <div class="mini" id="analogs-note"></div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top: 14px;">
+        <h3>日历事件后收益（1/3/5 个交易日，均值 %）</h3>
+        <table>
+          <thead><tr><th>国家/地区</th><th>类别</th><th>样本</th><th>黄金 1d</th><th>铜 1d</th><th>沪深300 1d</th><th>黄金 3d</th><th>铜 3d</th></tr></thead>
+          <tbody id="calendar-study"><tr><td colspan="8">加载中…</td></tr></tbody>
+        </table>
+        <div class="mini" id="calendar-study-note"></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>交易信号与计划 <span class="hint">规则信号 · 风控校验 · 预测登记（纸面账户 100 万，单笔风险 0.25%）</span></h2>
+      <div class="mini" id="signal-types" style="margin-top: 8px;"></div>
+      <div class="grid cards" id="decision-cards"><div class="card muted">加载中…</div></div>
+      <div class="grid two-col" style="margin-top: 14px;">
+        <div class="panel">
+          <h3>当前信号（按强度）</h3>
+          <table>
+            <thead><tr><th>品种</th><th>类型</th><th>方向</th><th>强度</th><th>说明</th></tr></thead>
+            <tbody id="signals"><tr><td colspan="5">加载中…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <h3>交易计划（草稿，需人工确认）</h3>
+          <table>
+            <thead><tr><th>品种</th><th>方向</th><th>入场区</th><th>止损</th><th>T1</th><th>手数</th><th>保证金</th><th>手续费</th><th>风控</th></tr></thead>
+            <tbody id="plans"><tr><td colspan="9">加载中…</td></tr></tbody>
+          </table>
+          <div class="mini" id="decision-note"></div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top: 14px;">
+        <h3>信号回测（10 日，含 0.06% 成本，walk-forward 2024 分界）</h3>
+        <table>
+          <thead><tr><th>规则</th><th>命中率</th><th>均值</th><th>样本</th><th>训练命中</th><th>测试命中</th></tr></thead>
+          <tbody id="backtest"><tr><td colspan="6">加载中…</td></tr></tbody>
+        </table>
+        <div class="mini">回测仅用于评估规则边际，不构成收益预期；当前为日线简化模型。</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>论点与情景 <span class="hint">由信号生成的可证伪论点 · 证据权重 · 情景概率（草稿，需人工确认）</span></h2>
+      <div class="grid two-col" id="theses"><div class="card muted">加载中…</div></div>
+      <div class="mini" id="thesis-review"></div>
+    </section>
+
+    <section>
+      <h2>交易日志 <span class="hint">用于 M6 复盘；周报自动汇总</span></h2>
+      <div class="panel">
+        <textarea id="journal-input" class="journal-input" rows="4" placeholder="今日主线、判断依据、计划执行、情绪与错误……"></textarea>
+        <div style="margin-top: 8px; display: flex; gap: 10px; align-items: center;">
+          <button class="modal-close" onclick="saveJournal()">保存今日日志</button>
+          <span class="hint" id="journal-status"></span>
+        </div>
+      </div>
+      <ul class="news" id="journal"><li>加载中…</li></ul>
+    </section>
+
+    <section>
+      <h2>利率与流动性 <span class="hint">SOFR / EFFR / SOFR-EFFR 利差 · 美国 / 日本 / 德国国债日频曲线（点击卡片看趋势）</span></h2>
+      <div class="grid macro-grid" id="macro"><div class="card muted">加载中…</div></div>
+    </section>
+
+    <section>
+      <h2>持仓结构 <span class="hint">上期所/郑商所/大商所会员多空持仓（日频，净持仓 = 多 − 空）</span></h2>
+      <table>
+        <thead><tr><th>品种</th><th>多头持仓</th><th>空头持仓</th><th>净持仓</th><th>净占比</th><th>多头变化</th><th>空头变化</th></tr></thead>
+        <tbody id="positions"><tr><td colspan="7">加载中…</td></tr></tbody>
+      </table>
+      <div class="mini" id="positions-note"></div>
+      <div class="panel" style="margin-top: 14px;">
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <h3 style="margin: 0;">会员持仓明细（Top 20）</h3>
+          <select id="position-product" class="watch-input" onchange="loadPositionMembers()"></select>
+          <span class="hint" id="position-members-meta"></span>
+        </div>
+        <div class="grid two-col" style="margin-top: 10px;">
+          <div>
+            <h3>多头持仓</h3>
+            <table>
+              <thead><tr><th>排名</th><th>会员</th><th>持仓</th><th>增减</th></tr></thead>
+              <tbody id="position-long"><tr><td colspan="4">加载中…</td></tr></tbody>
+            </table>
+          </div>
+          <div>
+            <h3>空头持仓</h3>
+            <table>
+              <thead><tr><th>排名</th><th>会员</th><th>持仓</th><th>增减</th></tr></thead>
+              <tbody id="position-short"><tr><td colspan="4">加载中…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>财经日历 <span class="hint">未来 14 天 · 经济数据</span></h2>
+      <ul class="news" id="calendar"><li>加载中…</li></ul>
+    </section>
+
+    <section>
+      <h2>事件驱动 <span class="hint">规则识别 · 关税/地缘/货币政策/供给/数据</span></h2>
+      <ul class="news" id="events"><li>加载中…</li></ul>
+    </section>
+
+    <section>
+      <h2>新闻与政策 <span class="hint">官方来源 · 仅标题与元数据</span></h2>
+      <ul class="news" id="news"><li>加载中…</li></ul>
+    </section>
+
+    <section>
+      <h2>数据源健康</h2>
+      <table>
+        <thead><tr><th>来源</th><th>类型</th><th>等级</th><th>条目</th><th>最近状态</th><th>最近检查</th></tr></thead>
+        <tbody id="sources"><tr><td colspan="6">加载中…</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>数据质检 <span class="hint">官方对账与新鲜度</span></h2>
+      <table>
+        <thead><tr><th>数据集</th><th>类型</th><th>状态</th><th>明细</th></tr></thead>
+        <tbody id="quality"><tr><td colspan="4">加载中…</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>验收与自检 <span class="hint">DoD 自动检查 · scripts/selfcheck.ps1</span></h2>
+      <div class="grid cards">
+        <div class="card">
+          <h3>验收结果</h3>
+          <div class="metric" id="acceptance">—</div>
+          <div class="kv"><span>自检</span><span>pytest + 健康 + 验收 + 质检</span></div>
+          <div class="kv"><span>命令</span><span>scripts\selfcheck.ps1</span></div>
+        </div>
+        <div class="card" style="grid-column: span 2;">
+          <h3>检查项</h3>
+          <table>
+            <thead><tr><th>检查项</th><th>状态</th><th>明细</th></tr></thead>
+            <tbody id="acceptance-checks"><tr><td colspan="3">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>任务</h2>
+      <table>
+        <thead><tr><th>名称</th><th>计划</th><th>启用</th><th>最近状态</th><th>最近运行</th></tr></thead>
+        <tbody id="jobs"><tr><td colspan="5">加载中…</td></tr></tbody>
+      </table>
+    </section>
+
+    <div class="modal" id="modal" onclick="if (event.target === this) closeDoc()">
+    <div class="modal-panel">
+      <div class="modal-head">
+        <div>
+          <h3 id="doc-title">—</h3>
+          <div class="hint" id="doc-meta"></div>
+        </div>
+        <button class="modal-close" onclick="closeDoc()">✕</button>
+      </div>
+      <div class="modal-body" id="doc-body">加载中…</div>
+      <div class="claims" id="doc-claims"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="history-modal" onclick="if (event.target === this) closeHistory()">
+    <div class="modal-panel history-panel">
+      <div class="modal-head">
+        <div>
+          <h3 id="history-title">—</h3>
+          <div class="hint" id="history-meta"></div>
+        </div>
+        <button class="modal-close" onclick="closeHistory()">✕</button>
+      </div>
+      <div class="history-toolbar">
+        <span class="hint" id="history-hint">点击标的名称或数值查看历史趋势</span>
+        <span class="history-ranges" id="history-ranges"></span>
+      </div>
+      <div class="history-chart" id="history-chart"></div>
+      <div class="history-stats" id="history-stats"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="settings-modal" onclick="if (event.target === this) closeSettings()">
+    <div class="modal-panel settings-panel">
+      <div class="modal-head">
+        <div>
+          <h3>设置</h3>
+          <div class="hint">偏好保存在本浏览器，不上传服务器</div>
+        </div>
+        <button class="modal-close" onclick="closeSettings()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-section">
+          <h3>系统风格</h3>
+          <div class="option-buttons" id="theme-options">
+            <button class="option-button" data-theme-mode="dark" onclick="setThemeMode('dark')">夜间</button>
+            <button class="option-button" data-theme-mode="light" onclick="setThemeMode('light')">日间</button>
+            <button class="option-button" data-theme-mode="sepia" onclick="setThemeMode('sepia')">护眼</button>
+            <button class="option-button" data-theme-mode="auto" onclick="setThemeMode('auto')">跟随系统</button>
+          </div>
+        </div>
+        <div class="settings-section">
+          <h3>涨跌颜色</h3>
+          <div class="option-buttons" id="updown-options">
+            <button class="option-button" data-updown-mode="red" onclick="setUpdown('red')">
+              <span class="swatch" style="background:#e04b4b"></span>红涨绿跌
+            </button>
+            <button class="option-button" data-updown-mode="green" onclick="setUpdown('green')">
+              <span class="swatch" style="background:#2f9e62"></span>绿涨红跌
+            </button>
+          </div>
+          <div class="mini" style="margin-top: 8px;">影响价格、涨跌幅与变化值；不影响告警级别与状态徽标。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="brief-modal" onclick="if (event.target === this) closeBrief()">
+    <div class="modal-panel brief-modal-panel">
+      <div class="modal-head">
+        <div>
+          <h3 id="brief-modal-title">日报</h3>
+          <div class="hint" id="brief-modal-meta"></div>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center; margin-left: auto; flex-wrap: wrap;">
+          <a id="brief-print" class="hint" href="#" target="_blank" style="color: var(--accent);">打印 / PDF</a>
+          <a id="brief-export" class="hint" href="#" download style="color: var(--accent);">导出 Markdown</a>
+          <button class="modal-close" onclick="closeBrief()">✕</button>
+        </div>
+      </div>
+      <div class="modal-body brief-modal-body">
+        <div class="brief" id="brief">加载中…</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>仅供个人研究，不构成投资建议 · <span id="footer-time"></span></footer>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const THEME_KEY = "epic-theme";
+    const UPDOWN_KEY = "epic-updown";
+    const THEME_VALUES = ["dark", "light", "sepia", "auto"];
+    const UPDOWN_VALUES = ["red", "green"];
+    const darkMQ = window.matchMedia("(prefers-color-scheme: dark)");
+    let activeThemeMode = "dark";
+    let activeUpdown = "red";
+
+    function resolveTheme(mode) {
+      if (mode === "auto") return darkMQ.matches ? "dark" : "light";
+      return THEME_VALUES.includes(mode) ? mode : "dark";
+    }
+
+    function syncSettingsUI() {
+      document.querySelectorAll("#theme-options [data-theme-mode]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.themeMode === activeThemeMode);
+      });
+      document.querySelectorAll("#updown-options [data-updown-mode]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.updownMode === activeUpdown);
+      });
+    }
+
+    function applyTheme(mode, persist = true) {
+      activeThemeMode = THEME_VALUES.includes(mode) ? mode : "dark";
+      document.documentElement.dataset.theme = resolveTheme(activeThemeMode);
+      if (persist) {
+        try { localStorage.setItem(THEME_KEY, activeThemeMode); } catch (err) { /* private mode */ }
+      }
+      syncSettingsUI();
+    }
+
+    function applyUpdown(mode, persist = true) {
+      activeUpdown = UPDOWN_VALUES.includes(mode) ? mode : "red";
+      document.documentElement.dataset.updown = activeUpdown;
+      if (persist) {
+        try { localStorage.setItem(UPDOWN_KEY, activeUpdown); } catch (err) { /* private mode */ }
+      }
+      syncSettingsUI();
+    }
+
+    function setThemeMode(mode) { applyTheme(mode); }
+    function setUpdown(mode) { applyUpdown(mode); }
+
+    function openSettings() {
+      $("settings-modal").classList.add("open");
+      syncSettingsUI();
+    }
+
+    function closeSettings() {
+      $("settings-modal").classList.remove("open");
+    }
+
+    (function initSettings() {
+      const params = new URLSearchParams(location.search);
+      let mode = "dark";
+      try { mode = localStorage.getItem(THEME_KEY) || "dark"; } catch (err) { /* ignore */ }
+      if (THEME_VALUES.includes(params.get("theme"))) mode = params.get("theme");
+      applyTheme(mode, false);
+
+      let updown = "red";
+      try { updown = localStorage.getItem(UPDOWN_KEY) || "red"; } catch (err) { /* ignore */ }
+      if (UPDOWN_VALUES.includes(params.get("updown"))) updown = params.get("updown");
+      applyUpdown(updown, false);
+
+      const onSystemChange = () => {
+        if (activeThemeMode === "auto") applyTheme("auto", false);
+      };
+      if (darkMQ.addEventListener) darkMQ.addEventListener("change", onSystemChange);
+      else if (darkMQ.addListener) darkMQ.addListener(onSystemChange);
+      if (params.get("settings") === "1") setTimeout(openSettings, 700);
+    })();
+
+    const fmt = (v) => (v === null || v === undefined ? "—" : v);    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+    function initSectionNav() {
+      const nav = $("section-nav");
+      if (!nav) return;
+      const sections = [...document.querySelectorAll("main > .grid.cards, main > section")];
+      const links = [];
+      sections.forEach((section, index) => {
+        if (!section.id) section.id = "section-" + index;
+        let label = "区块 " + (index + 1);
+        if (section.matches(".grid.cards")) {
+          label = "概览";
+        } else {
+          const h2 = section.querySelector("h2");
+          const textNode = h2 ? [...h2.childNodes].find((node) => node.nodeType === 3 && node.textContent.trim()) : null;
+          if (textNode) label = textNode.textContent.trim();
+          else if (h2) label = h2.textContent.trim().slice(0, 8);
+        }
+        const link = document.createElement("a");
+        link.href = "#" + section.id;
+        link.textContent = label;
+        nav.appendChild(link);
+        links.push({ link, section });
+      });
+      const setActive = () => {
+        let current = links[0];
+        for (const item of links) {
+          if (item.section.getBoundingClientRect().top <= 140) current = item;
+        }
+        links.forEach((item) => item.link.classList.toggle("active", item === current));
+      };
+      let scheduled = false;
+      window.addEventListener("scroll", () => {
+        if (scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(() => { scheduled = false; setActive(); });
+      }, { passive: true });
+      setActive();
+    }
+
+    async function getJSON(url) {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    }
+
+    function fmtPrice(item) {
+      const v = item.price;
+      if (v === null || v === undefined) return "—";
+      const digits = item.asset_class === "fx" ? (v < 10 ? 4 : 3) : (v >= 1000 ? 1 : 2);
+      return Number(v).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    }
+    function fmtPct(v) {
+      if (v === null || v === undefined) return "—";
+      const cls = v > 0 ? "up" : v < 0 ? "down" : "flat";
+      return `<span class="${cls}">${v > 0 ? "+" : ""}${Number(v).toFixed(2)}%</span>`;
+    }
+    function fmtTime(iso, withDate) {
+      if (!iso) return "—";
+      const d = new Date(iso);
+      const opts = withDate
+        ? { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }
+        : { hour: "2-digit", minute: "2-digit", hour12: false };
+      return d.toLocaleString("zh-CN", opts).replace(/\//g, "-");
+    }
+    function staleBadge(sec, delay) {
+      if (sec === null || sec === undefined) return "";
+      if (delay >= 600) return `<span class="badge">延迟 ${Math.round(delay / 60)}m</span>`;
+      if (sec > 1800) return `<span class="badge warn">旧数据</span>`;
+      return `<span class="badge ok">实时</span>`;
+    }
+
+    const GROUP_NAMES = { metal: "贵金属 / 工业金属", energy: "能源", black: "黑色系", agri: "农产品", fx: "汇率", equity: "股指 / 个股", rate: "利率" };
+
+    async function loadHealth() {
+      try {
+        const h = await getJSON("/api/system/health");
+        $("status").className = "badge " + (h.status === "ok" ? "ok" : "bad");
+        $("status").textContent = h.status === "ok" ? "运行中" : "降级";
+        $("health").textContent = h.status === "ok" ? "正常" : "异常";
+        $("version").textContent = fmt(h.version);
+        $("env").textContent = fmt(h.env);
+        $("llm-status").textContent = h.llm_enabled ? "已配置" : "未配置（规则模式）";
+        $("local-time").textContent = (h.time_local || "").slice(0, 19).replace("T", " ");
+        const c = h.counts || {};
+        $("count-instruments").textContent = fmt(c.instruments);
+        $("count-bars").textContent = fmt(c.market_bars);
+        $("count-quotes").textContent = fmt(c.quotes);
+        $("count-macro").textContent = fmt(c.macro_observations);
+        $("count-docs").textContent = fmt(c.documents);
+        $("count-bodies").textContent = `${fmt(c.document_bodies)} / ${fmt(c.claims)}`;
+        $("sched-state").textContent = h.scheduler.running ? "运行中" : "停止";
+        const jobs = h.scheduler.jobs || [];
+        $("sched-jobs").textContent = jobs.length;
+        $("sched-next").textContent = jobs.length ? fmtTime(jobs[0].next_run) : "—";
+      } catch (err) {
+        $("status").className = "badge bad";
+        $("status").textContent = "连接失败";
+        $("health").textContent = "无法连接后端";
+      }
+    }
+
+    const SNAPSHOT_CATEGORIES = [
+      { key: "energy", label: "能源", symbols: ["CL", "BZ", "SC"] },
+      { key: "metals", label: "金属", symbols: ["XAUUSD", "GC", "AU", "SI", "AG", "HG", "CU", "I"] },
+      { key: "agri", label: "农业", symbols: ["M", "P", "CF", "SR"] },
+      { key: "industrial", label: "工业", symbols: ["AL_LME", "ZN_LME", "NI_LME", "AL", "ZN", "NI"] },
+      { key: "index", label: "指数 / 个股", symbols: ["SPX", "NDX", "DJIA", "HSI", "000300", "603993"] },
+      { key: "fx", label: "汇率", symbols: ["DXY", "USDCNH", "USDJPY", "EURUSD", "GBPUSD", "USDCAD", "USDSEK", "USDCHF"] },
+    ];
+    const DOMESTIC_EXCHANGES = new Set(["SHFE", "INE", "DCE", "CZCE"]);
+    const DOMESTIC_SYMBOLS = new Set(["000300", "603993"]);
+
+    function isDomestic(item) {
+      return DOMESTIC_EXCHANGES.has(item.exchange) || DOMESTIC_SYMBOLS.has(item.symbol);
+    }
+
+    function snapshotRow(item) {
+      return `<tr>
+        <td class="sym"><span class="history-link" onclick="openHistory('instrument','${esc(item.symbol)}','${esc(item.name)}')">${esc(item.symbol)}</span></td>
+        <td><span class="history-link" onclick="openHistory('instrument','${esc(item.symbol)}','${esc(item.name)}')">${esc(item.name)}</span></td>
+        <td class="num"><span class="history-link" onclick="openHistory('instrument','${esc(item.symbol)}','${esc(item.name)}')">${fmtPrice(item)}</span></td>
+        <td class="num">${fmtPct(item.change_pct)}</td>
+        <td>${esc(item.source || "—")} ${staleBadge(item.stale_sec, item.delay_sec || 0)}</td>
+        <td class="muted">${fmtTime(item.ts)}</td>
+      </tr>`;
+    }
+
+    function renderSnapshot(rows, domestic) {
+      const filtered = rows.filter((item) => isDomestic(item) === domestic);
+      const used = new Set();
+      let html = "";
+      for (const category of SNAPSHOT_CATEGORIES) {
+        const items = category.symbols
+          .map((symbol) => filtered.find((item) => item.symbol === symbol))
+          .filter(Boolean);
+        if (!items.length) continue;
+        items.forEach((item) => used.add(item.symbol));
+        html += `<tr class="group"><td colspan="6">${category.label}</td></tr>`;
+        html += items.map(snapshotRow).join("");
+      }
+      const rest = filtered.filter((item) => !used.has(item.symbol));
+      if (rest.length) {
+        html += '<tr class="group"><td colspan="6">其他</td></tr>';
+        html += rest.map(snapshotRow).join("");
+      }
+      return html || '<tr><td colspan="6" class="muted">暂无行情，等待采集任务…</td></tr>';
+    }
+
+    async function loadQuotes() {
+      try {
+        const payload = await getJSON("/api/market/snapshot");
+        const rows = payload.data || [];
+        $("quotes-global").innerHTML = renderSnapshot(rows, false);
+        $("quotes-domestic").innerHTML = renderSnapshot(rows, true);
+        $("quoted").innerHTML = `${payload.meta.with_quote}<small>个标的 / 共 ${payload.meta.count}</small>`;
+        $("snapshot-asof").textContent = fmtTime(payload.meta.asof);
+      } catch (err) {
+        $("quotes-global").innerHTML = `<tr><td colspan="6" class="err">${esc(err.message)}</td></tr>`;
+        $("quotes-domestic").innerHTML = `<tr><td colspan="6" class="err">${esc(err.message)}</td></tr>`;
+      }
+    }
+
+    const MACRO_ORDER = ["SOFR", "EFFR", "SOFR_EFFR", "US2Y", "US5Y", "US10Y", "US30Y", "US5Y_REAL", "US10Y_REAL", "US5Y_BE", "US10Y_BE", "CN2Y", "CN5Y", "CN10Y", "CN30Y", "CN10Y2Y", "JP2Y", "JP10Y", "JP30Y", "DE2Y", "DE10Y", "FR10Y"];
+
+    async function loadMacro() {
+      try {
+        const payload = await getJSON("/api/macro/latest");
+        const map = Object.fromEntries((payload.data || []).map((row) => [row.code, row]));
+        let html = "";
+        for (const code of MACRO_ORDER) {
+          const row = map[code];
+          if (!row) continue;
+          html += `<div class="macro" onclick="openHistory('macro','${esc(code)}','${esc(row.name)}','${esc(row.unit || "")}')">
+            <div class="name">${esc(row.name)} <span class="muted">${esc(code)}</span></div>
+            <div class="value history-link">${Number(row.value).toFixed(2)}<small>${esc(row.unit || "")}</small></div>
+            <div class="ts">${fmtTime(row.ts, true)}</div>
+          </div>`;
+        }
+        $("macro").innerHTML = html || '<div class="placeholder">暂无利率数据，等待 collect_rates 任务…</div>';
+      } catch (err) {
+        $("macro").innerHTML = `<div class="err">${esc(err.message)}</div>`;
+      }
+    }
+
+    async function loadNews() {
+      try {
+        const payload = await getJSON("/api/news?limit=12");
+        const rows = payload.data || [];
+        $("news").innerHTML = rows.map((item) => `
+          <li class="doc" data-doc="${esc(item.id)}" onclick="openDoc('${esc(item.id)}')">
+            <div class="meta">${esc(item.source || "")} · ${esc(item.tier || "")} · ${fmtTime(item.published_at, true)}</div>
+            <a href="${esc(item.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(item.title)}</a>
+          </li>`).join("") || "<li>暂无新闻，等待采集任务…</li>";
+      } catch (err) {
+        $("news").innerHTML = `<li class="err">${esc(err.message)}</li>`;
+      }
+    }
+
+    function closeBrief() {
+      $("brief-modal").classList.remove("open");
+    }
+
+    async function openBrief(kind = "daily") {
+      const titles = { daily: "日报", weekly: "周报", monthly: "月报" };
+      const title = titles[kind] || "日报";
+      $("settings-modal").classList.remove("open");
+      $("history-modal").classList.remove("open");
+      $("brief-modal").classList.add("open");
+      $("brief-modal-title").textContent = title;
+      $("brief-modal-meta").textContent = "加载中…";
+      $("brief").innerHTML = '<div class="placeholder">加载中…</div>';
+      try {
+        const query = kind === "daily" ? "" : `?kind=${encodeURIComponent(kind)}`;
+        const payload = await getJSON("/api/briefs/latest" + query);
+        const brief = payload.data;
+        if (!brief) {
+          $("brief").innerHTML = '<div class="placeholder">暂无简报，等待 07:30 / 21:00 定时任务，或手动运行 brief_manual / weekly_review。</div>';
+          $("brief-modal-meta").textContent = "暂无数据";
+          return;
+        }
+        $("brief-modal-meta").textContent = `${brief.trade_date} · ${fmtTime(brief.created_at, true)} · ${brief.kind}`;
+        $("brief-meta").textContent = `最新 ${title} · ${fmtTime(brief.created_at, true)}`;
+        $("brief-export").href = `/api/briefs/${brief.id}/markdown`;
+        $("brief-print").href = `/api/briefs/${brief.id}/print`;
+        $("brief").innerHTML = renderBriefMarkdown(brief.markdown);
+      } catch (err) {
+        $("brief").innerHTML = `<span class="err">${esc(err.message)}</span>`;
+      }
+    }
+
+    function inlineBrief(text) {
+      let html = esc(text);
+      html = html.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+      html = html.replace(/`\[D:([0-9a-f]{32})\]`/g, (_, id) =>
+        `<a href="#" onclick="openDoc('${id}');return false;">[证据]</a>`);
+      html = html.replace(/([+-]\d+(?:\.\d+)?%)/g, (match) => {
+        const value = Number(match.replace("%", ""));
+        const cls = value > 0 ? "up" : value < 0 ? "down" : "flat";
+        return `<span class="${cls}">${match}</span>`;
+      });
+      html = html.replace(/(上涨|下跌)\s*(\d+(?:\.\d+)?%)/g, (match, word, pct) => {
+        const cls = word === "上涨" ? "up" : "down";
+        return `${word} <span class="${cls}">${pct}</span>`;
+      });
+      return html;
+    }
+
+    function renderBriefMarkdown(md) {
+      const lines = md.split("\n");
+      let html = "";
+      let i = 0;
+      while (i < lines.length) {
+        const line = lines[i];
+        if (/^\|/.test(line)) {
+          const block = [];
+          while (i < lines.length && /^\|/.test(lines[i])) block.push(lines[i++]);
+          const rows = block.filter((row) => !/^\|[\s\-:|]+\|$/.test(row));
+          html += '<table class="brief-table">';
+          rows.forEach((row, index) => {
+            const cells = row.replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
+            const tag = index === 0 ? "th" : "td";
+            html += "<tr>" + cells.map((cell) => `<${tag}>${inlineBrief(cell)}</${tag}>`).join("") + "</tr>";
+          });
+          html += "</table>";
+          continue;
+        }
+        if (/^#{1,3} /.test(line)) {
+          html += `<div class="brief-h">${inlineBrief(line.replace(/^#{1,3} /, ""))}</div>`;
+        } else if (/^> /.test(line)) {
+          html += `<div class="brief-mainline">${inlineBrief(line.slice(2))}</div>`;
+        } else if (/^- /.test(line)) {
+          html += `<div class="brief-li">• ${inlineBrief(line.slice(2))}</div>`;
+        } else if (line.trim() === "") {
+          html += "";
+        } else {
+          html += `<div>${inlineBrief(line)}</div>`;
+        }
+        i++;
+      }
+      return html;
+    }
+
+    function pctCell(value) {
+      if (value === null || value === undefined) return "—";
+      const cls = value > 0 ? "up" : value < 0 ? "down" : "flat";
+      return `<span class="${cls}">${value > 0 ? "+" : ""}${Number(value).toFixed(2)}</span>`;
+    }
+
+    async function loadAnalytics() {
+      try {
+        const a = await getJSON("/api/analytics/overview");
+        const cards = [];
+        if (a.wind) {
+          const w = a.wind;
+          cards.push(`<div class="card"><h3>市场风向</h3>
+            <div class="metric">${esc(w.label)} <small>${w.score}</small></div>
+            <div class="kv"><span>MA60 上方占比</span><span>${(w.components.breadth_above_ma60 * 100).toFixed(0)}%</span></div>
+            <div class="kv"><span>20日平均动量</span><span>${w.components.momentum_20d_avg_pct}%</span></div>
+            <div class="kv"><span>10Y 20日变动</span><span>${w.components.us10y_change_20d_pp ?? "—"} pp</span></div></div>`);
+        }
+        for (const [key, label] of [["US", "美国"], ["CN", "中国"]]) {
+          const r = a.regimes ? a.regimes[key] : null;
+          if (!r) continue;
+          cards.push(`<div class="card"><h3>${label}周期（市场隐含）</h3>
+            <div class="metric">${esc(r.quadrant)} <small>置信 ${Math.round(r.confidence * 100)}%</small></div>
+            <div class="kv"><span>增长</span><span>${r.growth_score} / z ${r.growth_z}</span></div>
+            <div class="kv"><span>通胀</span><span>${r.inflation_score} / z ${r.inflation_z}</span></div>
+            <div class="kv"><span>流动性</span><span>${r.liquidity_score}</span></div></div>`);
+        }
+        if (a.correlation) {
+          const c = a.correlation;
+          const pair = (c.top_pairs || [])[0];
+          cards.push(`<div class="card"><h3>跨资产相关性</h3>
+            <div class="metric">${c.avg_abs_corr}<small>平均 |ρ| · ${c.window}日</small></div>
+            <div class="kv"><span>最强联动</span><span>${pair ? `${esc(pair.a)}/${esc(pair.b)} ${pair.corr}` : "—"}</span></div>
+            ${(c.top_pairs || []).slice(0, 2).map((p) => `<div class="kv"><span>${esc(p.a)} / ${esc(p.b)}</span><span>${p.corr}</span></div>`).join("")}</div>`);
+        }
+        $("analytics-cards").innerHTML = cards.join("") || '<div class="card muted">等待 analyze 任务…</div>';
+
+        const order = ["AU", "CU", "SC", "AG", "603993", "000300"];
+        const attrRows = order.filter((symbol) => a.attribution && a.attribution[symbol]).map((symbol) => {
+          const p = a.attribution[symbol];
+          const c = p.contributions_pct || {};
+          return `<tr><td class="sym">${symbol}</td><td class="num">${pctCell(p.actual_pct)}</td><td class="num">${p.r2}</td>
+            <td class="num">${pctCell(c.real_yield_chg)}</td><td class="num">${pctCell(c.breakeven_chg)}</td>
+            <td class="num">${pctCell(c.curve_chg)}</td><td class="num">${pctCell(c.dxy_chg)}</td><td class="num">${pctCell(p.residual_pct)}</td></tr>`;
+        });
+        $("attribution").innerHTML = attrRows.join("") || '<tr><td colspan="8">暂无归因结果</td></tr>';
+        $("attribution-note").textContent = "回归窗口 120 日，驱动为美国利率变化；R² 低说明价格主要由其他因素驱动（仓位/地缘/国内供需），需结合 M2 证据链判断。";
+
+        const cs = a.calendar_study;
+        if (cs && cs.groups) {
+          const rows = cs.groups.slice(0, 10).map((g) => {
+            const au = (g.assets || {}).AU || {};
+            const cu = (g.assets || {}).CU || {};
+            const hs = (g.assets || {})["000300"] || {};
+            return `<tr><td>${esc(g.country)}</td><td>${esc(g.category)}</td><td class="num">${g.n}</td>
+              <td class="num">${pctCell(au["1d"])}</td><td class="num">${pctCell(cu["1d"])}</td>
+              <td class="num">${pctCell(hs["1d"])}</td><td class="num">${pctCell(au["3d"])}</td>
+              <td class="num">${pctCell(cu["3d"])}</td></tr>`;
+          });
+          $("calendar-study").innerHTML = rows.join("") || '<tr><td colspan="8">暂无日历事件研究（需至少一次 collect_calendar + analyze）</td></tr>';
+          $("calendar-study-note").textContent = `样本事件 ${cs.events} 条；窗口 ${cs.window}；仅统计事件日或其后首个交易日。`;
+        }
+
+        const analogs = a.analogs;
+        if (analogs) {
+          const rows = (analogs.matches || []).map((m) => {
+            const f = m.forward || {};
+            return `<tr><td>${esc(m.date)}</td><td class="num">${m.distance}</td><td class="num">${pctCell(f.AU_20d)}</td>
+              <td class="num">${pctCell(f.CU_20d)}</td><td class="num">${pctCell(f.SC_20d)}</td><td class="num">${pctCell(f["000300_20d"])}</td></tr>`;
+          });
+          $("analogs").innerHTML = rows.join("") || '<tr><td colspan="6">暂无类比结果</td></tr>';
+          $("analogs-note").textContent = analogs.note || "";
+        }
+      } catch (err) {
+        $("analytics-cards").innerHTML = `<div class="card err">${esc(err.message)}</div>`;
+      }
+    }
+
+    function fmtNum(value, digits) {
+      if (value === null || value === undefined) return "—";
+      return Number(value).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    }
+
+    async function loadDecisions() {
+      try {
+        const d = await getJSON("/api/decisions/summary");
+        let reviewData = { count: 0 };
+        try {
+          const reviewPayload = await getJSON("/api/decisions/review");
+          reviewData = reviewPayload.data || { count: 0 };
+        } catch (err) { /* review is optional */ }
+        const bt = d.backtest || {};
+        const breakout = bt.breakout || {};
+        const cards = [
+          `<div class="card"><h3>当前信号</h3><div class="metric">${(d.signals || []).length}<small>条</small></div>
+            <div class="kv"><span>交易计划</span><span>${(d.plans || []).length}</span></div>
+            <div class="kv"><span>未结预测</span><span>${d.open_predictions}</span></div></div>`,
+          `<div class="card"><h3>信号回测（10 日）</h3>
+            <div class="metric">${breakout.hit_rate !== undefined ? (breakout.hit_rate * 100).toFixed(1) + "%" : "—"}<small>突破命中率</small></div>
+            <div class="kv"><span>突破均值</span><span>${breakout.avg_return_pct ?? "—"}%</span></div>
+            <div class="kv"><span>样本数</span><span>${breakout.count ?? "—"}</span></div></div>`,
+          `<div class="card"><h3>风控</h3><div class="metric">0.25%<small>单笔风险</small></div>
+            <div class="kv"><span>纸面权益</span><span>100 万</span></div>
+            <div class="kv"><span>时间止损</span><span>3 个交易日</span></div>
+            <div class="kv"><span>说明</span><span>合约乘数已接入</span></div></div>`,
+          `<div class="card"><h3>预测校准</h3>
+            <div class="metric">${reviewData.count || 0}<small>已结算</small></div>
+            <div class="kv"><span>Brier</span><span>${reviewData.brier ?? "—"}</span></div>
+            <div class="kv"><span>命中率</span><span>${reviewData.hit_rate !== null && reviewData.hit_rate !== undefined ? (reviewData.hit_rate * 100).toFixed(1) + "%" : "—"}</span></div></div>`,
+        ];
+        $("decision-cards").innerHTML = cards.join("");
+        const st = d.signal_types || {};
+        $("signal-types").innerHTML = Object.entries(st).map(([type, value]) =>
+          `<span style="margin-right: 16px;">${esc(type)}：${value.count} 条（${value.long} 多 / ${value.short} 空，均强度 ${(value.avg_strength * 100).toFixed(0)}%）</span>`
+        ).join("");
+
+        const signals = (d.signals || []).slice(0, 8);
+        $("signals").innerHTML = signals.map((s) => `
+          <tr><td class="sym">${esc(s.symbol || "")}</td><td>${esc(s.type)}</td>
+          <td class="${s.direction === "long" ? "up" : "down"}">${s.direction === "long" ? "多" : "空"}</td>
+          <td class="num">${(s.strength * 100).toFixed(0)}%</td><td class="muted">${esc(s.note || "")}</td></tr>`).join("")
+          || '<tr><td colspan="5">暂无信号</td></tr>';
+
+        const plans = d.plans || [];
+        $("plans").innerHTML = plans.map((p) => {
+          const checks = p.checks || [];
+          const allPassed = checks.every((check) => check.passed);
+          const detail = p.detail || {};
+          return `<tr><td class="sym">${esc(p.symbol || "")}</td>
+            <td class="${p.side === "long" ? "up" : "down"}">${p.side === "long" ? "多" : "空"}</td>
+            <td class="num">${fmtNum(p.entry_low, 2)}–${fmtNum(p.entry_high, 2)}</td>
+            <td class="num">${fmtNum(p.stop, 2)}</td>
+            <td class="num">${fmtNum((p.targets || {}).T1, 2)}</td>
+            <td class="num">${fmtNum(p.size, 0)}</td>
+            <td class="num">${fmtNum(detail.margin, 0)}</td>
+            <td class="num">${fmtNum(detail.fee, 2)}</td>
+            <td>${allPassed ? '<span class="badge ok">通过</span>' : '<span class="badge bad">拦截</span>'}</td></tr>`;
+        }).join("") || '<tr><td colspan="9">暂无计划</td></tr>';
+        $("decision-note").textContent = "仓位按「以损定量」计算（权益 × 风险% ÷ 止损距离 ÷ 合约乘数），手数为整数；保证金与手续费按交易所标准近似，实际以期货公司为准。计划为草稿，不构成投资建议。";
+
+        const btRows = Object.entries(bt).map(([rule, value]) => {
+          const wf = value.walk_forward || {};
+          const train = wf.train || {};
+          const test = wf.test || {};
+          return `<tr><td>${esc(rule)}</td>
+            <td class="num">${value.hit_rate !== undefined ? (value.hit_rate * 100).toFixed(1) + "%" : "—"}</td>
+            <td class="num">${value.avg_return_pct ?? "—"}%</td>
+            <td class="num">${value.count ?? "—"}</td>
+            <td class="num">${train.hit_rate !== undefined ? (train.hit_rate * 100).toFixed(1) + "%" : "—"}</td>
+            <td class="num">${test.hit_rate !== undefined ? (test.hit_rate * 100).toFixed(1) + "%" : "—"}</td></tr>`;
+        });
+        $("backtest").innerHTML = btRows.join("") || '<tr><td colspan="6">暂无回测结果</td></tr>';
+      } catch (err) {
+        $("decision-cards").innerHTML = `<div class="card err">${esc(err.message)}</div>`;
+      }
+    }
+
+    async function loadAcceptance() {
+      try {
+        const payload = await getJSON("/api/system/acceptance");
+        const checks = payload.checks || [];
+        const passed = checks.filter((check) => check.passed).length;
+        $("acceptance").innerHTML = `${passed}/${checks.length}<small>${payload.passed ? "通过" : "有失败项"}</small>`;
+        $("acceptance-checks").innerHTML = checks.map((check) => `
+          <tr><td>${esc(check.name)}</td>
+          <td>${check.passed ? '<span class="badge ok">通过</span>' : '<span class="badge bad">失败</span>'}</td>
+          <td class="muted">${esc(String(check.detail ?? ""))}</td></tr>`).join("")
+          || '<tr><td colspan="3">暂无验收结果</td></tr>';
+      } catch (err) {
+        $("acceptance").textContent = "—";
+        $("acceptance-checks").innerHTML = `<tr><td colspan="3" class="err">${esc(err.message)}</td></tr>`;
+      }
+    }
+
+    async function loadAlerts() {
+      try {
+        const payload = await getJSON("/api/alerts?limit=10");
+        const rows = payload.data || [];
+        $("alert-hint").textContent = rows.length ? `${rows.length} 条未确认` : "无未确认告警";
+        $("alerts").innerHTML = rows.map((alert) => `
+          <li>
+            <div class="meta">
+              <span class="badge ${alert.level === "critical" ? "bad" : "warn"}">${esc(alert.level)}</span>
+              ${esc(alert.kind)} · ${fmtTime(alert.created_at, true)}
+              <button class="modal-close" style="float: right;" onclick="ackAlert('${esc(alert.id)}')">确认</button>
+            </div>
+            <div>${esc(alert.title)}</div>
+            <div class="muted">${esc(alert.message || "")}</div>
+          </li>`).join("") || "<li>暂无告警</li>";
+      } catch (err) {
+        $("alerts").innerHTML = `<li class="err">${esc(err.message)}</li>`;
+      }
+    }
+
+    async function ackAlert(id) {
+      try {
+        await fetch(`/api/alerts/${id}/ack`, { method: "POST" });
+        loadAlerts();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function loadQuality() {
+      try {
+        const payload = await getJSON("/api/system/data-quality");
+        const rows = payload.data || [];
+        $("quality").innerHTML = rows.map((row) => `
+          <tr><td>${esc(row.dataset)}</td><td>${esc(row.kind)}</td>
+          <td>${row.passed ? '<span class="badge ok">通过</span>' : '<span class="badge bad">失败</span>'}</td>
+          <td class="muted">${esc(row.detail || "")}</td></tr>`).join("")
+          || '<tr><td colspan="4">暂无检查结果</td></tr>';
+      } catch (err) {
+        $("quality").innerHTML = `<tr><td colspan="4" class="err">${esc(err.message)}</td></tr>`;
+      }
+    }
+
+    async function loadPositions() {
+      try {
+        const payload = await getJSON("/api/positions");
+        const rows = payload.data || [];
+        $("positions").innerHTML = rows.map((row) => `
+          <tr><td class="sym">${esc(row.name)}（${esc(row.product.replace("all", "").toUpperCase())}）</td>
+          <td class="num">${fmtNum(row.long_pos, 0)}</td>
+          <td class="num">${fmtNum(row.short_pos, 0)}</td>
+          <td class="num ${row.net_pos >= 0 ? "up" : "down"}">${fmtNum(row.net_pos, 0)}</td>
+          <td class="num">${row.net_ratio !== null ? (row.net_ratio * 100).toFixed(1) + "%" : "—"}</td>
+          <td class="num">${fmtNum(row.long_chg, 0)}</td>
+          <td class="num">${fmtNum(row.short_chg, 0)}</td></tr>`).join("")
+          || '<tr><td colspan="7">暂无持仓数据，等待 collect_positions 任务。</td></tr>';
+        $("positions-note").textContent = payload.trade_date
+          ? `数据日期 ${payload.trade_date}；来源上期所/郑商所/大商所会员持仓排名（会员合计），净占比 = (多−空)/(多+空)。`
+          : "";
+        const select = $("position-product");
+        const current = select.value;
+        select.innerHTML = rows.map((row) =>
+          `<option value="${esc(row.product)}">${esc(row.name)}（${esc(row.product.toUpperCase())}）</option>`
+        ).join("");
+        if (current && rows.some((row) => row.product === current)) select.value = current;
+        loadPositionMembers();
+      } catch (err) {
+        $("positions").innerHTML = `<tr><td colspan="7" class="err">${esc(err.message)}</td></tr>`;
+      }
+    }
+
+    function positionMemberRows(rows) {
+      return rows.map((row) => `
+        <tr><td class="num">${row.rank}</td>
+        <td>${esc(row.member)}</td>
+        <td class="num">${fmtNum(row.position, 0)}</td>
+        <td class="num ${row.change >= 0 ? "up" : "down"}">${fmtNum(row.change, 0)}</td></tr>`).join("");
+    }
+
+    async function loadPositionMembers() {
+      const product = $("position-product").value;
+      if (!product) return;
+      try {
+        const payload = await getJSON(`/api/positions/members?product=${encodeURIComponent(product)}&limit=20`);
+        const rows = payload.data || [];
+        const longs = rows.filter((row) => row.side === "long");
+        const shorts = rows.filter((row) => row.side === "short");
+        $("position-long").innerHTML = positionMemberRows(longs)
+          || '<tr><td colspan="4">暂无多头明细</td></tr>';
+        $("position-short").innerHTML = positionMemberRows(shorts)
+          || '<tr><td colspan="4">暂无空头明细</td></tr>';
+        $("position-members-meta").textContent = payload.trade_date
+          ? `数据日期 ${payload.trade_date} · 会员简称来自交易所排名表`
+          : "暂无该品种会员明细";
+      } catch (err) {
+        $("position-long").innerHTML = `<tr><td colspan="4" class="err">${esc(err.message)}</td></tr>`;
+        $("position-short").innerHTML = "";
+      }
+    }
+
+    let watchEditMode = false;
+    let watchDragging = null;
+
+    function enterWatchEditMode() {
+      watchEditMode = true;
+      $("watch-edit-btn").style.display = "none";
+      $("watch-save-btn").style.display = "";
+      $("watch-cancel-btn").style.display = "";
+      $("watch-mode-hint").textContent = "拖动卡片调整顺序，完成后点保存";
+      loadWatchlist();
+    }
+
+    function cancelWatchOrder() {
+      watchEditMode = false;
+      $("watch-edit-btn").style.display = "";
+      $("watch-save-btn").style.display = "none";
+      $("watch-cancel-btn").style.display = "none";
+      $("watch-mode-hint").textContent = "";
+      loadWatchlist();
+    }
+
+    async function saveWatchOrder() {
+      const symbols = [...document.querySelectorAll("#watchlist .watch-card")]
+        .map((card) => card.dataset.symbol);
+      try {
+        const response = await fetch("/api/watchlist/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbols }),
+        });
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        $("watch-status").textContent = "顺序已保存";
+        watchEditMode = false;
+        $("watch-edit-btn").style.display = "";
+        $("watch-save-btn").style.display = "none";
+        $("watch-cancel-btn").style.display = "none";
+        $("watch-mode-hint").textContent = "";
+        loadWatchlist();
+      } catch (err) {
+        $("watch-status").textContent = "保存失败：" + err.message;
+      }
+    }
+
+    function attachWatchDnD() {
+      const container = $("watchlist");
+      container.querySelectorAll(".watch-card").forEach((card) => {
+        card.addEventListener("dragstart", (event) => {
+          if (!watchEditMode) { event.preventDefault(); return; }
+          watchDragging = card;
+          card.classList.add("dragging");
+          event.dataTransfer.effectAllowed = "move";
+          try { event.dataTransfer.setData("text/plain", card.dataset.symbol); } catch (err) { /* ignore */ }
+        });
+        card.addEventListener("dragend", () => {
+          card.classList.remove("dragging");
+          watchDragging = null;
+        });
+        card.addEventListener("dragover", (event) => {
+          event.preventDefault();
+          if (!watchDragging || card === watchDragging) return;
+          const rect = card.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+          const after = event.clientY > midY ||
+            (event.clientY >= rect.top && event.clientY <= rect.bottom && event.clientX > rect.left + rect.width / 2);
+          if (after) card.after(watchDragging);
+          else card.before(watchDragging);
+        });
+      });
+    }
+
+    async function loadWatchlist() {
+      try {
+        const payload = await getJSON("/api/watchlist");
+        const rows = payload.data || [];
+        $("watchlist").innerHTML = rows.map((row) => {
+          const change = row.change_pct;
+          const cls = change === null || change === undefined ? "" : change >= 0 ? "up" : "down";
+          return `<div class="card watch-card${watchEditMode ? " editing" : ""}" data-symbol="${esc(row.symbol)}" draggable="${watchEditMode}">
+            <h3><span class="history-link" onclick="if (!watchEditMode) openHistory('instrument','${esc(row.symbol)}','${esc(row.name)}')"><span class="drag-handle">⋮⋮</span>${esc(row.name)}</span><span class="watch-actions">
+              <button class="watch-move" title="上移" onclick="moveWatch('${esc(row.symbol)}','up')">↑</button>
+              <button class="watch-move" title="下移" onclick="moveWatch('${esc(row.symbol)}','down')">↓</button>
+              <button class="watch-remove" title="移出自选" onclick="removeWatch('${esc(row.symbol)}')">×</button>
+            </span></h3>
+            <div class="metric history-link ${cls}" onclick="if (!watchEditMode) openHistory('instrument','${esc(row.symbol)}','${esc(row.name)}')">${row.price !== null && row.price !== undefined ? fmtNum(row.price, 2) : "—"}
+              <small>${change !== null && change !== undefined ? (change >= 0 ? "+" : "") + change.toFixed(2) + "%" : "暂无报价"}</small></div>
+            <div class="kv"><span>代码</span><span>${esc(row.symbol)}</span></div>
+            <div class="kv"><span>分组 / 优先级</span><span>${esc(row.group || "—")} / ${row.priority}</span></div>
+            <div class="kv"><span>20 日变动</span><span>${row.change_20d !== null && row.change_20d !== undefined ? (row.change_20d >= 0 ? "+" : "") + row.change_20d + "%" : "—"}</span></div>
+            <div class="mini">${esc(row.note || "")}</div>
+          </div>`;
+        }).join("") || '<div class="card muted">暂无自选，使用下方表单添加。</div>';
+        if (watchEditMode) attachWatchDnD();
+      } catch (err) {
+        $("watchlist").innerHTML = `<div class="card err">${esc(err.message)}</div>`;
+      }
+    }
+
+    async function loadWatchCandidates() {
+      try {
+        const payload = await getJSON("/api/watchlist/candidates");
+        const rows = (payload.data || []).filter((row) => !row.watched);
+        $("watch-symbol").innerHTML = rows.map((row) =>
+          `<option value="${esc(row.symbol)}">${esc(row.symbol)} · ${esc(row.name)}</option>`
+        ).join("") || '<option value="">（全部已在自选）</option>';
+      } catch (err) { /* optional */ }
+    }
+
+    async function addWatch() {
+      const symbol = $("watch-symbol").value;
+      if (!symbol) { $("watch-status").textContent = "没有可添加的标的"; return; }
+      try {
+        await fetch("/api/watchlist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            symbol,
+            group: $("watch-group").value.trim() || null,
+            priority: Number($("watch-priority").value),
+          }),
+        });
+        $("watch-status").textContent = `已添加 ${symbol}`;
+        $("watch-group").value = "";
+        loadWatchlist();
+        loadWatchCandidates();
+      } catch (err) {
+        $("watch-status").textContent = "添加失败：" + err.message;
+      }
+    }
+
+    async function moveWatch(symbol, direction) {
+      try {
+        const response = await fetch(`/api/watchlist/${encodeURIComponent(symbol)}/move`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ direction }),
+        });
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        $("watch-status").textContent = direction === "up" ? "已上移" : "已下移";
+        loadWatchlist();
+      } catch (err) {
+        $("watch-status").textContent = "排序失败：" + err.message;
+      }
+    }
+
+    async function removeWatch(symbol) {
+      try {
+        await fetch(`/api/watchlist/${encodeURIComponent(symbol)}`, { method: "DELETE" });
+        $("watch-status").textContent = `已移除 ${symbol}`;
+        loadWatchlist();
+        loadWatchCandidates();
+      } catch (err) {
+        $("watch-status").textContent = "移除失败：" + err.message;
+      }
+    }
+
+    async function loadCalendar() {
+      try {
+        const payload = await getJSON("/api/calendar?days=14&limit=20");
+        const rows = payload.data || [];
+        $("calendar").innerHTML = rows.map((event) => {
+          const stars = "●".repeat(event.importance || 1);
+          return `<li>
+            <div class="meta">${fmtTime(event.ts, true)} · ${esc(event.country || "全球")} · <span class="muted">${esc(event.category || "")}</span></div>
+            <div>${esc(event.name)} <span class="hint">${stars}</span></div>
+          </li>`;
+        }).join("") || "<li>暂无日历数据，等待 collect_calendar 任务。</li>";
+      } catch (err) {
+        $("calendar").innerHTML = `<li class="err">${esc(err.message)}</li>`;
+      }
+    }
+
+    async function loadTheses() {
+      try {
+        const payload = await getJSON("/api/theses?limit=6");
+        const rows = payload.data || [];
+        $("theses").innerHTML = rows.map((thesis) => {
+          const scenarios = (thesis.scenarios || []).map((s) =>
+            `<div class="kv"><span>${esc(s.name)}</span><span>${Math.round(s.probability * 100)}%</span></div>`
+          ).join("");
+          return `<div class="panel">
+            <h3>${esc(thesis.title)}</h3>
+            <div class="metric">${Math.round((thesis.posterior || 0) * 100)}%<small>后验置信</small></div>
+            <div class="kv"><span>方向</span><span>${thesis.direction === "long" ? "看多" : "看空"}</span></div>
+            <div class="kv"><span>状态</span><span>${esc(thesis.status)}</span></div>
+            <div class="kv"><span>证据</span><span>${thesis.evidence_count} 条断言</span></div>
+            <div class="kv"><span>主要动力</span><span>${esc(thesis.main_driver || "")}</span></div>
+            ${scenarios}
+            <div class="mini">失效条件：${esc(thesis.invalidation || "")}</div>
+          </div>`;
+        }).join("") || '<div class="card muted">暂无论点，运行 --job theses 生成。</div>';
+        try {
+          const reviewPayload = await getJSON("/api/theses/review");
+          const review = reviewPayload.data || {};
+          $("thesis-review").textContent = review.scored
+            ? `论点复核：${review.scored} 条可评分，方向命中率 ${(review.hit_rate * 100).toFixed(0)}%，平均收益 ${review.avg_return_pct}%（按创建日至最新收盘，多空方向调整）。`
+            : "论点复核：暂无足够行情样本（需论点创建后的日线）。";
+        } catch (err) { /* optional */ }
+      } catch (err) {
+        $("theses").innerHTML = `<div class="card err">${esc(err.message)}</div>`;
+      }
+    }
+
+    async function loadEvents() {
+      try {
+        const payload = await getJSON("/api/events?limit=12");
+        const rows = payload.data || [];
+        $("events").innerHTML = rows.map((event) => `
+          <li><div class="meta">${fmtTime(event.event_date, true)} · <span class="badge">${esc(event.type)}</span> · ${esc((event.instruments || []).join("/") || "—")}</div>
+          <div>${esc(event.title)}</div></li>`).join("")
+          || "<li>暂无识别事件，等待 extract_events 任务。</li>";
+      } catch (err) {
+        $("events").innerHTML = `<li class="err">${esc(err.message)}</li>`;
+      }
+    }
+
+    async function loadJournal() {
+      try {
+        const payload = await getJSON("/api/journal?limit=5");
+        const rows = payload.data || [];
+        $("journal").innerHTML = rows.map((entry) => `
+          <li><div class="meta">${esc(entry.entry_date)}</div><div style="white-space: pre-wrap;">${esc(entry.content)}</div></li>`).join("")
+          || "<li>暂无日志。今天的判断、执行与错误，值得记录下来。</li>";
+      } catch (err) {
+        $("journal").innerHTML = `<li class="err">${esc(err.message)}</li>`;
+      }
+    }
+
+    async function saveJournal() {
+      const content = $("journal-input").value.trim();
+      if (!content) {
+        $("journal-status").textContent = "内容为空";
+        return;
+      }
+      try {
+        await fetch("/api/journal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        });
+        $("journal-status").textContent = "已保存";
+        $("journal-input").value = "";
+        loadJournal();
+      } catch (err) {
+        $("journal-status").textContent = "保存失败：" + err.message;
+      }
+    }
+
+    const HISTORY_RANGES = [
+      ["1m", "1月"], ["3m", "3月"], ["6m", "6月"], ["1y", "1年"],
+      ["2y", "2年"], ["5y", "5年"], ["all", "全部"],
+    ];
+    const HISTORY_DAYS = { "1m": 31, "3m": 92, "6m": 183, "1y": 366, "2y": 731, "5y": 1826 };
+    const historyState = { kind: null, key: "", name: "", unit: "", points: [], range: "1y" };
+
+    function initHistoryRanges() {
+      $("history-ranges").innerHTML = HISTORY_RANGES.map(([value, label]) =>
+        `<button data-range="${value}" onclick="setHistoryRange('${value}')">${label}</button>`
+      ).join("");
+      updateHistoryRangeButtons();
+    }
+
+    function updateHistoryRangeButtons() {
+      $("history-ranges").querySelectorAll("button").forEach((button) => {
+        button.classList.toggle("active", button.dataset.range === historyState.range);
+      });
+    }
+
+    function setHistoryRange(range) {
+      historyState.range = range;
+      updateHistoryRangeButtons();
+      renderHistory();
+    }
+
+    function closeHistory() {
+      $("history-modal").classList.remove("open");
+    }
+
+    function historyValue(value) {
+      const unit = historyState.unit;
+      if (unit === "%") return Number(value).toFixed(2) + "%";
+      if (unit === "pp") return Number(value).toFixed(2) + "pp";
+      return Number(value).toFixed(2) + (unit ? " " + unit : "");
+    }
+
+    async function openHistory(kind, key, name, unit = "") {
+      closeDoc();
+      $("history-modal").classList.add("open");
+      $("history-title").textContent = `${name || key}（${key}）`;
+      $("history-meta").textContent = "加载中…";
+      $("history-chart").innerHTML = '<div class="placeholder">加载中…</div>';
+      $("history-stats").innerHTML = "";
+      historyState.kind = kind;
+      historyState.key = key;
+      historyState.name = name || key;
+      historyState.unit = unit;
+      historyState.points = [];
+      try {
+        let points = [];
+        if (kind === "instrument") {
+          const payload = await getJSON(`/api/market/bars?symbol=${encodeURIComponent(key)}&timeframe=1d&limit=3000`);
+          points = (payload.data || [])
+            .map((row) => ({ t: Date.parse(row.ts), v: Number(row.close) }))
+            .filter((point) => Number.isFinite(point.t) && Number.isFinite(point.v));
+          historyState.unit = "";
+        } else {
+          const payload = await getJSON(`/api/macro/series?code=${encodeURIComponent(key)}&limit=5000`);
+          points = (payload.data || [])
+            .map((row) => ({ t: Date.parse(row.ts), v: Number(row.value) }))
+            .filter((point) => Number.isFinite(point.t) && Number.isFinite(point.v));
+          historyState.unit = payload.unit || unit || "";
+        }
+        historyState.points = points;
+        if (!points.length) {
+          $("history-meta").textContent = "无历史数据（等待采集任务）";
+          $("history-chart").innerHTML = '<div class="placeholder">暂无历史数据。</div>';
+          return;
+        }
+        renderHistory();
+      } catch (err) {
+        $("history-meta").textContent = "加载失败";
+        $("history-chart").innerHTML = `<div class="err">${esc(err.message)}</div>`;
+      }
+    }
+
+    function renderHistory() {
+      const allPoints = historyState.points;
+      if (!allPoints.length) return;
+      const days = HISTORY_DAYS[historyState.range];
+      const lastTs = allPoints[allPoints.length - 1].t;
+      const points = days
+        ? allPoints.filter((point) => point.t >= lastTs - days * 86400000)
+        : allPoints;
+      if (points.length < 2) {
+        $("history-chart").innerHTML = '<div class="placeholder">所选区间数据点不足。</div>';
+        return;
+      }
+      const W = 920, H = 320, L = 64, R = 82, T = 18, B = 38;
+      const values = points.map((point) => point.v);
+      let minValue = Math.min(...values), maxValue = Math.max(...values);
+      if (minValue === maxValue) { minValue -= 1; maxValue += 1; }
+      const pad = (maxValue - minValue) * 0.08;
+      minValue -= pad;
+      maxValue += pad;
+      const x = (index) => L + ((W - L - R) * index) / (points.length - 1);
+      const y = (value) => T + (H - T - B) * (1 - (value - minValue) / (maxValue - minValue));
+      const fmtDate = (ts) => new Date(ts).toISOString().slice(0, 10);
+      let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(historyState.name)} 历史趋势">`;
+      for (let i = 0; i <= 4; i += 1) {
+        const value = minValue + ((maxValue - minValue) * i) / 4;
+        const yPos = y(value);
+        svg += `<line class="grid" x1="${L}" y1="${yPos.toFixed(1)}" x2="${W - R}" y2="${yPos.toFixed(1)}" />`;
+        svg += `<text class="axis-label" x="${L - 8}" y="${(yPos + 4).toFixed(1)}" text-anchor="end">${historyValue(value)}</text>`;
+      }
+      for (let i = 0; i <= 4; i += 1) {
+        const index = Math.round(((points.length - 1) * i) / 4);
+        svg += `<text class="axis-label" x="${x(index).toFixed(1)}" y="${H - 12}" text-anchor="middle">${fmtDate(points[index].t)}</text>`;
+      }
+      const line = points.map((point, index) => `${index === 0 ? "M" : "L"}${x(index).toFixed(1)},${y(point.v).toFixed(1)}`).join(" ");
+      const area = `${line} L${x(points.length - 1).toFixed(1)},${H - B} L${L},${H - B} Z`;
+      svg += `<path class="area" d="${area}" />`;
+      svg += `<path class="line" d="${line}" />`;
+      const last = points[points.length - 1];
+      svg += `<circle class="dot" cx="${x(points.length - 1).toFixed(1)}" cy="${y(last.v).toFixed(1)}" r="4" />`;
+      svg += `<text class="last-label" x="${W - R + 10}" y="${(y(last.v) + 4).toFixed(1)}">${historyValue(last.v)}</text>`;
+      svg += "</svg>";
+      $("history-chart").innerHTML = svg;
+      const first = points[0];
+      const diff = last.v - first.v;
+      const pct = first.v ? (diff / Math.abs(first.v)) * 100 : 0;
+      const rangeLabel = (HISTORY_RANGES.find(([value]) => value === historyState.range) || ["", "全部"])[1];
+      $("history-meta").textContent = `${historyState.kind === "macro" ? "宏观序列" : "日线"} · ${points.length} 个点 · ${fmtDate(first.t)} ~ ${fmtDate(last.t)}`;
+      $("history-stats").innerHTML = `
+        <span>最新 <b>${historyValue(last.v)}</b></span>
+        <span>${rangeLabel}变化 <b>${diff >= 0 ? "+" : ""}${diff.toFixed(2)}${historyState.unit === "pp" ? "pp" : ""}${historyState.unit === "%" ? "pp" : ""}</b></span>
+        <span>区间涨跌 <b>${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%</b></span>
+        <span>区间低 / 高 <b>${historyValue(Math.min(...values))} / ${historyValue(Math.max(...values))}</b></span>
+        <span>样本 <b>${points.length}</b></span>`;
+    }
+
+    async function openDoc(id) {
+      $("history-modal").classList.remove("open");
+      $("modal").classList.add("open");
+      $("doc-title").textContent = "加载中…";
+      $("doc-meta").textContent = "";
+      $("doc-body").textContent = "加载中…";
+      $("doc-claims").innerHTML = "";
+      try {
+        const doc = await getJSON(`/api/documents/${id}`);
+        $("doc-title").textContent = doc.title || "(无标题)";
+        $("doc-meta").textContent = `${doc.source ? doc.source.name : ""} · ${fmtTime(doc.published_at, true)} · 状态 ${doc.status}`;
+        const claims = doc.claims || [];
+        const body = doc.body && doc.body.text;
+        if (!body) {
+          $("doc-body").innerHTML = '<span class="muted">未抓取到正文（可能为 PDF/动态页面）。可打开原文链接查看。</span>';
+        } else {
+          $("doc-body").innerHTML = renderBody(body, claims);
+        }
+        $("doc-claims").innerHTML = claims.map((c) =>
+          `<span class="claim"><b>${esc(c.subject)}</b> · ${esc(c.predicate)} ${c.value === null ? "" : esc(String(c.value))}${esc(c.unit || "")} · 置信 ${(c.confidence * 100).toFixed(0)}%</span>`
+        ).join("") || '<span class="claim">暂未抽取到断言</span>';
+      } catch (err) {
+        $("doc-body").innerHTML = `<span class="err">${esc(err.message)}</span>`;
+      }
+    }
+
+    function closeDoc() { $("modal").classList.remove("open"); }
+
+    function renderBody(text, claims) {
+      const spans = claims
+        .filter((c) => c.span && c.span.start !== null && c.span.end !== null)
+        .sort((a, b) => a.span.start - b.span.start);
+      let html = "";
+      let pos = 0;
+      for (const c of spans) {
+        const start = Math.max(c.span.start, pos);
+        const end = Math.max(c.span.end, pos);
+        if (start > pos) html += esc(text.slice(pos, start));
+        if (end > start) {
+          html += `<mark title="${esc(c.subject)} ${esc(c.predicate)}">${esc(text.slice(start, end))}</mark>`;
+        }
+        pos = end;
+      }
+      html += esc(text.slice(pos));
+      return html.replace(/\n/g, "<br>");
+    }
+
+    async function loadSources() {
+      try {
+        const payload = await getJSON("/api/system/sources");
+        const rows = payload.data || [];
+        $("sources").innerHTML = rows.map((s) => `
+          <tr>
+            <td>${s.last_ok === true ? '<span class="dot ok"></span>' : s.last_ok === false ? '<span class="dot bad"></span>' : '<span class="dot"></span>'}${esc(s.name)}</td>
+            <td>${esc(s.kind)}</td>
+            <td>${esc(s.tier || "—")}</td>
+            <td class="num">${s.documents || 0}</td>
+            <td>${s.last_ok === true ? "正常" : s.last_ok === false ? "失败" : "未检查"}</td>
+            <td class="muted">${fmtTime(s.last_check, true)}</td>
+          </tr>`).join("") || '<tr><td colspan="6">暂无数据源</td></tr>';
+      } catch (err) {
+        $("sources").innerHTML = `<tr><td colspan="6" class="err">${esc(err.message)}</td></tr>`;
+      }
+    }
+
+    async function loadJobs() {
+      try {
+        const payload = await getJSON("/api/system/jobs");
+        const rows = payload.data || [];
+        $("jobs").innerHTML = rows.map((j) => `
+          <tr>
+            <td class="sym">${esc(j.name)}</td>
+            <td>${esc(j.cron)}</td>
+            <td>${j.enabled ? "是" : "否"}</td>
+            <td>${esc(j.last_status || "—")}</td>
+            <td class="muted">${fmtTime(j.last_run_at, true)}</td>
+          </tr>`).join("") || '<tr><td colspan="5">暂无任务</td></tr>';
+        const failed = rows.filter((j) => j.last_status === "error").length;
+        $("job-errors").textContent = failed ? `${failed} 个` : "0";
+      } catch (err) {
+        $("jobs").innerHTML = `<tr><td colspan="5" class="err">${esc(err.message)}</td></tr>`;
+      }
+    }
+
+    function tick() {
+      const now = new Date();
+      $("clock").textContent = now.toLocaleString("zh-CN", { hour12: false });
+      $("footer-time").textContent = now.toLocaleString("zh-CN", { hour12: false });
+    }
+
+    tick();
+    initSectionNav();
+    initHistoryRanges();
+    loadHealth(); loadQuotes(); loadMacro(); loadNews(); loadSources(); loadJobs(); loadAnalytics(); loadDecisions(); loadTheses(); loadAlerts(); loadQuality(); loadJournal(); loadCalendar(); loadPositions(); loadEvents(); loadAcceptance(); loadWatchlist(); loadWatchCandidates();
+    const briefParam = new URLSearchParams(location.search).get("brief");
+    if (briefParam) setTimeout(() => openBrief(briefParam), 800);
+    const docParam = new URLSearchParams(location.search).get("doc");
+    if (docParam) openDoc(docParam);
+    setInterval(tick, 1000);
+    setInterval(() => { loadHealth(); loadQuotes(); loadJobs(); }, 15000);
+    setInterval(() => { loadMacro(); loadNews(); loadSources(); }, 60000);
+    setInterval(loadAnalytics, 120000);
+    setInterval(loadDecisions, 60000);
+    setInterval(loadTheses, 120000);
+    setInterval(() => { loadAlerts(); loadQuality(); loadAcceptance(); }, 30000);
+    setInterval(loadJournal, 120000);
+    setInterval(loadCalendar, 300000);
+    setInterval(loadPositions, 300000);
+    setInterval(loadEvents, 60000);
+    setInterval(() => { if (!watchEditMode) loadWatchlist(); }, 60000);
+    if (new URLSearchParams(location.search).get("watch_edit") === "1") {
+      setTimeout(enterWatchEditMode, 1000);
+    }
+    const historyParam = new URLSearchParams(location.search).get("history");
+    if (historyParam) {
+      const parts = historyParam.split(":");
+      const kind = parts.length === 2 ? parts[0] : "macro";
+      const key = parts.length === 2 ? parts[1] : historyParam;
+      setTimeout(() => openHistory(kind, key, key), 1200);
+    }
+  </script>
+</body>
+</html>

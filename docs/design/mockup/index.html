@@ -1,0 +1,2568 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>EPIC · 宏观市场交易工作台（UI 原型）</title>
+<style>
+/* ============================================================
+   EPIC · 新前端 UI 原型
+   深色金融终端为默认主题；浅色主题通过 html[data-theme="light"] 覆盖。
+   纯静态：无外部字体 / 图标 / 图片 / CDN，图表全部为内联 SVG。
+   ============================================================ */
+
+/* ---------- Design Tokens：深色（默认） ---------- */
+:root {
+  --bg: #0A0E13;
+  --surface: #111721;
+  --surface-2: #172030;
+  --surface-3: #1D2839;
+  --border: rgba(148, 163, 184, .14);
+  --border-strong: #223047;
+  --text: #E6EDF5;
+  --muted: #93A4B8;
+  --dim: #64748B;
+  --accent: #4CC2FF;
+  --accent-weak: rgba(76, 194, 255, .12);
+  --accent-line: rgba(76, 194, 255, .34);
+  --up: #F0544F;
+  --down: #2FBF71;
+  --warn: #F5A524;
+  --info: #4CC2FF;
+  --ok: #2FBF71;
+  --up-color: var(--up);
+  --down-color: var(--down);
+  --radius-card: 10px;
+  --radius-control: 8px;
+  --sidebar-w: 232px;
+  --topbar-h: 56px;
+  --row-h: 36px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .28);
+  --shadow-pop: 0 18px 48px rgba(0, 0, 0, .46);
+  --bg-glow: radial-gradient(1100px 520px at 72% -12%, rgba(76, 194, 255, .07), transparent 62%);
+  --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  color-scheme: dark;
+}
+
+/* ---------- Design Tokens：浅色 ---------- */
+html[data-theme="light"] {
+  --bg: #F4F7FA;
+  --surface: #FFFFFF;
+  --surface-2: #EDF2F7;
+  --surface-3: #E1EAF2;
+  --border: rgba(26, 39, 51, .12);
+  --border-strong: #D6E0EA;
+  --text: #1A2733;
+  --muted: #5A6B7C;
+  --dim: #8395A7;
+  --accent: #0B6FB3;
+  --accent-weak: rgba(11, 111, 179, .10);
+  --accent-line: rgba(11, 111, 179, .34);
+  --up: #D64541;
+  --down: #1B8A55;
+  --warn: #B57A00;
+  --ok: #1B8A55;
+  --up-color: var(--up);
+  --down-color: var(--down);
+  --shadow: 0 1px 2px rgba(26, 39, 51, .07);
+  --shadow-pop: 0 18px 48px rgba(26, 39, 51, .18);
+  --bg-glow: radial-gradient(1100px 520px at 72% -12%, rgba(11, 111, 179, .05), transparent 62%);
+  color-scheme: light;
+}
+
+/* 绿涨红跌（设置抽屉可切换） */
+html[data-updown="green"] {
+  --up-color: var(--down);
+  --down-color: var(--up);
+}
+
+/* ---------- 基础 ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg-glow), var(--bg);
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color .16s ease, color .16s ease;
+}
+h1, h2, h3, h4, p { margin: 0; }
+button { font-family: inherit; }
+a { color: var(--accent); }
+::selection { background: var(--accent-line); color: var(--text); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+svg { display: block; }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--dim); background-clip: content-box; }
+
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.up { color: var(--up-color); }
+.down { color: var(--down-color); }
+.flat { color: var(--muted); }
+.muted { color: var(--muted); }
+.dim { color: var(--dim); }
+.nowrap { white-space: nowrap; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.ic { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.icon-sun { display: none; }
+html[data-theme="light"] .icon-sun { display: block; }
+html[data-theme="light"] .icon-moon { display: none; }
+.spacer { flex: 1; }
+/* 紧凑密度（设置抽屉切换） */
+body.is-compact { --row-h: 31px; }
+body.is-compact .card-head { min-height: 33px; }
+body.is-compact .data-table tbody td { font-size: 11.5px; }
+body.is-compact .kpi-grid, body.is-compact .overview-row, body.is-compact .sec-row { margin-top: 7px; }
+body.is-compact .watch-card { padding: 6px 8px 5px; }
+body.is-compact .overview-row .card-body { padding: 8px 11px; }
+
+/* ---------- 侧边栏 ---------- */
+.sidebar {
+  position: fixed; inset: 0 auto 0 0; width: var(--sidebar-w); z-index: 40;
+  display: flex; flex-direction: column;
+  background: linear-gradient(180deg, var(--surface) 0%, var(--bg) 68%);
+  border-right: 1px solid var(--border);
+}
+.brand {
+  height: var(--topbar-h); flex: none; display: flex; align-items: center; gap: 10px;
+  padding: 0 16px; border-bottom: 1px solid var(--border);
+}
+.brand-mark {
+  width: 28px; height: 28px; flex: none; border-radius: 8px;
+  background: linear-gradient(140deg, #6FD4FF 0%, #2E86D8 60%, #4C6FFF 100%);
+  color: #04121F; font-weight: 800; font-size: 12px; letter-spacing: -.5px;
+  display: grid; place-items: center; box-shadow: 0 0 18px rgba(76, 194, 255, .28);
+}
+.brand-name { font-size: 15px; font-weight: 750; letter-spacing: .9px; line-height: 1.1; }
+.brand-sub { font-size: 9.5px; color: var(--dim); letter-spacing: .6px; white-space: nowrap; }
+.nav { flex: 1 1 auto; overflow-y: auto; padding: 10px 10px 4px; }
+.nav-group { margin-bottom: 12px; }
+.nav-label { padding: 7px 9px 5px; font-size: 9.5px; letter-spacing: 1.6px; color: var(--dim); }
+.nav-item {
+  width: 100%; display: flex; align-items: center; gap: 9px; height: 33px;
+  padding: 0 9px; margin-bottom: 1px; border: 1px solid transparent; border-radius: 8px;
+  background: none; color: var(--muted); font-size: 12.5px; text-align: left; cursor: pointer;
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.nav-item svg { width: 15px; height: 15px; flex: none; opacity: .85; }
+.nav-item:hover { background: var(--surface-2); color: var(--text); }
+.nav-item.active {
+  background: var(--accent-weak); color: var(--accent); font-weight: 650;
+  border-color: var(--accent-line); box-shadow: inset 2px 0 0 var(--accent);
+}
+.nav-item.active svg { opacity: 1; }
+.nav-badge {
+  margin-left: auto; min-width: 17px; height: 16px; padding: 0 5px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 9.5px; line-height: 1;
+  background: var(--surface-3); color: var(--muted); border: 1px solid var(--border);
+}
+.nav-badge.hot { color: var(--up-color); border-color: color-mix(in srgb, var(--up) 34%, transparent); background: color-mix(in srgb, var(--up) 12%, transparent); }
+.nav-badge.dot-only { min-width: 6px; width: 6px; height: 6px; padding: 0; border: 0; background: var(--warn); }
+.sidebar-foot { flex: none; padding: 10px 12px 12px; border-top: 1px solid var(--border); }
+.sf-status { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted); }
+.sf-rows { margin-top: 6px; display: grid; gap: 3px; font-size: 10px; color: var(--dim); }
+.sf-row { display: flex; justify-content: space-between; gap: 8px; }
+.sf-row b { font-weight: 500; color: var(--muted); font-family: var(--mono); font-size: 10px; }
+.sf-version { margin-top: 8px; padding-top: 7px; border-top: 1px dashed var(--border); font-size: 9.5px; color: var(--dim); font-family: var(--mono); }
+
+/* ---------- 顶栏 ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 30; margin-left: var(--sidebar-w);
+  height: var(--topbar-h); display: flex; align-items: center; gap: 14px; padding: 0 18px;
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: blur(10px); border-bottom: 1px solid var(--border);
+}
+.crumb { display: flex; align-items: baseline; gap: 7px; white-space: nowrap; }
+.crumb-root { font-size: 10.5px; color: var(--dim); letter-spacing: .4px; }
+.crumb-sep { color: var(--dim); font-size: 10px; }
+.crumb-page { font-size: 14px; font-weight: 650; letter-spacing: .3px; }
+.search-trigger {
+  flex: 0 1 330px; min-width: 190px; height: 32px; margin-left: 6px;
+  display: flex; align-items: center; gap: 8px; padding: 0 9px 0 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-control);
+  background: var(--surface); color: var(--dim); font-size: 11.5px; cursor: pointer;
+  transition: border-color .12s, color .12s, background .12s;
+}
+.search-trigger:hover { border-color: var(--border-strong); color: var(--muted); background: var(--surface-2); }
+.search-trigger svg { width: 13px; height: 13px; flex: none; }
+.kbd {
+  margin-left: auto; display: inline-flex; align-items: center; height: 17px; padding: 0 5px;
+  border: 1px solid var(--border-strong); border-radius: 4px;
+  background: var(--surface-2); color: var(--muted);
+  font-family: var(--mono); font-size: 9px; line-height: 1; white-space: nowrap;
+}
+.top-actions { margin-left: auto; display: flex; align-items: center; gap: 7px; }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; height: 27px; padding: 0 10px;
+  border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
+  font-size: 10.5px; color: var(--muted); white-space: nowrap;
+}
+.pill b { font-family: var(--mono); font-weight: 500; color: var(--text); font-size: 10.5px; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.dot--live { color: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 16%, transparent); }
+.dot--warn { color: var(--warn); }
+.dot--off { color: var(--dim); }
+.icon-btn {
+  width: 30px; height: 30px; flex: none; display: grid; place-items: center;
+  border: 1px solid var(--border); border-radius: var(--radius-control);
+  background: var(--surface); color: var(--muted); cursor: pointer; position: relative;
+  transition: color .12s, border-color .12s, background .12s;
+}
+.icon-btn:hover { color: var(--text); border-color: var(--border-strong); background: var(--surface-2); }
+.icon-btn svg { width: 15px; height: 15px; }
+.icon-btn .notif-dot {
+  position: absolute; top: 5px; right: 5px; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--up); box-shadow: 0 0 0 2px var(--surface);
+}
+.avatar {
+  width: 28px; height: 28px; flex: none; border-radius: 999px;
+  background: linear-gradient(140deg, #4CC2FF, #7A5CFF);
+  color: #04121F; font-size: 10.5px; font-weight: 750; letter-spacing: .3px;
+  display: grid; place-items: center; cursor: pointer;
+}
+.top-divider { width: 1px; height: 18px; background: var(--border); margin: 0 2px; }
+
+/* ---------- 主内容 ---------- */
+.main { margin-left: var(--sidebar-w); padding: 10px 18px 22px; min-height: calc(100vh - var(--topbar-h)); }
+.view { display: none; }
+.view.active { display: block; animation: viewIn .18s ease both; }
+@keyframes viewIn { from { transform: translateY(3px); } to { transform: none; } }
+
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 8px; }
+.page-eyebrow { font-size: 10.5px; color: var(--dim); letter-spacing: .5px; margin-bottom: 1px; }
+.page-h1 { font-size: 19px; font-weight: 700; letter-spacing: .2px; display: flex; align-items: baseline; gap: 9px; }
+.page-sub { font-size: 10.5px; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+.page-actions { display: flex; align-items: center; gap: 7px; }
+
+/* ---------- 通用卡片 ---------- */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-card); box-shadow: var(--shadow);
+}
+.card-head { display: flex; align-items: center; gap: 8px; padding: 0 13px; min-height: 37px; border-bottom: 1px solid var(--border); }
+.card-title { font-size: 12.5px; font-weight: 650; letter-spacing: .2px; white-space: nowrap; }
+.card-sub { font-size: 10.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.card-body { padding: 11px 13px; }
+.card-foot { padding: 7px 13px; border-top: 1px solid var(--border); font-size: 10px; color: var(--dim); display: flex; align-items: center; gap: 8px; }
+
+.sec-row { display: flex; align-items: center; gap: 9px; margin: 9px 2px 6px; }
+.sec-title { font-size: 15px; font-weight: 650; letter-spacing: .2px; }
+.sec-count { font-size: 10px; color: var(--dim); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; height: 16px; display: inline-flex; align-items: center; font-family: var(--mono); }
+.sec-meta { font-size: 10.5px; color: var(--dim); }
+.sec-actions { margin-left: auto; display: flex; align-items: center; gap: 7px; }
+
+/* ---------- 按钮 / 徽标 / 分段 / chips ---------- */
+.btn {
+  height: 30px; padding: 0 11px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid var(--border); border-radius: var(--radius-control);
+  background: var(--surface-2); color: var(--text);
+  font-size: 11.5px; white-space: nowrap; cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s, filter .12s;
+}
+.btn svg { width: 13px; height: 13px; flex: none; }
+.btn:hover { border-color: var(--border-strong); background: var(--surface-3); }
+.btn:active { transform: translateY(.5px); }
+.btn--primary { background: var(--accent); border-color: var(--accent); color: #04121F; font-weight: 650; }
+.btn--primary:hover { background: var(--accent); filter: brightness(1.08); }
+.btn--ghost { background: transparent; }
+.btn--ghost:hover { background: var(--surface-2); }
+.btn--sm { height: 26px; padding: 0 9px; font-size: 10.5px; }
+.btn--sm svg { width: 12px; height: 12px; }
+.btn--icon { width: 28px; height: 28px; padding: 0; }
+.btn--icon.btn--sm { width: 26px; }
+.btn[disabled] { opacity: .45; cursor: not-allowed; }
+
+.link-btn {
+  display: inline-flex; align-items: center; gap: 3px;
+  border: 0; background: none; padding: 1px 3px; border-radius: 4px;
+  color: var(--accent); font-size: 10.5px; cursor: pointer;
+}
+.link-btn:hover { background: var(--accent-weak); }
+.link-btn svg { width: 11px; height: 11px; }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 4px; height: 19px; padding: 0 7px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface-2); color: var(--muted);
+  font-size: 10px; line-height: 1; white-space: nowrap;
+}
+.badge b { font-weight: 650; font-family: var(--mono); }
+.badge--accent { color: var(--accent); border-color: var(--accent-line); background: var(--accent-weak); }
+.badge--up { color: var(--up-color); border-color: color-mix(in srgb, var(--up) 36%, transparent); background: color-mix(in srgb, var(--up) 12%, transparent); }
+.badge--down { color: var(--down-color); border-color: color-mix(in srgb, var(--down) 36%, transparent); background: color-mix(in srgb, var(--down) 12%, transparent); }
+.badge--warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 13%, transparent); }
+.badge--live { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 36%, transparent); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.badge--sm { height: 17px; padding: 0 6px; font-size: 9.5px; }
+
+.seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); }
+.seg button {
+  height: 24px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent;
+  color: var(--muted); font-size: 11px; cursor: pointer; white-space: nowrap;
+}
+.seg button:hover { color: var(--text); }
+.seg button.active { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: var(--shadow); }
+html[data-theme="light"] .seg button.active { background: #fff; }
+
+.chip {
+  height: 26px; padding: 0 8px; display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--muted); font-size: 10.5px; cursor: pointer;
+  transition: color .12s, border-color .12s, background .12s;
+}
+.chip em { font-style: normal; font-family: var(--mono); font-size: 9px; color: var(--dim); }
+.chip:hover { color: var(--text); border-color: var(--border-strong); }
+.chip.active { color: var(--accent); border-color: var(--accent-line); background: var(--accent-weak); font-weight: 600; }
+.chip.active em { color: var(--accent); opacity: .8; }
+
+/* ---------- 输入 / 表单 ---------- */
+.field {
+  display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-control);
+  background: var(--surface-2); color: var(--dim); font-size: 11.5px;
+  transition: border-color .12s, box-shadow .12s;
+}
+.field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
+.field svg { width: 13px; height: 13px; flex: none; }
+.field input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text); font: inherit; font-size: 12px; }
+.field input::placeholder { color: var(--dim); }
+.field .kbd { margin-left: 2px; }
+.field--search { width: 250px; }
+.select {
+  height: 32px; padding: 0 26px 0 10px; border-radius: var(--radius-control);
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  font: inherit; font-size: 11.5px; cursor: pointer;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 13px) 13px, calc(100% - 9px) 13px;
+  background-size: 4px 4px, 4px 4px; background-repeat: no-repeat;
+}
+.switch { position: relative; width: 32px; height: 18px; flex: none; }
+.switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.switch i {
+  position: absolute; inset: 0; border-radius: 999px; background: var(--surface-3);
+  border: 1px solid var(--border-strong); transition: background .15s;
+}
+.switch i::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--muted); transition: transform .15s, background .15s;
+}
+.switch input:checked + i { background: color-mix(in srgb, var(--accent) 30%, transparent); border-color: var(--accent-line); }
+.switch input:checked + i::after { transform: translateX(14px); background: var(--accent); }
+.checkbox { width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; }
+.radio-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+
+/* ---------- 总览：Hero + 市场时钟 ---------- */
+.hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) 352px; gap: 10px; }
+.hero {
+  position: relative; overflow: hidden; padding: 11px 16px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-card);
+  background:
+    radial-gradient(560px 220px at 0% 0%, rgba(76, 194, 255, .13), transparent 68%),
+    radial-gradient(420px 200px at 96% 110%, rgba(122, 92, 255, .10), transparent 70%),
+    var(--surface);
+  box-shadow: var(--shadow);
+}
+html[data-theme="light"] .hero {
+  background:
+    radial-gradient(560px 220px at 0% 0%, rgba(11, 111, 179, .09), transparent 68%),
+    radial-gradient(420px 200px at 96% 110%, rgba(122, 92, 255, .06), transparent 70%),
+    var(--surface);
+}
+.hero::after {
+  content: ""; position: absolute; right: 0; top: -80px; width: 260px; height: 260px;
+  border-radius: 50%; border: 1px solid var(--accent-line); opacity: .22; pointer-events: none;
+}
+.hero-top { display: flex; align-items: center; gap: 9px; }
+.hero-date { font-size: 10.5px; color: var(--muted); font-family: var(--mono); }
+.hero-top-right { margin-left: auto; font-size: 10px; color: var(--dim); display: flex; align-items: center; gap: 5px; }
+.hero-title {
+  margin: 6px 0 2px; font-size: 20px; line-height: 1.32; font-weight: 720; letter-spacing: .2px;
+  max-width: 690px;
+}
+.hero-desc { margin: 0; font-size: 12px; line-height: 1.5; color: var(--muted); max-width: 660px; }
+.hero-tags { display: flex; align-items: center; gap: 7px; margin-top: 7px; flex-wrap: wrap; }
+.hero-tag {
+  display: inline-flex; align-items: center; gap: 6px; height: 23px; padding: 0 9px;
+  border: 1px solid var(--border); border-radius: 7px; background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+  font-size: 10.5px; color: var(--muted);
+}
+.hero-tag .tag-val { font-family: var(--mono); font-weight: 650; font-size: 11.5px; color: var(--text); }
+.hero-tag .tag-delta { font-family: var(--mono); font-size: 10px; }
+.hero-foot { display: flex; align-items: center; gap: 7px; margin-top: 9px; }
+.hero-meta { margin-left: auto; font-size: 10px; color: var(--dim); display: flex; align-items: center; gap: 4px; }
+
+.clock-card { display: flex; flex-direction: column; }
+.clock-body { flex: 1; padding: 2px 13px 0; display: flex; flex-direction: column; }
+.clock-row { display: flex; align-items: center; gap: 8px; height: 28px; border-bottom: 1px dashed var(--border); }
+.clock-row:last-of-type { border-bottom: 0; }
+.clock-city { width: 42px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.clock-time { font-family: var(--mono); font-size: 15px; font-weight: 650; letter-spacing: -.3px; }
+.clock-session { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 9.5px; color: var(--dim); }
+.clock-session.is-open { color: var(--ok); }
+.clock-foot {
+  margin: 4px 13px 0; padding: 5px 0 6px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 6px; font-size: 9.5px; color: var(--dim);
+}
+.clock-countdown { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--accent); font-weight: 600; }
+
+/* ---------- KPI ---------- */
+.kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
+.kpi { padding: 8px 12px 9px; }
+.kpi-top { display: flex; align-items: center; gap: 6px; }
+.kpi-icon {
+  width: 22px; height: 22px; flex: none; border-radius: 6px; display: grid; place-items: center;
+  background: var(--surface-2); color: var(--accent); border: 1px solid var(--border);
+}
+.kpi-icon svg { width: 12px; height: 12px; }
+.kpi-label { font-size: 10.5px; color: var(--muted); letter-spacing: .3px; }
+.kpi-flag { margin-left: auto; }
+.kpi-value { display: flex; align-items: baseline; gap: 4px; margin-top: 2px; font-family: var(--mono); font-size: 20px; font-weight: 680; letter-spacing: -.6px; line-height: 1.12; }
+.kpi-value small { font-family: var(--sans); font-size: 10px; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+.kpi-sub { margin-top: 1px; font-size: 9.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi-meter { display: flex; gap: 2px; height: 3px; margin-top: 4px; border-radius: 999px; overflow: hidden; background: var(--surface-2); }
+.kpi-meter i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.kpi-meter i.ok { background: var(--ok); }
+.kpi-meter i.warn { background: var(--warn); }
+.kpi-meter i.track { flex: 1; background: var(--surface-3); }
+
+/* ---------- 重点关注 ---------- */
+.watch-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.watch-card {
+  min-width: 0; padding: 7px 9px 6px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: var(--radius-card);
+  background: var(--surface); box-shadow: var(--shadow);
+  transition: border-color .14s, background .14s, transform .14s;
+}
+.watch-card:hover { border-color: var(--accent-line); background: var(--surface); transform: translateY(-1px); }
+.watch-top { display: flex; align-items: baseline; gap: 4px; }
+.w-name { font-size: 11.5px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w-code { margin-left: auto; font-family: var(--mono); font-size: 9px; color: var(--dim); flex: none; }
+.w-price { display: flex; align-items: baseline; gap: 3px; margin-top: 3px; font-family: var(--mono); font-size: 19px; font-weight: 680; letter-spacing: -.5px; line-height: 1.1; white-space: nowrap; }
+.w-price small { font-family: var(--sans); font-size: 9px; font-weight: 400; color: var(--dim); letter-spacing: 0; }
+.w-sub { display: flex; align-items: baseline; gap: 4px; margin-top: 1px; font-size: 9.5px; white-space: nowrap; }
+.w-chg { font-family: var(--mono); font-weight: 650; }
+.w-20d { margin-left: auto; color: var(--dim); text-align: right; font-size: 9px; }
+.w-20d b { font-family: var(--mono); font-weight: 600; }
+.w-spark { height: 20px; margin-top: 2px; opacity: .95; }
+.w-spark svg { width: 100%; height: 100%; }
+
+/* ---------- 热力图 + 利率 ---------- */
+.overview-row { display: grid; grid-template-columns: minmax(0, 1fr) 352px; gap: 10px; margin-top: 10px; align-items: stretch; }
+.heat-body { display: flex; flex-direction: column; gap: 1px; padding: 6px 12px 7px; }
+.heat-row { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 7px; align-items: center; padding: 2px 0; border-bottom: 1px dashed var(--border); }
+.heat-row:last-child { border-bottom: 0; }
+.heat-label { font-size: 9.5px; color: var(--muted); text-align: right; letter-spacing: .3px; white-space: nowrap; }
+.heat-tiles { display: flex; gap: 4px; min-width: 0; }
+.heat-tile {
+  flex: 1 1 0; min-width: 0; height: 34px; border-radius: 6px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
+  border: 1px solid rgba(255, 255, 255, .05); cursor: default;
+  transition: transform .12s, filter .12s;
+}
+.heat-tile:hover { transform: translateY(-1px); filter: brightness(1.12); }
+.heat-tile .ht-name { max-width: 100%; padding: 0 3px; font-size: 8.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .88; }
+.heat-tile .ht-pct { font-family: var(--mono); font-size: 10.5px; font-weight: 650; letter-spacing: -.2px; }
+.heat-tile.strong .ht-name, .heat-tile.strong .ht-pct { color: #fff; }
+html[data-theme="light"] .heat-tile.strong .ht-name,
+html[data-theme="light"] .heat-tile.strong .ht-pct { color: var(--text); }
+.heat-legend { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 9px; color: var(--dim); }
+.legend-bar { width: 96px; height: 7px; border-radius: 999px; background: linear-gradient(90deg, color-mix(in srgb, var(--down) 62%, transparent), var(--surface-3), color-mix(in srgb, var(--up) 62%, transparent)); }
+
+.rates-body { display: flex; flex-direction: column; gap: 0; padding: 3px 13px 2px; }
+.rate-row { display: flex; align-items: center; gap: 7px; height: 22px; border-bottom: 1px dashed var(--border); font-size: 11px; }
+.rate-row:last-child { border-bottom: 0; }
+.rate-name { width: 66px; flex: none; color: var(--muted); white-space: nowrap; font-size: 10.5px; }
+.rate-name.is-sub { padding-left: 8px; color: var(--dim); font-size: 10px; }
+.rate-val { width: 58px; flex: none; text-align: right; font-family: var(--mono); font-weight: 650; font-size: 11.5px; }
+.rate-chg { width: 48px; flex: none; text-align: right; font-family: var(--mono); font-size: 9.5px; }
+.rate-spark { flex: 1 1 auto; min-width: 0; height: 15px; opacity: .85; }
+.rate-spark svg { width: 100%; height: 100%; }
+
+/* ---------- 告警 / 日历 ---------- */
+.alerts-body { padding: 2px 13px 3px; }
+.alert-row { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto; gap: 9px; padding: 4px 0; border-bottom: 1px dashed var(--border); align-items: start; }
+.alert-row:last-child { border-bottom: 0; }
+.sev { width: 6px; height: 6px; border-radius: 50%; margin-top: 5px; background: var(--dim); }
+.sev--high { background: var(--up); box-shadow: 0 0 0 3px color-mix(in srgb, var(--up) 14%, transparent); }
+.sev--mid { background: var(--warn); }
+.sev--low { background: var(--accent); }
+.alert-text { font-size: 11px; line-height: 1.45; color: var(--text); }
+.alert-meta { margin-top: 1px; font-size: 9.5px; color: var(--dim); display: flex; gap: 7px; flex-wrap: wrap; }
+.alert-time { font-family: var(--mono); font-size: 9.5px; color: var(--dim); white-space: nowrap; padding-top: 1px; }
+.alerts-foot-tip { font-size: 9.5px; color: var(--dim); }
+
+.cal-body { padding: 1px 13px 3px; }
+.cal-row { display: grid; grid-template-columns: 50px 36px minmax(0, 1fr) auto; gap: 7px; align-items: center; height: 25px; border-bottom: 1px dashed var(--border); font-size: 10.5px; }
+.cal-row:last-child { border-bottom: 0; }
+.cal-time { font-family: var(--mono); color: var(--accent); font-size: 10px; }
+.cal-region { font-size: 9px; color: var(--dim); border: 1px solid var(--border); border-radius: 4px; padding: 0 3px; text-align: center; height: 16px; display: flex; align-items: center; justify-content: center; }
+.cal-name { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-imp { font-size: 9px; color: var(--dim); white-space: nowrap; }
+.cal-imp.high { color: var(--warn); }
+.tl-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; border-bottom: 1px dashed var(--border); font-size: 10.5px; }
+.tl-row:last-child { border-bottom: 0; }
+.tl-date { flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--accent); background: var(--accent-weak); border: 1px solid var(--accent-line); border-radius: 4px; padding: 0 5px; height: 17px; display: flex; align-items: center; }
+.tl-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-note { margin-left: auto; font-family: var(--mono); font-size: 9px; color: var(--dim); white-space: nowrap; }
+.cal-sep { font-size: 9px; letter-spacing: 1.2px; color: var(--dim); padding: 5px 0 1px; border-top: 1px solid var(--border); margin-top: 2px; }
+
+/* ---------- 市场：工具条 + 表格 + 会员 ---------- */
+.toolbar { padding: 8px 12px; margin-bottom: 10px; }
+.tool-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.tool-row + .tool-row { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.chip-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tool-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.tool-note { font-size: 10px; color: var(--dim); display: flex; align-items: center; gap: 5px; }
+
+.table-card { overflow: hidden; }
+.table-wrap { overflow: auto; max-height: 411px; }
+.data-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.data-table thead th {
+  position: sticky; top: 0; z-index: 2; height: 31px; padding: 0 10px;
+  background: var(--surface-2); color: var(--muted);
+  font-size: 10.5px; font-weight: 600; letter-spacing: .5px; text-align: left; white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+.data-table thead th.num { text-align: right; }
+.data-table tbody td { height: var(--row-h); padding: 0 10px; border-bottom: 1px solid var(--border); font-size: 12px; white-space: nowrap; }
+.data-table tbody tr:last-child td { border-bottom: 0; }
+.data-table tbody tr:hover td { background: color-mix(in srgb, var(--surface-2) 62%, transparent); }
+.data-table td.num { text-align: right; font-family: var(--mono); font-size: 12px; }
+.data-table .sym { font-family: var(--mono); font-weight: 650; font-size: 11.5px; letter-spacing: .3px; }
+.data-table .nm { color: var(--text); font-size: 12px; }
+.data-table .src { font-size: 10.5px; color: var(--muted); }
+.data-table .tm { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+.group-row td {
+  height: 28px !important; background: color-mix(in srgb, var(--surface-2) 78%, transparent) !important;
+  border-bottom: 1px solid var(--border) !important;
+  font-size: 10px !important; letter-spacing: .8px; color: var(--muted);
+}
+.group-row .g-count { margin-left: 7px; font-size: 9px; color: var(--dim); letter-spacing: 0; }
+.group-row .g-stat { float: right; font-family: var(--mono); font-size: 9px; color: var(--dim); }
+.th-sort { display: inline-flex; align-items: center; gap: 3px; border: 0; background: none; color: inherit; font: inherit; font-size: 10.5px; font-weight: 600; letter-spacing: .5px; cursor: pointer; padding: 0; }
+.th-sort:hover { color: var(--text); }
+.th-sort svg { width: 9px; height: 9px; opacity: .5; }
+.th-sort.is-sorted { color: var(--accent); }
+.th-sort.is-sorted svg { opacity: 1; }
+.chg-bar { display: inline-flex; align-items: center; justify-content: flex-end; gap: 7px; width: 100%; }
+.chg-bar .bar { width: 48px; height: 4px; border-radius: 999px; background: var(--surface-3); overflow: hidden; flex: none; }
+.chg-bar .bar i { display: block; height: 100%; border-radius: 999px; }
+.chg-bar .bar i.up { background: var(--up-color); }
+.chg-bar .bar i.down { background: var(--down-color); }
+.pending { color: var(--dim); font-style: normal; }
+.table-foot { display: flex; align-items: center; gap: 12px; padding: 7px 13px; border-top: 1px solid var(--border); font-size: 10px; color: var(--dim); }
+.table-foot b { color: var(--muted); font-weight: 600; font-family: var(--mono); }
+.table-foot .spacer { flex: 1; }
+.mini-legend { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.td-actions { display: flex; justify-content: flex-end; gap: 4px; }
+
+.members-card { margin-top: 10px; }
+.members-body { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+.member-col { padding: 5px 12px 6px; }
+.member-col + .member-col { border-left: 1px solid var(--border); }
+.member-col-head { display: flex; align-items: center; gap: 6px; height: 22px; padding: 0 2px; }
+.member-col-title { font-size: 10.5px; font-weight: 650; color: var(--muted); letter-spacing: .4px; }
+.member-col-title.long { color: var(--up-color); }
+.member-col-title.short { color: var(--down-color); }
+.member-col-note { margin-left: auto; font-size: 9px; color: var(--dim); font-family: var(--mono); }
+.member-list { display: flex; flex-direction: column; }
+.member-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) 74px 62px; gap: 6px; align-items: center; height: 22px; border-bottom: 1px dashed var(--border); font-size: 10.5px; }
+.member-row:last-child { border-bottom: 0; }
+.member-rank { font-family: var(--mono); font-size: 9.5px; color: var(--dim); text-align: right; }
+.member-name { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.member-pos { text-align: right; font-family: var(--mono); font-size: 10.5px; font-weight: 600; }
+.member-chg { text-align: right; font-family: var(--mono); font-size: 9.5px; }
+.member-tag { margin-left: 4px; font-size: 8px; color: var(--dim); border: 1px solid var(--border); border-radius: 3px; padding: 0 2px; }
+.member-bar { grid-column: 2 / -1; height: 2px; border-radius: 2px; background: var(--surface-3); overflow: hidden; display: none; }
+.members-foot { display: flex; align-items: center; gap: 8px; padding: 5px 13px; border-top: 1px solid var(--border); font-size: 9.5px; color: var(--dim); }
+.members-foot .spacer { flex: 1; }
+
+/* ---------- 简报 ---------- */
+.brief-toolbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.brief-date-nav { display: flex; align-items: center; gap: 4px; }
+.date-chip { font-family: var(--mono); font-size: 11px; height: 28px; padding: 0 9px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-2); color: var(--text); }
+.date-chip span { color: var(--dim); font-family: var(--sans); font-size: 10px; }
+.brief-layout { display: grid; grid-template-columns: 184px minmax(0, 1fr) 216px; gap: 10px; align-items: start; }
+.toc-card { padding: 11px 10px 10px; position: sticky; top: calc(var(--topbar-h) + 12px); }
+.toc-title { font-size: 9.5px; letter-spacing: 1.4px; color: var(--dim); padding: 0 7px 6px; }
+.toc-item { width: 100%; display: flex; align-items: center; gap: 7px; height: 29px; padding: 0 7px; border: 0; border-left: 2px solid transparent; border-radius: 0 6px 6px 0; background: none; color: var(--muted); font-size: 11.5px; text-align: left; cursor: pointer; }
+.toc-item:hover { color: var(--text); background: var(--surface-2); }
+.toc-item.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-weak); font-weight: 600; }
+.toc-num { font-family: var(--mono); font-size: 9px; color: var(--dim); }
+.toc-foot { margin-top: 8px; padding: 8px 7px 0; border-top: 1px solid var(--border); font-size: 9.5px; color: var(--dim); line-height: 1.7; }
+.toc-foot b { color: var(--muted); font-family: var(--mono); font-weight: 600; }
+
+.article { overflow: hidden; }
+.article-inner { padding: 20px 26px 24px; }
+.article-eyebrow { display: flex; align-items: center; gap: 7px; font-size: 10px; color: var(--dim); letter-spacing: .5px; }
+.article h1 { margin: 5px 0 7px; font-size: 22px; line-height: 1.36; font-weight: 720; letter-spacing: .1px; }
+.article-meta { display: flex; align-items: center; gap: 13px; padding-bottom: 11px; border-bottom: 1px solid var(--border); font-size: 10px; color: var(--dim); flex-wrap: wrap; }
+.article-meta .m-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--dim); }
+.quote { margin: 13px 0 2px; padding: 11px 14px; border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; background: var(--accent-weak); }
+.quote-label { display: flex; align-items: center; gap: 5px; font-size: 9px; letter-spacing: 1.2px; color: var(--accent); margin-bottom: 3px; }
+.quote p { font-size: 13.5px; line-height: 1.65; color: var(--text); }
+.quote-tags { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+.a-h2 { display: flex; align-items: center; gap: 7px; margin: 19px 0 6px; font-size: 14.5px; font-weight: 680; letter-spacing: .2px; }
+.a-num { font-family: var(--mono); font-size: 9.5px; color: var(--accent); background: var(--accent-weak); border: 1px solid var(--accent-line); border-radius: 4px; padding: 0 4px; height: 16px; display: inline-flex; align-items: center; }
+.a-p { margin: 7px 0; font-size: 12.5px; line-height: 1.85; color: color-mix(in srgb, var(--text) 88%, var(--muted)); }
+.a-p b { color: var(--text); font-weight: 650; }
+.ev-link {
+  display: inline-flex; align-items: center; gap: 1px; height: 15px; padding: 0 4px; margin-left: 2px;
+  border: 1px solid var(--accent-line); border-radius: 4px; background: var(--accent-weak);
+  color: var(--accent); font-size: 9px; font-family: var(--mono); cursor: pointer; vertical-align: 1px;
+}
+.ev-link:hover { filter: brightness(1.12); }
+.brief-table { width: 100%; border-collapse: collapse; margin: 8px 0 4px; font-size: 11.5px; }
+.brief-table th { height: 28px; padding: 0 8px; background: var(--surface-2); color: var(--muted); font-size: 9.5px; font-weight: 600; letter-spacing: .4px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.brief-table th.num { text-align: right; }
+.brief-table td { height: 30px; padding: 0 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.brief-table td.num { text-align: right; font-family: var(--mono); font-size: 11px; }
+.brief-table tr:hover td { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+.brief-table .t-name { color: var(--text); }
+.brief-list { margin: 6px 0; padding: 0; list-style: none; }
+.brief-list li { position: relative; padding: 4px 0 4px 16px; font-size: 12.5px; line-height: 1.75; color: color-mix(in srgb, var(--text) 86%, var(--muted)); }
+.brief-list li::before { content: ""; position: absolute; left: 4px; top: 12px; width: 4px; height: 4px; border-radius: 50%; background: var(--accent); opacity: .7; }
+.brief-tag-line { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 2px; }
+.article-foot { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 9.5px; color: var(--dim); line-height: 1.7; }
+
+.brief-aside { display: flex; flex-direction: column; gap: 10px; }
+.aside-card { padding: 11px 12px; }
+.aside-title { font-size: 9.5px; letter-spacing: 1.1px; color: var(--dim); margin-bottom: 8px; }
+.meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.meta-cell { background: var(--surface-2); border: 1px solid var(--border); border-radius: 7px; padding: 6px 8px; }
+.meta-num { font-family: var(--mono); font-size: 16px; font-weight: 680; letter-spacing: -.4px; }
+.meta-label { font-size: 9px; color: var(--dim); }
+.aside-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.aside-link { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 5px 0; border-bottom: 1px dashed var(--border); font-size: 10.5px; color: var(--muted); }
+.aside-link:last-child { border-bottom: 0; }
+.aside-link b { font-family: var(--mono); font-weight: 600; color: var(--text); font-size: 10px; }
+.aside-link .up, .aside-link .down { font-family: var(--mono); font-size: 9.5px; }
+.export-row { display: flex; gap: 6px; }
+.export-row .btn { flex: 1; }
+
+/* ---------- 设计规范 ---------- */
+.tk-grid { display: grid; grid-template-columns: 1.16fr .84fr; gap: 8px; align-items: start; }
+.tk-grid + .tk-grid { margin-top: 8px; }
+.tk-grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; align-items: start; }
+.tk-body { padding: 11px 13px 13px; }
+.sw-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+.sw { border: 1px solid var(--border); border-radius: 7px; overflow: hidden; background: var(--surface); }
+.sw-chip { height: 34px; border-bottom: 1px solid var(--border); }
+.sw-meta { padding: 4px 6px 5px; line-height: 1.45; }
+.sw-name { font-size: 10px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 4px; }
+.sw-name i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); opacity: .6; }
+.sw-hex { font-family: var(--mono); font-size: 8.5px; color: var(--dim); }
+.type-row { display: flex; align-items: baseline; gap: 10px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
+.type-row:last-child { border-bottom: 0; }
+.type-size { width: 34px; flex: none; font-family: var(--mono); font-size: 9px; color: var(--dim); }
+.type-sample { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .2px; }
+.type-token { flex: none; font-family: var(--mono); font-size: 8.5px; color: var(--dim); }
+.type-hero { font-size: 28px; font-weight: 700; letter-spacing: -.6px; }
+.type-metric { font-size: 20px; font-weight: 680; font-family: var(--mono); }
+.type-section { font-size: 16px; font-weight: 650; }
+.type-table { font-size: 14px; }
+.type-body { font-size: 13px; }
+.type-meta { font-size: 12px; color: var(--muted); }
+.type-badge { font-size: 11px; color: var(--muted); }
+.demo-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding: 4px 0; }
+.demo-row + .demo-row { border-top: 1px dashed var(--border); }
+.demo-label { width: 58px; flex: none; font-size: 9.5px; color: var(--dim); }
+.space-demo { display: flex; flex-direction: column; gap: 5px; margin: 2px 0 6px; }
+.space-line { display: flex; align-items: center; gap: 8px; }
+.space-box { height: 8px; background: var(--accent); opacity: .55; border-radius: 2px; }
+.space-val { font-family: var(--mono); font-size: 9px; color: var(--dim); width: 26px; text-align: right; }
+.space-tag { font-size: 9px; color: var(--dim); }
+.radius-demo { display: flex; gap: 8px; align-items: flex-end; margin-top: 4px; }
+.radius-box { width: 52px; height: 40px; border: 1px solid var(--accent-line); background: var(--accent-weak); display: flex; align-items: flex-end; justify-content: center; font-family: var(--mono); font-size: 8.5px; color: var(--accent); padding-bottom: 3px; }
+.mini-card { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow); }
+.mini-card-h { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; background: var(--surface-2); border-bottom: 1px solid var(--border); font-size: 10px; font-weight: 600; color: var(--text); }
+.mini-card-h span { margin-left: auto; font-weight: 400; color: var(--dim); font-size: 8.5px; }
+.mini-card-b { padding: 7px 9px; font-size: 9.5px; line-height: 1.55; color: var(--muted); }
+.mini-card-f { padding: 4px 9px 5px; border-top: 1px solid var(--border); font-size: 8.5px; color: var(--dim); }
+.skel-line { height: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 37%, var(--surface-2) 63%); background-size: 400% 100%; animation: shimmer 1.5s infinite linear; }
+.skel-line + .skel-line { margin-top: 6px; }
+@keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+.empty-demo { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; height: 104px; border: 1px dashed var(--border-strong); border-radius: 8px; background: color-mix(in srgb, var(--surface-2) 40%, transparent); color: var(--dim); font-size: 10px; text-align: center; }
+.empty-demo svg { width: 22px; height: 22px; opacity: .5; }
+.toast-demo { display: flex; flex-direction: column; gap: 6px; }
+.toast-line { display: flex; align-items: center; gap: 7px; padding: 7px 9px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--surface-2); font-size: 10.5px; box-shadow: var(--shadow); }
+.toast-line svg { width: 13px; height: 13px; flex: none; }
+.toast-line .tl-close { margin-left: auto; color: var(--dim); font-family: var(--mono); font-size: 10px; }
+.form-demo { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; align-items: start; }
+.form-demo .full { grid-column: 1 / -1; }
+.form-label { font-size: 9.5px; color: var(--dim); margin-bottom: 4px; display: block; }
+.btn-matrix { display: grid; grid-template-columns: 56px 1fr; gap: 7px 9px; align-items: center; }
+.btn-matrix .demo-label { width: auto; text-align: right; }
+.token-note { margin-top: 8px; padding: 7px 9px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); font-size: 9.5px; line-height: 1.6; color: var(--dim); }
+.token-note code { font-family: var(--mono); color: var(--muted); font-size: 9px; }
+
+/* ---------- 浮层：遮罩 / 抽屉 ---------- */
+.scrim {
+  position: fixed; inset: 0; z-index: 60; background: rgba(3, 7, 12, .58);
+  backdrop-filter: blur(2px); opacity: 0; pointer-events: none; transition: opacity .2s ease;
+}
+.scrim.show { opacity: 1; pointer-events: auto; }
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 70; width: 480px; max-width: 94vw;
+  display: flex; flex-direction: column; background: var(--surface);
+  border-left: 1px solid var(--border-strong); box-shadow: var(--shadow-pop);
+  transform: translateX(103%); transition: transform .26s cubic-bezier(.22, .61, .36, 1);
+}
+.drawer.open { transform: none; }
+.drawer--settings { width: 404px; }
+.drawer-head { flex: none; display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 16px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 92%, var(--bg)); }
+.drawer-head > .ic { width: 16px; height: 16px; flex: none; }
+.drawer-head .drawer-title { white-space: nowrap; }
+.drawer-head .drawer-sub { white-space: nowrap; }
+.drawer-title { font-size: 13.5px; font-weight: 680; letter-spacing: .2px; }
+.drawer-sub { font-size: 10px; color: var(--dim); font-family: var(--mono); }
+.drawer-body { flex: 1; overflow-y: auto; padding: 14px 16px 20px; }
+.drawer-foot { flex: none; display: flex; align-items: center; gap: 7px; padding: 10px 16px; border-top: 1px solid var(--border); background: var(--surface); }
+.drawer-foot .spacer { flex: 1; }
+.icon-close { margin-left: auto; }
+
+.ev-source { border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); padding: 10px 12px; }
+.ev-source-top { display: flex; align-items: center; gap: 7px; }
+.ev-source-name { font-size: 12.5px; font-weight: 650; }
+.ev-kv { display: grid; grid-template-columns: 62px 1fr; gap: 3px 8px; margin-top: 8px; font-size: 10.5px; }
+.ev-kv dt { color: var(--dim); }
+.ev-kv dd { margin: 0; color: var(--text); font-family: var(--mono); font-size: 10px; }
+.conf { display: inline-flex; align-items: center; gap: 4px; }
+.conf-bars { display: inline-flex; gap: 2px; }
+.conf-bars i { width: 5px; height: 10px; border-radius: 1px; background: var(--surface-3); }
+.conf-bars i.on { background: var(--ok); }
+.ev-section { margin-top: 14px; }
+.ev-label { font-size: 9.5px; letter-spacing: 1.2px; color: var(--dim); margin-bottom: 6px; }
+.ev-quote { border-left: 2px solid var(--accent); background: var(--accent-weak); border-radius: 0 6px 6px 0; padding: 9px 11px; font-size: 12px; line-height: 1.8; color: color-mix(in srgb, var(--text) 92%, var(--muted)); }
+.ev-quote mark { background: color-mix(in srgb, var(--accent) 32%, transparent); color: var(--text); padding: 0 2px; border-radius: 2px; }
+.ev-claims { display: flex; flex-wrap: wrap; gap: 5px; }
+.claim { font-size: 10px; padding: 3px 7px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface-2); color: var(--muted); }
+.claim b { color: var(--text); font-family: var(--mono); font-weight: 650; }
+.ev-impact { font-size: 11px; line-height: 1.7; color: var(--muted); }
+.ev-timeline { display: flex; flex-direction: column; gap: 0; }
+.ev-tl-row { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 10.5px; }
+.ev-tl-row:last-child { border-bottom: 0; }
+.ev-tl-row .t { width: 74px; flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--dim); }
+.ev-tl-row .d { color: var(--muted); }
+
+/* ---------- 设置抽屉 ---------- */
+.set-section { padding: 0 0 14px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+.set-section:last-child { border-bottom: 0; margin-bottom: 0; }
+.set-title { font-size: 11px; font-weight: 650; margin-bottom: 3px; }
+.set-desc { font-size: 9.5px; color: var(--dim); margin-bottom: 8px; line-height: 1.55; }
+.opt-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.opt {
+  flex: 1; min-width: 92px; display: flex; flex-direction: column; gap: 3px; padding: 8px 9px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2);
+  color: var(--muted); font-size: 10.5px; cursor: pointer; text-align: left;
+}
+.opt:hover { border-color: var(--border-strong); }
+.opt.active { border-color: var(--accent-line); background: var(--accent-weak); color: var(--text); }
+.opt-head { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 11px; }
+.opt-preview { display: flex; gap: 3px; margin-top: 2px; }
+.opt-preview i { height: 4px; flex: 1; border-radius: 2px; }
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; font-size: 11px; color: var(--muted); }
+.set-row b { font-weight: 500; color: var(--text); }
+.set-note { font-size: 9.5px; color: var(--dim); margin-top: 6px; line-height: 1.6; }
+
+/* ---------- 命令面板 ---------- */
+.palette-wrap { position: fixed; inset: 0; z-index: 80; display: none; align-items: flex-start; justify-content: center; padding-top: 13vh; background: rgba(3, 7, 12, .56); backdrop-filter: blur(2px); }
+.palette-wrap.open { display: flex; }
+.palette {
+  width: 560px; max-width: 92vw; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px;
+  box-shadow: var(--shadow-pop); animation: paletteIn .16s ease both;
+}
+@keyframes paletteIn { from { opacity: 0; transform: translateY(-6px) scale(.99); } to { opacity: 1; transform: none; } }
+.palette-input { display: flex; align-items: center; gap: 9px; height: 48px; padding: 0 14px; border-bottom: 1px solid var(--border); }
+.palette-input svg { width: 15px; height: 15px; color: var(--dim); flex: none; }
+.palette-input input { flex: 1; min-width: 0; border: 0; outline: none; background: none; color: var(--text); font: inherit; font-size: 13px; }
+.palette-input input::placeholder { color: var(--dim); }
+.palette-list { max-height: 318px; overflow-y: auto; padding: 6px; }
+.palette-group { padding: 7px 9px 4px; font-size: 9px; letter-spacing: 1.2px; color: var(--dim); }
+.palette-item { display: flex; align-items: center; gap: 9px; height: 36px; padding: 0 9px; border-radius: 7px; color: var(--muted); font-size: 12px; cursor: pointer; }
+.palette-item svg { width: 14px; height: 14px; flex: none; opacity: .8; }
+.palette-item.active { background: var(--accent-weak); color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
+.palette-item .pi-hint { margin-left: auto; font-size: 9.5px; color: var(--dim); }
+.palette-item .pi-kbd { margin-left: auto; }
+.palette-foot { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-top: 1px solid var(--border); font-size: 9.5px; color: var(--dim); }
+.palette-foot .kbd { margin-left: 0; }
+.palette-empty { padding: 26px 10px; text-align: center; color: var(--dim); font-size: 11px; }
+
+/* ---------- Toast ---------- */
+.toast-host { position: fixed; right: 20px; bottom: 20px; z-index: 90; display: flex; flex-direction: column; gap: 7px; align-items: flex-end; }
+.toast {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-2);
+  color: var(--text); font-size: 11.5px; box-shadow: var(--shadow-pop);
+  animation: toastIn .18s ease both;
+}
+.toast svg { width: 14px; height: 14px; flex: none; }
+.toast.ok svg { color: var(--ok); }
+.toast.warn svg { color: var(--warn); }
+.toast.info svg { color: var(--accent); }
+.toast.out { opacity: 0; transform: translateY(5px); transition: opacity .2s, transform .2s; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* ---------- 打印 ---------- */
+@media print {
+  body { background: #fff; color: #111; }
+  .sidebar, .topbar, .scrim, .drawer, .palette-wrap, .toast-host, .brief-toolbar, .toc-card, .brief-aside, .page-head, .article-meta .print-hide { display: none !important; }
+  .main { margin: 0; padding: 0; }
+  .view { display: none !important; }
+  .view.active { display: block !important; }
+  .card { border-color: #ddd; box-shadow: none; }
+  .brief-layout { display: block; }
+  .article-inner { padding: 0; }
+  .ev-link { border: 0; background: none; color: #555; }
+  .quote { border-left-color: #999; background: #f5f5f5; }
+  .a-p { color: #222; }
+}
+
+/* ---------- 窄屏兜底（原型以 1440 宽为基准） ---------- */
+@media (max-width: 1240px) {
+  .watch-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .hero-grid, .overview-row { grid-template-columns: minmax(0, 1fr) 300px; }
+  .brief-layout { grid-template-columns: 170px minmax(0, 1fr); }
+  .brief-aside { display: none; }
+  .tk-grid, .tk-grid3 { grid-template-columns: 1fr; }
+}
+@media (max-width: 1024px) {
+  :root { --sidebar-w: 64px; }
+  .brand-name, .brand-sub, .nav-label, .nav-item span, .nav-badge, .sidebar-foot { display: none; }
+  .brand { justify-content: center; padding: 0; }
+  .nav-item { justify-content: center; padding: 0; }
+  .search-trigger { display: none; }
+  .hero-grid, .overview-row { grid-template-columns: 1fr; }
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .watch-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .brief-layout { grid-template-columns: 1fr; }
+  .toc-card { display: none; }
+}
+</style>
+</head>
+<body data-view="overview">
+<!-- 内联 SVG 图标库（无外部字体 / 图标依赖） -->
+<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true" focusable="false">
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M6.5 15.5l3.8-4.6 3 2.8 4.9-6.2"/><circle cx="18.2" cy="7.5" r="1.2"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4.5 4.5V21H6z"/><path d="M14 3v5h4.5"/><path d="M9 12.5h6M9 16.5h6"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 100 18c1.4 0 2.2-.9 2.2-2 0-1.5-1.2-1.7-1.2-3 0-1.1.9-2 2-2h1c3.3 0 5-2 5-4.5C21 6 17 3 12 3z"/><circle cx="7.6" cy="10.4" r="1"/><circle cx="10.6" cy="7.2" r="1"/><circle cx="15.4" cy="7.8" r="1"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M10 3.5v3.5M14 3.5v3.5M10 17v3.5M14 17v3.5M3.5 10H7M3.5 14H7M17 10h3.5M17 14h3.5"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h3.5l2.7-6.5 4.4 13 2.7-6.5H21"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="5.5" r="2.2"/><circle cx="6" cy="18.5" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 7.7v8.6M8.2 5.5H12a4 4 0 014 4v.3M8.2 18.5H12a4 4 0 004-4v-.3"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 016.5 3H20v18H6.5A2.5 2.5 0 014 18.5z"/><path d="M8 3v18M12 8h4M12 12h4"/></symbol>
+  <symbol id="i-rates" viewBox="0 0 24 24"><path d="M19 5L5 19"/><circle cx="7" cy="7" r="2.4"/><circle cx="17" cy="17" r="2.4"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20.5c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.9a3.2 3.2 0 010 6.2"/><path d="M18.4 20.5c0-2.4-1-4.5-2.6-5.8"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/><path d="M8 13.5h2.5M13.5 13.5H16M8 17h2.5"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13.5 2.5L5 13.8h5L9.5 21.5 19 10.2h-5.5z"/></symbol>
+  <symbol id="i-news" viewBox="0 0 24 24"><path d="M4 5h13v15H6.5A2.5 2.5 0 014 17.5z"/><path d="M17 8h2.5A2.5 2.5 0 0122 10.5V18a2 2 0 01-2 2h-3"/><path d="M7.5 9h6M7.5 12.5h6M7.5 16h3.5"/></symbol>
+  <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3.2"/><path d="M5 6v6c0 1.8 3.1 3.2 7 3.2s7-1.4 7-3.2V6"/><path d="M5 12v6c0 1.8 3.1 3.2 7 3.2s7-1.4 7-3.2v-6"/></symbol>
+  <symbol id="i-shield-check" viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.4c0 4.7-3.2 8.4-7.5 10.4-4.3-2-7.5-5.7-7.5-10.4V6z"/><path d="M8.7 12.1l2.2 2.2 4.4-4.6"/></symbol>
+  <symbol id="i-tasks" viewBox="0 0 24 24"><path d="M9.5 6h10M9.5 12h10M9.5 18h10"/><path d="M4.5 5.6l1 1 1.6-1.8M4.5 11.6l1 1 1.6-1.8M4.5 17.6l1 1 1.6-1.8"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.2"/><path d="M15.6 15.6L20.5 20.5"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8.5a6 6 0 10-12 0c0 5.5-2 6.5-2 6.5h16s-2-1-2-6.5"/><path d="M10.2 19.5a2 2 0 003.6 0"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.5 14.6A8.6 8.6 0 019.4 3.5a8.6 8.6 0 1011.1 11.1z"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1.03 1.56V21a2 2 0 11-4 0v-.08a1.7 1.7 0 00-1.11-1.56 1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.7 1.7 0 004.6 15a1.7 1.7 0 00-1.56-1.03H3a2 2 0 110-4h.08A1.7 1.7 0 004.6 8.86a1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06A1.7 1.7 0 009 4.5h.08A1.7 1.7 0 0010.11 3V3a2 2 0 114 0v.08a1.7 1.7 0 001.03 1.56 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06A1.7 1.7 0 0019.5 9v.08a1.7 1.7 0 001.56 1.03H21a2 2 0 110 4h-.08a1.7 1.7 0 00-1.52.89z"/></symbol>
+  <symbol id="i-command" viewBox="0 0 24 24"><path d="M9 6.5A2.5 2.5 0 106.5 9H18a2.5 2.5 0 10-2.5-2.5v11A2.5 2.5 0 1018 15H6.5A2.5 2.5 0 109 17.5z"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="M14.5 6l-6 6 6 6"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11.5a8 8 0 10-2.4 5.9"/><path d="M20 4.5v7h-7"/></symbol>
+  <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 9V3h10v6"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M7 14.5h10V21H7z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3.5v11.5M7.5 10.5L12 15l4.5-4.5M4 20h16"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5.5 15.5V5.5A2 2 0 017.5 3.5h10"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M3.5 5.5h17l-6.8 8V20l-3.4 1.5v-8z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3.2 1.9"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l9.5 17.5h-19z"/><path d="M12 9v5M12 17.2h.01"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 13l4.2 4L19 7.5"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.8h.01"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4l-8.5 8.5"/><path d="M18 13.5V19a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5.5"/></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path d="M8 4.5v14M5 15.5l3 3 3-3"/><path d="M16 19.5v-14M13 8.5l3-3 3 3"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M4 12h15M13.5 6l6 6-6 6"/></symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l2.1 6 6 2.1-6 2.1-2.1 6-2.1-6-6-2.1 6-2.1z"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.4"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.2"/><circle cx="12" cy="12" r="1"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></symbol>
+  <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 2.8c3.5 3.2 5.8 6.4 5.8 9.7a5.8 5.8 0 11-11.6 0c0-1.6.6-3 1.4-4.3.4 1.3 1.2 2.2 2.4 2.6-.4-3 .8-5.8 2-8z"/></symbol>
+  <symbol id="i-dot-list" viewBox="0 0 24 24"><path d="M9.5 6h10M9.5 12h10M9.5 18h10"/><circle cx="4.6" cy="6" r=".9"/><circle cx="4.6" cy="12" r=".9"/><circle cx="4.6" cy="18" r=".9"/></symbol>
+</svg>
+
+<!-- ===================== 侧边栏 ===================== -->
+<aside class="sidebar" aria-label="主导航">
+  <div class="brand">
+    <div class="brand-mark">EP</div>
+    <div>
+      <div class="brand-name">EPIC</div>
+      <div class="brand-sub">宏观 · 市场 · 交易工作台</div>
+    </div>
+  </div>
+  <nav class="nav">
+    <div class="nav-group">
+      <div class="nav-label">工作台</div>
+      <button class="nav-item active" type="button" data-view="overview"><svg class="ic"><use href="#i-grid"/></svg><span>总览</span></button>
+      <button class="nav-item" type="button" data-view="market"><svg class="ic"><use href="#i-chart"/></svg><span>市场行情</span><span class="nav-badge">35</span></button>
+      <button class="nav-item" type="button" data-view="brief"><svg class="ic"><use href="#i-file"/></svg><span>每日简报</span><span class="nav-badge hot">新</span></button>
+      <button class="nav-item" type="button" data-view="tokens"><svg class="ic"><use href="#i-palette"/></svg><span>设计规范</span></button>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">研究分析</div>
+      <button class="nav-item" type="button" data-soon="分析引擎"><svg class="ic"><use href="#i-cpu"/></svg><span>分析引擎</span></button>
+      <button class="nav-item" type="button" data-soon="交易信号"><svg class="ic"><use href="#i-activity"/></svg><span>交易信号</span><span class="nav-badge hot">2</span></button>
+      <button class="nav-item" type="button" data-soon="论点与情景"><svg class="ic"><use href="#i-branch"/></svg><span>论点与情景</span></button>
+      <button class="nav-item" type="button" data-soon="交易日志"><svg class="ic"><use href="#i-book"/></svg><span>交易日志</span></button>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">数据监测</div>
+      <button class="nav-item" type="button" data-soon="利率与流动性"><svg class="ic"><use href="#i-rates"/></svg><span>利率与流动性</span></button>
+      <button class="nav-item" type="button" data-soon="持仓结构"><svg class="ic"><use href="#i-users"/></svg><span>持仓结构</span></button>
+      <button class="nav-item" type="button" data-soon="财经日历"><svg class="ic"><use href="#i-calendar"/></svg><span>财经日历</span></button>
+      <button class="nav-item" type="button" data-soon="事件驱动"><svg class="ic"><use href="#i-bolt"/></svg><span>事件驱动</span><span class="nav-badge">5</span></button>
+      <button class="nav-item" type="button" data-soon="新闻与政策"><svg class="ic"><use href="#i-news"/></svg><span>新闻与政策</span><span class="nav-badge dot-only"></span></button>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">系统</div>
+      <button class="nav-item" type="button" data-soon="数据源健康"><svg class="ic"><use href="#i-db"/></svg><span>数据源健康</span></button>
+      <button class="nav-item" type="button" data-soon="数据质检"><svg class="ic"><use href="#i-shield-check"/></svg><span>数据质检</span></button>
+      <button class="nav-item" type="button" data-soon="任务调度"><svg class="ic"><use href="#i-tasks"/></svg><span>任务调度</span></button>
+    </div>
+  </nav>
+  <div class="sidebar-foot">
+    <div class="sf-status"><span class="dot dot--live"></span><span>系统正常 · 已运行 62 小时</span></div>
+    <div class="sf-rows">
+      <div class="sf-row"><span>后端 API</span><b>127.0.0.1:8765</b></div>
+      <div class="sf-row"><span>数据库</span><b>27,804 条</b></div>
+      <div class="sf-row"><span>调度器</span><b>6 / 7 成功</b></div>
+    </div>
+    <div class="sf-version">EPIC v1.0.0 · UI 原型 · 2026-11-13</div>
+  </div>
+</aside>
+
+<!-- ===================== 顶栏 ===================== -->
+<header class="topbar">
+  <div class="crumb">
+    <span class="crumb-root">工作台</span><span class="crumb-sep">/</span><span class="crumb-page" id="pageTitle">总览</span>
+  </div>
+  <button class="search-trigger" id="openPalette" type="button">
+    <svg class="ic"><use href="#i-search"/></svg><span>搜索标的、页面或执行命令</span><span class="kbd">Ctrl K</span>
+  </button>
+  <div class="top-actions">
+    <span class="pill" title="行情数据截至 2026-11-13 15:00"><span class="dot dot--live"></span>数据已同步 <b>15:00</b></span>
+    <button class="icon-btn" id="btnAlerts" type="button" title="告警中心（3 条未读）"><svg class="ic"><use href="#i-bell"/></svg><span class="notif-dot"></span></button>
+    <button class="icon-btn" id="themeToggle" type="button" title="切换深色 / 浅色主题">
+      <svg class="ic icon-moon"><use href="#i-moon"/></svg>
+      <svg class="ic icon-sun"><use href="#i-sun"/></svg>
+    </button>
+    <button class="icon-btn" id="openSettings" type="button" title="设置（外观 / 数据 / 偏好）"><svg class="ic"><use href="#i-settings"/></svg></button>
+    <span class="top-divider"></span>
+    <span class="avatar" title="本地账户 · 数据不出本机">EP</span>
+  </div>
+</header>
+
+<!-- ===================== 主内容 ===================== -->
+<main class="main">
+
+  <!-- ========== 视图 1：总览 ========== -->
+  <section class="view active" id="view-overview" data-view="overview">
+    <div class="hero-grid">
+      <article class="hero">
+        <div class="hero-top">
+          <span class="badge badge--live"><span class="dot"></span>今日主线</span>
+          <span class="hero-date">2026-11-13 周五</span>
+          <span class="badge badge--sm">日报 第 128 期</span>
+          <span class="hero-top-right"><svg class="ic" style="width:11px;height:11px"><use href="#i-check"/></svg>简报已生成 · 12 条证据</span>
+        </div>
+        <h2 class="hero-title">美联储降息预期反复，美元与长端利率上行压制贵金属</h2>
+        <p class="hero-desc">铜受供给扰动与库存去化支撑，金银比回落至 82.4；原油地缘溢价小幅回升，权益维持震荡格局。</p>
+        <div class="hero-tags">
+          <span class="hero-tag"><span>12月降息概率</span><span class="tag-val">52%</span><span class="tag-delta down">▼ 6pp</span></span>
+          <span class="hero-tag"><span>美元指数</span><span class="tag-val">102.240</span><span class="tag-delta up">▲ 0.34%</span></span>
+          <span class="hero-tag"><span>金银比</span><span class="tag-val">82.4</span><span class="tag-delta down">▼ 1.8</span></span>
+          <span class="hero-tag"><span>沪铜主力</span><span class="tag-val">105,860</span><span class="tag-delta up">▲ 0.94%</span></span>
+        </div>
+        <div class="hero-foot">
+          <button class="btn btn--primary btn--sm" type="button" data-go="brief"><svg class="ic"><use href="#i-file"/></svg>查看日报</button>
+          <button class="btn btn--sm" type="button" data-action="print"><svg class="ic"><use href="#i-print"/></svg>打印</button>
+          <button class="btn btn--sm btn--ghost" type="button" data-action="copy-brief"><svg class="ic"><use href="#i-copy"/></svg>复制摘要</button>
+          <span class="hero-meta">更新于 17:30 · <button class="link-btn" type="button" data-ev="E-01">查看证据 E-01</button></span>
+        </div>
+      </article>
+      <aside class="card clock-card">
+        <div class="card-head">
+          <span class="card-title">市场时钟</span>
+          <span class="badge badge--live badge--sm"><span class="dot"></span>外盘交易中</span>
+          <div class="card-actions"><span class="card-sub">北京 / 伦敦 / 纽约</span></div>
+        </div>
+        <div class="clock-body">
+          <div class="clock-row"><span class="clock-city">北京</span><span class="clock-time" id="clock-bj">17:32:00</span><span class="clock-session">内盘 · 已收盘</span></div>
+          <div class="clock-row"><span class="clock-city">伦敦</span><span class="clock-time" id="clock-ldn">09:32:00</span><span class="clock-session is-open"><span class="dot"></span>外盘 · 交易中</span></div>
+          <div class="clock-row"><span class="clock-city">纽约</span><span class="clock-time" id="clock-ny">04:32:00</span><span class="clock-session is-open"><span class="dot"></span>外盘 · 交易中</span></div>
+        </div>
+        <div class="clock-foot">
+          <svg class="ic" style="width:11px;height:11px"><use href="#i-clock"/></svg>
+          <span>距离 夜盘开盘（21:00）</span>
+          <span class="clock-countdown" id="clockCountdown">03:27:59</span>
+        </div>
+      </aside>
+    </div>
+
+    <div class="kpi-grid">
+      <article class="card kpi">
+        <div class="kpi-top">
+          <span class="kpi-icon"><svg class="ic"><use href="#i-cpu"/></svg></span>
+          <span class="kpi-label">系统状态</span>
+          <span class="kpi-flag"><span class="badge badge--live badge--sm"><span class="dot"></span>正常</span></span>
+        </div>
+        <div class="kpi-value">6 / 6</div>
+        <div class="kpi-sub">后端 · 数据库 · 调度器 · 6 数据源在线</div>
+        <div class="kpi-meter"><i class="ok" style="width:100%"></i></div>
+      </article>
+      <article class="card kpi">
+        <div class="kpi-top">
+          <span class="kpi-icon"><svg class="ic"><use href="#i-db"/></svg></span>
+          <span class="kpi-label">行情覆盖</span>
+          <span class="kpi-flag"><span class="badge badge--warn badge--sm">7 待接入</span></span>
+        </div>
+        <div class="kpi-value">28 <small>/ 35 标的</small></div>
+        <div class="kpi-sub">覆盖率 80.0% · 7 个数据源待恢复</div>
+        <div class="kpi-meter"><i class="ok" style="width:80%"></i><i class="track"></i></div>
+      </article>
+      <article class="card kpi">
+        <div class="kpi-top">
+          <span class="kpi-icon"><svg class="ic"><use href="#i-layers"/></svg></span>
+          <span class="kpi-label">数据量</span>
+          <span class="kpi-flag"><span class="badge badge--accent badge--sm">24h +1,240</span></span>
+        </div>
+        <div class="kpi-value">27,804 <small>条</small></div>
+        <div class="kpi-sub">覆盖 14 张表 · 行情 62% / 宏观 24% / 持仓 14%</div>
+        <div class="kpi-meter"><i style="width:62%"></i><i class="ok" style="width:24%"></i><i class="warn" style="width:14%"></i></div>
+      </article>
+      <article class="card kpi">
+        <div class="kpi-top">
+          <span class="kpi-icon"><svg class="ic"><use href="#i-tasks"/></svg></span>
+          <span class="kpi-label">调度器</span>
+          <span class="kpi-flag"><span class="badge badge--warn badge--sm">1 运行中</span></span>
+        </div>
+        <div class="kpi-value">7 <small>个任务</small></div>
+        <div class="kpi-sub">6 成功 · 下次夜盘采集 21:00</div>
+        <div class="kpi-meter"><i class="ok" style="width:42.8%"></i><i class="ok" style="width:42.8%"></i><i class="warn" style="width:14.4%"></i></div>
+      </article>
+    </div>
+
+    <div class="sec-row">
+      <h2 class="sec-title">重点关注</h2>
+      <span class="sec-count">7</span>
+      <span class="sec-meta">自选标的 · 日涨跌幅、20 日变动与迷你走势</span>
+      <div class="sec-actions">
+        <button class="link-btn" type="button" data-soon="自选管理"><svg class="ic"><use href="#i-plus"/></svg>管理自选</button>
+      </div>
+    </div>
+    <div class="watch-grid" id="watchGrid"></div>
+
+    <div class="overview-row">
+      <section class="card">
+        <div class="card-head">
+          <span class="card-title">跨资产热力图</span>
+          <span class="card-sub">日涨跌幅 · 28 个已接入品种 · 按资产类别</span>
+          <div class="card-actions">
+            <span class="heat-legend"><span>跌</span><span class="legend-bar"></span><span>涨</span></span>
+          </div>
+        </div>
+        <div class="heat-body" id="heatBody"></div>
+      </section>
+      <aside class="card">
+        <div class="card-head">
+          <span class="card-title">利率快照</span>
+          <span class="card-sub">最新值 · 日变动</span>
+          <div class="card-actions"><button class="link-btn" type="button" data-soon="利率与流动性">详情</button></div>
+        </div>
+        <div class="rates-body" id="ratesBody"></div>
+        <div class="card-foot">利差单位 pp · 2026-11-13 · 来源 FRED / 中债 / 各国财政部</div>
+      </aside>
+    </div>
+
+    <div class="overview-row">
+      <section class="card">
+        <div class="card-head">
+          <span class="card-title">告警</span>
+          <span class="badge badge--warn badge--sm">3 条未读</span>
+          <div class="card-actions"><span class="card-sub">阈值 / 利差 / 延迟 / 持仓异动</span><button class="link-btn" type="button" data-soon="告警中心">全部</button></div>
+        </div>
+        <div class="alerts-body" id="alertsBody"></div>
+        <div class="card-foot"><span class="alerts-foot-tip">最近 24 小时 · 共 6 条 · 显示 4 条</span><span class="spacer"></span><button class="link-btn" type="button" data-soon="告警设置">告警设置</button></div>
+      </section>
+      <aside class="card">
+        <div class="card-head">
+          <span class="card-title">财经日历 · 事件</span>
+          <span class="card-sub">2026-11-13 → 12-10</span>
+          <div class="card-actions"><button class="link-btn" type="button" data-soon="财经日历">完整日历</button></div>
+        </div>
+        <div class="cal-body" id="calendarBody"></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ========== 视图 2：市场行情 ========== -->
+  <section class="view" id="view-market" data-view="market">
+    <div class="page-head">
+      <div>
+        <div class="page-eyebrow">行情 · 快照 · 2026-11-13 周五</div>
+        <h1 class="page-h1">市场行情 <span class="page-sub">28 / 35 标的已接入 · 更新于 15:00</span></h1>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn--sm" type="button" data-action="refresh"><svg class="ic"><use href="#i-refresh"/></svg>刷新行情</button>
+        <button class="btn btn--sm" type="button" data-action="export-csv"><svg class="ic"><use href="#i-download"/></svg>导出 CSV</button>
+        <button class="btn btn--sm btn--primary" type="button" data-action="quality"><svg class="ic"><use href="#i-shield-check"/></svg>数据质检</button>
+      </div>
+    </div>
+
+    <div class="card toolbar">
+      <div class="tool-row">
+        <label class="field field--search">
+          <svg class="ic"><use href="#i-search"/></svg>
+          <input id="mktSearch" type="search" placeholder="搜索代码 / 名称，例如 CU、沪铜" autocomplete="off" />
+          <span class="kbd">/</span>
+        </label>
+        <div class="seg" id="mktSeg" role="group" aria-label="市场范围">
+          <button type="button" data-seg="全部" class="active">全部</button>
+          <button type="button" data-seg="国内">国内</button>
+          <button type="button" data-seg="外盘">外盘</button>
+        </div>
+        <div class="chip-row" id="mktChips"></div>
+        <div class="tool-right">
+          <button class="icon-btn" type="button" data-action="refresh" title="刷新行情"><svg class="ic"><use href="#i-refresh"/></svg></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card table-card">
+      <div class="card-head">
+        <span class="card-title">全部品种</span>
+        <span class="card-sub" id="mktCount">共 35 个品种 · 7 个类别</span>
+        <div class="card-actions"><span class="badge badge--accent" id="mktSortBadge">按 涨跌幅 降序</span></div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width:84px">品种</th>
+              <th style="width:132px">名称</th>
+              <th class="num" style="width:124px"><button class="th-sort" type="button" data-sort="price">最新<svg class="ic"><use href="#i-sort"/></svg></button></th>
+              <th class="num" style="width:106px"><button class="th-sort" type="button" data-sort="chgAbs">涨跌<svg class="ic"><use href="#i-sort"/></svg></button></th>
+              <th class="num" style="width:148px"><button class="th-sort is-sorted" type="button" data-sort="chg">涨跌幅<svg class="ic"><use href="#i-sort"/></svg></button></th>
+              <th style="width:126px">数据源</th>
+              <th style="width:114px">时点</th>
+              <th class="num" style="width:64px">证据</th>
+            </tr>
+          </thead>
+          <tbody id="mktBody"></tbody>
+        </table>
+      </div>
+      <div class="table-foot">
+        <span>显示 <b id="mktRowCount">35</b> / <b>35</b> 条</span>
+        <span>·</span>
+        <span id="mktSortFoot">排序：涨跌幅 ↓</span>
+        <span>·</span>
+        <span>6 个数据源正常 · 1 个延迟</span>
+        <span class="spacer"></span>
+        <span class="mini-legend">
+          <span>上涨 <b class="up" style="font-family:var(--mono)">■</b></span>
+          <span>下跌 <b class="down" style="font-family:var(--mono)">■</b></span>
+          <span>时点均为北京时间</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="card members-card">
+      <div class="card-head">
+        <span class="card-title">会员持仓 Top20</span>
+        <span class="card-sub" id="memberSub">沪金 AU 主力 · 2026-11-13 · 净持仓 = 多 − 空</span>
+        <div class="card-actions">
+          <div class="seg" id="memberSeg">
+            <button type="button" data-mem="AU" class="active">沪金 AU</button>
+            <button type="button" data-mem="AG">沪银 AG</button>
+            <button type="button" data-mem="CU">沪铜 CU</button>
+          </div>
+        </div>
+      </div>
+      <div class="members-body">
+        <div class="member-col">
+          <div class="member-col-head"><span class="member-col-title long">多头持仓 Top10</span><span class="member-col-note">多单 / 增减</span></div>
+          <div class="member-list" id="memberLong"></div>
+        </div>
+        <div class="member-col">
+          <div class="member-col-head"><span class="member-col-title short">空头持仓 Top10</span><span class="member-col-note">空单 / 增减</span></div>
+          <div class="member-list" id="memberShort"></div>
+        </div>
+      </div>
+      <div class="members-foot">
+        <span>数据：上期所会员持仓排名（会员合计）</span>
+        <span class="spacer"></span>
+        <span>净持仓 <b class="mono up" id="memberNet">+18,420</b> 手 · 多空比 <b class="mono" id="memberRatio">1.08</b></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== 视图 3：每日简报 ========== -->
+  <section class="view" id="view-brief" data-view="brief">
+    <div class="page-head">
+      <div>
+        <div class="page-eyebrow">简报 · 生成于 2026-11-13 17:30 · 由分析引擎自动撰写</div>
+        <h1 class="page-h1">每日简报 <span class="page-sub" id="briefPageSub">第 128 期 · 日报</span></h1>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn--sm" type="button" data-action="export-md"><svg class="ic"><use href="#i-download"/></svg>导出 Markdown</button>
+        <button class="btn btn--sm btn--primary" type="button" data-action="print"><svg class="ic"><use href="#i-print"/></svg>打印 / PDF</button>
+      </div>
+    </div>
+
+    <div class="card brief-toolbar">
+      <div class="seg" id="briefSeg">
+        <button type="button" class="active" data-brief="日报">日报</button>
+        <button type="button" data-brief="周报">周报</button>
+        <button type="button" data-brief="月报">月报</button>
+      </div>
+      <div class="brief-date-nav">
+        <button class="btn btn--icon btn--sm" type="button" data-action="prev-day" title="上一期"><svg class="ic"><use href="#i-chevron-left"/></svg></button>
+        <span class="date-chip">2026-11-13 <span>周五</span></span>
+        <button class="btn btn--icon btn--sm" type="button" data-action="next-day" title="下一期"><svg class="ic"><use href="#i-chevron-right"/></svg></button>
+        <button class="btn btn--sm btn--ghost" type="button" data-action="today">今天</button>
+      </div>
+      <div class="tool-right">
+        <span class="tool-note"><span class="dot dot--live"></span>已引用 12 条证据</span>
+        <button class="btn btn--sm" type="button" data-action="copy-brief"><svg class="ic"><use href="#i-copy"/></svg>复制全文</button>
+      </div>
+    </div>
+
+    <div class="brief-layout">
+      <aside class="card toc-card">
+        <div class="toc-title">文内目录</div>
+        <button class="toc-item active" type="button" data-target="brief-s1"><span class="toc-num">01</span>市场主线</button>
+        <button class="toc-item" type="button" data-target="brief-s2"><span class="toc-num">02</span>跨资产表现</button>
+        <button class="toc-item" type="button" data-target="brief-s3"><span class="toc-num">03</span>利率与流动性</button>
+        <button class="toc-item" type="button" data-target="brief-s4"><span class="toc-num">04</span>商品与权益</button>
+        <button class="toc-item" type="button" data-target="brief-s5"><span class="toc-num">05</span>风险提示</button>
+        <div class="toc-foot">证据引用 <b>12</b> 处<br />本期字数 <b>2,840</b><br />生成耗时 <b>4.2s</b><br />阅读约 <b>6</b> 分钟</div>
+      </aside>
+
+      <article class="card article">
+        <div class="article-inner">
+          <div class="article-eyebrow">
+            <span class="badge badge--accent badge--sm">日报</span>
+            <span>2026-11-13 周五</span><span class="m-dot"></span><span>第 128 期</span><span class="m-dot"></span><span>分析引擎 · daily-brief</span>
+          </div>
+          <h1>降息预期反复，贵金属承压；铜强势，金银比回落</h1>
+          <div class="article-meta">
+            <span>生成于 17:30</span><span class="m-dot"></span><span>2,840 字</span><span class="m-dot"></span><span>阅读约 6 分钟</span><span class="m-dot"></span><span>证据 12 条</span><span class="m-dot"></span><span class="up">红涨绿跌</span>
+            <span class="spacer"></span>
+            <button class="link-btn" type="button" data-action="copy-brief"><svg class="ic"><use href="#i-copy"/></svg>复制全文</button>
+          </div>
+
+          <div class="quote">
+            <div class="quote-label"><svg class="ic" style="width:11px;height:11px"><use href="#i-sparkle"/></svg>主线判断</div>
+            <p>美联储降息预期反复，美元与长端利率上行压制贵金属；铜受供给扰动与库存去化支撑，金银比回落。</p>
+            <div class="quote-tags">
+              <span class="badge badge--down">贵金属 · 承压</span>
+              <span class="badge badge--up">铜 · 偏强</span>
+              <span class="badge badge--warn">美元 · 走强</span>
+              <span class="badge">金银比 82.4</span>
+            </div>
+          </div>
+
+          <h2 class="a-h2" id="brief-s1"><span class="a-num">01</span>市场主线</h2>
+          <p class="a-p">11 月 13 日公布的美联储会议纪要显示，多数与会者认为在通胀回落路径确认之前，进一步调整政策利率仍需保持耐心；但若劳动力市场出现超预期走弱，12 月降息可能是合适的。市场对 12 月降息的定价由此前的 58% 回落至 52%<button class="ev-link" type="button" data-ev="E-01">E-01</button>，美元指数上行至 102.24，10 年期美债收益率升至 4.42%。</p>
+          <p class="a-p">贵金属方面，沪金主力收于 <b>874.58 元/克</b>，涨 1.62%；沪银收于 <b>12,523.0 元/千克</b>，涨 2.34%，金银比回落至 82.4<button class="ev-link" type="button" data-ev="E-04">E-04</button>。铜受 LME 库存去化与供给扰动支撑，沪铜主力收于 <b>105,860 元/吨</b>，涨 0.94%<button class="ev-link" type="button" data-ev="E-03">E-03</button>，洛阳钼业涨 2.15%。</p>
+          <p class="a-p">原油方面，SC 主力收于 633.90 元/桶，涨 1.18%，地缘溢价小幅回升；铁矿石涨 1.52%，黑色系整体震荡。权益端沪深 300 收于 4,054.3，涨 0.62%，成交额 8,420 亿元。</p>
+
+          <h2 class="a-h2" id="brief-s2"><span class="a-num">02</span>跨资产表现</h2>
+          <table class="brief-table">
+            <thead>
+              <tr><th>资产</th><th class="num">最新</th><th class="num">日涨跌</th><th class="num">周涨跌</th><th class="num">20 日分位</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="t-name">沪金 AU</td><td class="num">874.58</td><td class="num up">+1.62%</td><td class="num up">+3.41%</td><td class="num">78%</td></tr>
+              <tr><td class="t-name">沪银 AG</td><td class="num">12,523.0</td><td class="num up">+2.34%</td><td class="num up">+5.12%</td><td class="num">84%</td></tr>
+              <tr><td class="t-name">沪铜 CU</td><td class="num">105,860</td><td class="num up">+0.94%</td><td class="num up">+2.68%</td><td class="num">71%</td></tr>
+              <tr><td class="t-name">原油 SC</td><td class="num">633.90</td><td class="num up">+1.18%</td><td class="num down">−0.82%</td><td class="num">55%</td></tr>
+              <tr><td class="t-name">铁矿石 I</td><td class="num">686.50</td><td class="num up">+1.52%</td><td class="num up">+1.94%</td><td class="num">62%</td></tr>
+              <tr><td class="t-name">沪深 300</td><td class="num">4,054.3</td><td class="num up">+0.62%</td><td class="num up">+1.18%</td><td class="num">58%</td></tr>
+              <tr><td class="t-name">美元指数 DXY</td><td class="num">102.240</td><td class="num up">+0.34%</td><td class="num up">+1.12%</td><td class="num">66%</td></tr>
+              <tr><td class="t-name">洛阳钼业 603993</td><td class="num">13.29</td><td class="num up">+2.15%</td><td class="num up">+4.63%</td><td class="num">81%</td></tr>
+            </tbody>
+          </table>
+          <p class="a-p" style="font-size:10.5px;color:var(--dim)">分位为近 20 个交易日区间分位；外盘为 11-12 收盘价，内盘为 11-13 收盘价。<button class="ev-link" type="button" data-ev="E-02">E-02</button></p>
+
+          <h2 class="a-h2" id="brief-s3"><span class="a-num">03</span>利率与流动性</h2>
+          <p class="a-p">SOFR 报 <b>4.32%</b>，EFFR 报 4.33%，SOFR-EFFR 利差 −0.01pp 转负，隔夜资金面边际转松<button class="ev-link" type="button" data-ev="E-02">E-02</button>。美债 2 / 10 / 30 年分别报 4.28% / 4.42% / 4.55%，10−2 利差走阔至 14bp；国内 10 年期国债收益率 2.15%，中美 10 年期利差 −227bp，人民币汇率端压力仍存。</p>
+          <div class="brief-tag-line">
+            <span class="badge">SOFR 4.32%</span><span class="badge">EFFR 4.33%</span><span class="badge badge--down">SOFR−EFFR −0.01pp</span>
+            <span class="badge">US2Y 4.28%</span><span class="badge badge--warn">US10Y 4.42%</span><span class="badge badge--warn">US30Y 4.55%</span>
+            <span class="badge">CN10Y 2.15%</span><span class="badge">JP10Y 1.62%</span><span class="badge">DE10Y 2.41%</span><span class="badge">FR10Y 3.18%</span>
+          </div>
+
+          <h2 class="a-h2" id="brief-s4"><span class="a-num">04</span>商品与权益</h2>
+          <ul class="brief-list">
+            <li><b>铜：</b>LME 铜库存周环比 −3.2%，国内社会库存同步去化，短期价格偏强；关注 11 月下游开工率与进口窗口。</li>
+            <li><b>贵金属：</b>实际利率与美元构成压制，但央行购金与 ETF 流入提供支撑，金银比仍有回落空间。</li>
+            <li><b>原油：</b>OPEC+ 12 月会议前供给预期反复，SC 内外价差收敛，地缘溢价小幅回升。</li>
+            <li><b>权益：</b>沪深 300 收于 4,054.3，涨 0.62%，两市成交额 8,420 亿元；北向资金净流入 36.8 亿元。</li>
+          </ul>
+
+          <h2 class="a-h2" id="brief-s5"><span class="a-num">05</span>风险提示</h2>
+          <ul class="brief-list">
+            <li>12 月 FOMC（12-10）降息路径若显著低于预期，美元与美债收益率可能继续上行，压制贵金属。</li>
+            <li>铜供给扰动若缓解、库存转为累积，价格存在回调风险；需跟踪冶炼厂检修与进口到港节奏。</li>
+            <li>数据源方面，郑商所夜盘行情存在 18 分钟延迟，已在告警中心记录，相关品种时点可能滞后。</li>
+          </ul>
+
+          <div class="article-foot">本期数据截至 2026-11-13 15:00（外盘为最新可得报价）；由 EPIC 分析引擎生成，结论仅供研究参考，不构成投资建议。证据编号可在右侧抽屉查看原文摘录。</div>
+        </div>
+      </article>
+
+      <aside class="brief-aside">
+        <div class="card aside-card">
+          <div class="aside-title">本期概览</div>
+          <div class="meta-grid">
+            <div class="meta-cell"><div class="meta-num">2,840</div><div class="meta-label">字数</div></div>
+            <div class="meta-cell"><div class="meta-num">12</div><div class="meta-label">证据引用</div></div>
+            <div class="meta-cell"><div class="meta-num">3</div><div class="meta-label">图表</div></div>
+            <div class="meta-cell"><div class="meta-num">7</div><div class="meta-label">关联标的</div></div>
+          </div>
+        </div>
+        <div class="card aside-card">
+          <div class="aside-title">关联标的</div>
+          <div class="aside-link"><span>沪金 AU</span><span class="up">+1.62%</span></div>
+          <div class="aside-link"><span>沪银 AG</span><span class="up">+2.34%</span></div>
+          <div class="aside-link"><span>沪铜 CU</span><span class="up">+0.94%</span></div>
+          <div class="aside-link"><span>美元指数 DXY</span><span class="up">+0.34%</span></div>
+          <div class="aside-link"><span>沪深 300</span><span class="up">+0.62%</span></div>
+          <div class="aside-link"><span>洛阳钼业 603993</span><span class="up">+2.15%</span></div>
+        </div>
+        <div class="card aside-card">
+          <div class="aside-title">关联证据</div>
+          <button class="aside-link" type="button" data-ev="E-01" style="width:100%;background:none;border:0;border-bottom:1px dashed var(--border);cursor:pointer;text-align:left;font-family:inherit"><span>美联储会议纪要</span><b>E-01</b></button>
+          <button class="aside-link" type="button" data-ev="E-02" style="width:100%;background:none;border:0;border-bottom:1px dashed var(--border);cursor:pointer;text-align:left;font-family:inherit"><span>美元与美债收益率</span><b>E-02</b></button>
+          <button class="aside-link" type="button" data-ev="E-03" style="width:100%;background:none;border:0;border-bottom:1px dashed var(--border);cursor:pointer;text-align:left;font-family:inherit"><span>铜库存周报</span><b>E-03</b></button>
+          <button class="aside-link" type="button" data-ev="E-04" style="width:100%;background:none;border:0;border:0;cursor:pointer;text-align:left;font-family:inherit"><span>金银比与资金流</span><b>E-04</b></button>
+        </div>
+        <div class="card aside-card">
+          <div class="aside-title">导出与分享</div>
+          <div class="export-row">
+            <button class="btn btn--sm" type="button" data-action="export-md"><svg class="ic"><use href="#i-download"/></svg>Markdown</button>
+            <button class="btn btn--sm" type="button" data-action="print"><svg class="ic"><use href="#i-print"/></svg>PDF</button>
+          </div>
+          <div class="token-note">打印样式已适配：仅输出正文，隐藏导航与侧栏。</div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ========== 视图 4：设计规范 ========== -->
+  <section class="view" id="view-tokens" data-view="tokens">
+    <div class="page-head">
+      <div>
+        <div class="page-eyebrow">设计规范 · Design Tokens v0.1 · 2026-11-13</div>
+        <h1 class="page-h1">设计规范 <span class="page-sub">深色为默认主题 · 浅色主题可切换 · 圆角 / 字阶 / 组件状态</span></h1>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn--sm" type="button" id="tokensThemeBtn"><svg class="ic"><use href="#i-sun"/></svg>切换主题预览</button>
+        <button class="btn btn--sm" type="button" data-action="copy-tokens"><svg class="ic"><use href="#i-copy"/></svg>复制 Token</button>
+      </div>
+    </div>
+
+    <div class="tk-grid">
+      <section class="card">
+        <div class="card-head"><span class="card-title">色板 · Color</span><span class="card-sub">语义色 · 深浅两套 · 红涨绿跌（可切换）</span><div class="card-actions"><span class="badge badge--sm">CSS 变量</span></div></div>
+        <div class="tk-body">
+          <div class="sw-grid">
+            <div class="sw"><div class="sw-chip" style="background:var(--bg)"></div><div class="sw-meta"><div class="sw-name"><i style="background:var(--bg)"></i>背景</div><div class="sw-hex">--bg #0A0E13</div></div></div>
+            <div class="sw"><div class="sw-chip" style="background:var(--surface)"></div><div class="sw-meta"><div class="sw-name"><i style="background:var(--surface)"></i>卡片面</div><div class="sw-hex">--surface #111721</div></div></div>
+            <div class="sw"><div class="sw-chip" style="background:var(--surface-2)"></div><div class="sw-meta"><div class="sw-name"><i style="background:var(--surface-2)"></i>次级面</div><div class="sw-hex">--surface-2 #172030</div></div></div>
+            <div class="sw"><div class="sw-chip" style="background:var(--surface);box-shadow:inset 0 0 0 2px var(--border)"></div><div class="sw-meta"><div class="sw-name"><i style="background:var(--border-strong)"></i>描边</div><div class="sw-hex">--border 14%</div></div></div>
+            <div class="sw"><div class="sw-chip" style="background:var(--text)"></div><div class="sw-meta"><div class="sw-name"><i style="background:var(--text)"></i>主文字</div><div class="sw-hex">--text #E6EDF5</div></div></div>
+            <div class="sw"><div class="sw-chip" style="background:var(--muted)"></div><div class="sw-meta"><div class="sw-name"><i style="background:var(--muted)"></i>次要文字</div><div class="sw-hex">--muted #93A4B8</div></div></div>
+            <div class="sw"><div class="sw-chip" style="background:var(--dim)"></div><div class="sw-meta"><div class="sw-name"><i style="background:var(--dim)"></i>弱化文字</div><div class="sw-hex">--dim #64748B</div></div></div>
+            <div class="sw"><div class="sw-chip" style="background:var(--accent)"></div><div class="sw-meta"><div class="sw-name"><i style="background:var(--accent)"></i>强调</div><div class="sw-hex">--accent #4CC2FF</div></div></div>
+            <div class="sw"><div class="sw-chip" style="background:var(--up)"></div><div class="sw-meta"><div class="sw-name"><i style="background:var(--up)"></i>上涨</div><div class="sw-hex">--up #F0544F</div></div></div>
+            <div class="sw"><div class="sw-chip" style="background:var(--down)"></div><div class="sw-meta"><div class="sw-name"><i style="background:var(--down)"></i>下跌</div><div class="sw-hex">--down #2FBF71</div></div></div>
+            <div class="sw"><div class="sw-chip" style="background:var(--warn)"></div><div class="sw-meta"><div class="sw-name"><i style="background:var(--warn)"></i>警示</div><div class="sw-hex">--warn #F5A524</div></div></div>
+            <div class="sw"><div class="sw-chip" style="background:var(--ok)"></div><div class="sw-meta"><div class="sw-name"><i style="background:var(--ok)"></i>正常</div><div class="sw-hex">--ok #2FBF71</div></div></div>
+          </div>
+          <div class="token-note">浅色主题覆盖为 <code>--bg #F4F7FA / --surface #FFFFFF / --surface-2 #E7EDF3 / --text #1A2733</code>；涨跌语义通过 <code>--up-color / --down-color</code> 间接引用，默认红涨绿跌，设置中可切换为绿涨红跌。</div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><span class="card-title">字阶 · Typography</span><span class="card-sub">system-ui / Segoe UI / Microsoft YaHei</span></div>
+        <div class="tk-body">
+          <div class="type-row"><span class="type-size">28</span><span class="type-sample type-hero">874.58</span><span class="type-token">Hero / 700</span></div>
+          <div class="type-row"><span class="type-size">20</span><span class="type-sample type-metric">27,804</span><span class="type-token">指标 / 680</span></div>
+          <div class="type-row"><span class="type-size">16</span><span class="type-sample type-section">跨资产热力图</span><span class="type-token">区块标题</span></div>
+          <div class="type-row"><span class="type-size">14</span><span class="type-sample type-table">沪金 AU　874.58　+1.62%</span><span class="type-token">表格</span></div>
+          <div class="type-row"><span class="type-size">13</span><span class="type-sample type-body">美联储降息预期反复，美元走强压制贵金属。</span><span class="type-token">正文</span></div>
+          <div class="type-row"><span class="type-size">12</span><span class="type-sample type-meta">2026-11-13 17:30 · 数据源 6 个</span><span class="type-token">元信息</span></div>
+          <div class="type-row"><span class="type-size">11</span><span class="type-sample type-badge">已同步 · 延迟 18 分钟</span><span class="type-token">徽标</span></div>
+          <div class="token-note">数值统一使用等宽字体栈 <code>ui-monospace / SFMono / Consolas</code>，并启用 <code>font-variant-numeric: tabular-nums</code>，保证列对齐。</div>
+        </div>
+      </section>
+    </div>
+
+    <div class="tk-grid">
+      <section class="card">
+        <div class="card-head"><span class="card-title">按钮与徽标</span><span class="card-sub">控件 8px 圆角 · 徽标 999px 全圆角</span></div>
+        <div class="tk-body">
+          <div class="btn-matrix">
+            <span class="demo-label">主操作</span><div class="demo-row"><button class="btn btn--primary btn--sm" type="button">查看日报</button><button class="btn btn--primary btn--sm" type="button"><svg class="ic"><use href="#i-print"/></svg>打印 / PDF</button><button class="btn btn--primary btn--sm" type="button" disabled>已禁用</button></div>
+            <span class="demo-label">次操作</span><div class="demo-row"><button class="btn btn--sm" type="button">刷新行情</button><button class="btn btn--sm" type="button"><svg class="ic"><use href="#i-download"/></svg>导出 CSV</button><button class="btn btn--sm" type="button"><svg class="ic"><use href="#i-filter"/></svg>筛选</button></div>
+            <span class="demo-label">弱操作</span><div class="demo-row"><button class="btn btn--sm btn--ghost" type="button">复制摘要</button><button class="btn btn--sm btn--ghost" type="button">取消</button><button class="btn btn--icon btn--sm" type="button" title="设置"><svg class="ic"><use href="#i-settings"/></svg></button></div>
+            <span class="demo-label">危险</span><div class="demo-row"><button class="btn btn--sm" type="button" style="color:var(--up-color);border-color:color-mix(in srgb,var(--up) 34%,transparent)"><svg class="ic"><use href="#i-alert"/></svg>删除自选</button><span class="dim" style="font-size:9.5px">仅用于破坏性操作</span></div>
+          </div>
+          <div class="demo-row" style="margin-top:2px">
+            <span class="demo-label">徽标</span>
+            <div class="demo-row" style="gap:6px;padding:0">
+              <span class="badge badge--live"><span class="dot"></span>正常</span>
+              <span class="badge badge--accent">38 条</span>
+              <span class="badge badge--up">▲ 2.34%</span>
+              <span class="badge badge--down">▼ 1.24%</span>
+              <span class="badge badge--warn">延迟 18 分钟</span>
+              <span class="badge">沪深 300</span>
+              <span class="badge badge--sm">小号徽标</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><span class="card-title">间距 · 圆角 · 卡片</span><span class="card-sub">8pt 栅格</span></div>
+        <div class="tk-body">
+          <div class="space-demo">
+            <div class="space-line"><span class="space-val">4</span><span class="space-box" style="width:8px"></span><span class="space-tag">徽标内间隙</span></div>
+            <div class="space-line"><span class="space-val">8</span><span class="space-box" style="width:16px"></span><span class="space-tag">控件 / 卡片内间隙</span></div>
+            <div class="space-line"><span class="space-val">10</span><span class="space-box" style="width:20px"></span><span class="space-tag">卡片网格 gap</span></div>
+            <div class="space-line"><span class="space-val">16</span><span class="space-box" style="width:32px"></span><span class="space-tag">内容区左右内边距</span></div>
+            <div class="space-line"><span class="space-val">32</span><span class="space-box" style="width:64px"></span><span class="space-tag">大区块分节</span></div>
+          </div>
+          <div class="radius-demo">
+            <div class="radius-box" style="border-radius:8px">8 控件</div>
+            <div class="radius-box" style="border-radius:10px">10 卡片</div>
+            <div class="radius-box" style="border-radius:999px;width:auto;min-width:86px;height:26px;padding:0 10px;align-items:center;padding-bottom:0;white-space:nowrap">999 徽标</div>
+          </div>
+          <div class="form-label" style="margin-top:8px">卡片结构</div>
+          <div class="mini-card">
+            <div class="mini-card-h">卡片标题<span>次要说明</span></div>
+            <div class="mini-card-b">1px 描边 + 10px 圆角 + 轻投影，标题 13px / 正文 13px。</div>
+            <div class="mini-card-f">表格行高 36px · 数字右对齐 · 底部操作用 10px 弱化文字</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="tk-grid3">
+      <section class="card">
+        <div class="card-head"><span class="card-title">表单控件</span><span class="card-sub">32px 高</span></div>
+        <div class="tk-body">
+          <div class="form-demo">
+            <div class="full"><label class="form-label">文本输入</label><div class="field"><input type="text" value="沪铜 CU" /></div></div>
+            <div class="full"><label class="form-label">搜索</label><div class="field"><svg class="ic"><use href="#i-search"/></svg><input type="search" placeholder="搜索代码 / 名称" /><span class="kbd">/</span></div></div>
+            <div><label class="form-label">下拉</label><select class="select"><option>涨跌幅</option><option>最新价</option><option>名称</option></select></div>
+            <div><label class="form-label">分段控件</label><div class="seg"><button class="active" type="button">日</button><button type="button">周</button><button type="button">月</button></div></div>
+            <div class="full"><label class="form-label">多选 chips</label><div class="chip-row"><button class="chip active" type="button">贵金属</button><button class="chip" type="button">有色金属</button><button class="chip" type="button">能源化工</button></div></div>
+            <div class="full" style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span class="radio-row"><input class="checkbox" type="checkbox" checked /><span>仅显示已接入标的</span></span><span class="radio-row"><span>自动刷新</span><label class="switch"><input type="checkbox" checked /><i></i></label></span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><span class="card-title">数据表格</span><span class="card-sub">行高 36 · 数字右对齐</span></div>
+        <div class="tk-body" style="padding:0">
+          <table class="data-table" style="font-size:11px">
+            <thead><tr><th>品种</th><th>名称</th><th class="num">最新</th><th class="num">涨跌幅</th></tr></thead>
+            <tbody>
+              <tr class="group-row"><td colspan="4">贵金属<span class="g-count">2 个品种</span><span class="g-stat">1 涨 1 跌</span></td></tr>
+              <tr><td class="sym">AU</td><td class="nm">沪金</td><td class="num">874.58</td><td class="num"><span class="up">+1.62%</span></td></tr>
+              <tr><td class="sym">AG</td><td class="nm">沪银</td><td class="num">12,523.0</td><td class="num"><span class="up">+2.34%</span></td></tr>
+              <tr class="group-row"><td colspan="4">能源化工<span class="g-count">2 个品种</span><span class="g-stat">1 涨 1 跌</span></td></tr>
+              <tr><td class="sym">SC</td><td class="nm">原油</td><td class="num">633.90</td><td class="num"><span class="up">+1.18%</span></td></tr>
+              <tr><td class="sym">NG</td><td class="nm">天然气</td><td class="num">3.412</td><td class="num"><span class="down">−1.24%</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><span class="card-title">反馈与状态</span><span class="card-sub">骨架 / 空态 / Toast</span></div>
+        <div class="tk-body">
+          <div class="form-label">加载骨架</div>
+          <div class="skel-line" style="width:72%"></div>
+          <div class="skel-line" style="width:92%"></div>
+          <div class="skel-line" style="width:54%"></div>
+          <div class="form-label" style="margin-top:10px">空状态</div>
+          <div class="empty-demo"><svg class="ic"><use href="#i-db"/></svg><div>暂无数据<br />检查数据源后点击重试</div><button class="btn btn--sm" type="button">重试</button></div>
+          <div class="form-label" style="margin-top:10px">Toast</div>
+          <div class="toast-demo">
+            <div class="toast-line"><svg class="ic ok" style="color:var(--ok)"><use href="#i-check"/></svg>已复制摘要到剪贴板<span class="tl-close">×</span></div>
+            <div class="toast-line"><svg class="ic warn" style="color:var(--warn)"><use href="#i-alert"/></svg>郑商所行情延迟 18 分钟<span class="tl-close">×</span></div>
+          </div>
+          <div class="token-note" style="margin-top:9px">状态色仅用于语义反馈，不作为大面积背景色。</div>
+        </div>
+      </section>
+    </div>
+  </section>
+</main>
+
+<!-- ===================== 浮层：遮罩 / 抽屉 / 命令面板 / Toast ===================== -->
+<div class="scrim" id="scrim"></div>
+
+<aside class="drawer" id="evidenceDrawer" role="dialog" aria-modal="true" aria-labelledby="evTitle" aria-hidden="true">
+  <div class="drawer-head">
+    <svg class="ic" style="color:var(--accent)"><use href="#i-shield-check"/></svg>
+    <span class="drawer-title" id="evTitle">证据详情</span>
+    <span class="drawer-sub" id="evId">E-01</span>
+    <button class="icon-btn icon-close" type="button" data-close="evidence" aria-label="关闭证据抽屉"><svg class="ic"><use href="#i-close"/></svg></button>
+  </div>
+  <div class="drawer-body" id="evidenceBody"></div>
+  <div class="drawer-foot">
+    <button class="btn btn--sm" type="button" data-ev-prev><svg class="ic"><use href="#i-chevron-left"/></svg>上一条</button>
+    <button class="btn btn--sm" type="button" data-ev-next>下一条<svg class="ic"><use href="#i-chevron-right"/></svg></button>
+    <span class="spacer"></span>
+    <button class="btn btn--sm" type="button" data-action="copy-quote"><svg class="ic"><use href="#i-copy"/></svg>复制引用</button>
+    <button class="btn btn--sm btn--primary" type="button" data-action="open-source"><svg class="ic"><use href="#i-external"/></svg>打开原文</button>
+  </div>
+</aside>
+
+<aside class="drawer drawer--settings" id="settingsDrawer" role="dialog" aria-modal="true" aria-labelledby="setTitle" aria-hidden="true">
+  <div class="drawer-head">
+    <svg class="ic" style="color:var(--accent)"><use href="#i-settings"/></svg>
+    <span class="drawer-title" id="setTitle">设置</span>
+    <span class="drawer-sub">外观与偏好</span>
+    <button class="icon-btn icon-close" type="button" data-close="settings" aria-label="关闭设置抽屉"><svg class="ic"><use href="#i-close"/></svg></button>
+  </div>
+  <div class="drawer-body">
+    <div class="set-section">
+      <div class="set-title">主题</div>
+      <div class="set-desc">默认深色（金融终端），浅色用于白天或打印预览。</div>
+      <div class="opt-row" id="themeOpts">
+        <button class="opt active" type="button" data-theme-opt="dark">
+          <span class="opt-head">深色 <span class="badge badge--sm">默认</span></span>
+          <span class="opt-preview"><i style="background:#0A0E13"></i><i style="background:#111721"></i><i style="background:#172030"></i><i style="background:#4CC2FF"></i></span>
+        </button>
+        <button class="opt" type="button" data-theme-opt="light">
+          <span class="opt-head">浅色</span>
+          <span class="opt-preview"><i style="background:#F4F7FA"></i><i style="background:#FFFFFF"></i><i style="background:#E7EDF3"></i><i style="background:#0B6FB3"></i></span>
+        </button>
+      </div>
+    </div>
+    <div class="set-section">
+      <div class="set-title">涨跌配色</div>
+      <div class="set-desc">国内习惯红涨绿跌；如更习惯国际配色可切换为绿涨红跌。</div>
+      <div class="opt-row" id="updownOpts">
+        <button class="opt active" type="button" data-updown-opt="red">
+          <span class="opt-head"><span class="up">红</span>涨 <span class="down">绿</span>跌</span>
+          <span class="opt-preview"><i style="background:#F0544F"></i><i style="background:#2FBF71"></i></span>
+        </button>
+        <button class="opt" type="button" data-updown-opt="green">
+          <span class="opt-head"><span class="down">绿</span>涨 <span class="up">红</span>跌</span>
+          <span class="opt-preview"><i style="background:#2FBF71"></i><i style="background:#F0544F"></i></span>
+        </button>
+      </div>
+    </div>
+    <div class="set-section">
+      <div class="set-title">界面密度</div>
+      <div class="set-desc">紧凑模式会压缩表格行高与卡片间距，适合小屏或信息密集场景。</div>
+      <div class="seg" id="densityOpts">
+        <button type="button" data-density="normal" class="active">标准</button>
+        <button type="button" data-density="compact">紧凑</button>
+      </div>
+    </div>
+    <div class="set-section">
+      <div class="set-title">数据刷新</div>
+      <div class="seg" id="refreshOpts">
+        <button type="button" class="active" data-refresh="30">30 秒</button>
+        <button type="button" data-refresh="60">60 秒</button>
+        <button type="button" data-refresh="0">仅手动</button>
+      </div>
+      <div class="set-note">当前为离线原型：刷新仅更新界面时间戳，不会请求后端。后端恢复后由 /api 轮询驱动。</div>
+    </div>
+    <div class="set-section">
+      <div class="set-title">显示</div>
+      <div class="set-row"><span>显示数值单位后缀</span><label class="switch"><input id="optUnit" type="checkbox" checked /><i></i></label></div>
+      <div class="set-row"><span>秒级市场时钟</span><label class="switch"><input id="optSeconds" type="checkbox" checked /><i></i></label></div>
+      <div class="set-row"><span>行悬停高亮</span><label class="switch"><input id="optHover" type="checkbox" checked /><i></i></label></div>
+    </div>
+    <div class="set-section">
+      <div class="set-title">关于</div>
+      <div class="set-note">EPIC · 本地宏观—市场—交易分析工作台<br />UI 原型 v0.1 · 2026-11-13 · 纯静态离线版<br />主题与配色偏好保存在本机 localStorage。</div>
+    </div>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn btn--sm btn--ghost" type="button" id="resetPrefs">重置外观</button>
+    <span class="spacer"></span>
+    <button class="btn btn--sm btn--primary" type="button" data-close="settings">完成</button>
+  </div>
+</aside>
+
+<div class="palette-wrap" id="paletteWrap" role="dialog" aria-modal="true" aria-label="命令面板">
+  <div class="palette">
+    <div class="palette-input">
+      <svg class="ic"><use href="#i-command"/></svg>
+      <input id="paletteInput" type="text" placeholder="搜索页面、标的或执行命令…" autocomplete="off" spellcheck="false" />
+      <span class="kbd">ESC</span>
+    </div>
+    <div class="palette-list" id="paletteList"></div>
+    <div class="palette-foot">
+      <span><span class="kbd">↑</span> <span class="kbd">↓</span> 选择</span>
+      <span><span class="kbd">↵</span> 打开</span>
+      <span><span class="kbd">esc</span> 关闭</span>
+      <span style="margin-left:auto">EPIC 命令面板</span>
+    </div>
+  </div>
+</div>
+
+<div class="toast-host" id="toastHost" aria-live="polite"></div>
+
+<script>
+/* ============================================================
+   EPIC UI 原型 · 原生 JS（无任何外部依赖）
+   - 视图切换：?view= / #view / 侧边栏
+   - 动态数据渲染 + 内联 SVG sparkline
+   - 证据抽屉 / 设置抽屉 / Ctrl+K 命令面板 / Toast
+   ============================================================ */
+(function () {
+  'use strict';
+
+  /* ---------------- 基础工具 ---------------- */
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var esc = function (s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  };
+  var fmtPct = function (v) { return (v > 0 ? '+' : '') + v.toFixed(2) + '%'; };
+  var dirCls = function (v) { return v > 0 ? 'up' : (v < 0 ? 'down' : 'flat'); };
+  var arrow = function (v) { return v > 0 ? '▲' : (v < 0 ? '▼' : '·'); };
+  var plain = function (v) { return v == null ? '—' : v; };
+
+  function seedOf(str) {
+    var h = 2166136261;
+    for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  function rng(seed) {
+    var a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function series(key, n, trend, vol) {
+    var r = rng(seedOf(key)), out = [], v = 50;
+    for (var i = 0; i < n; i++) { v += (r() - 0.5) * vol + trend / n; out.push(v); }
+    return out;
+  }
+  function spark(vals, w, h, color, fill) {
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    var span = (max - min) || 1;
+    var pts = vals.map(function (v, i) {
+      var x = (i / (vals.length - 1)) * w;
+      var y = h - 2 - ((v - min) / span) * (h - 4);
+      return x.toFixed(1) + ',' + y.toFixed(1);
+    });
+    var c = color || 'var(--accent)';
+    var area = '0,' + h + ' ' + pts.join(' ') + ' ' + w + ',' + h;
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true">' +
+      (fill ? '<polygon points="' + area + '" fill="' + c + '" opacity=".1"></polygon>' : '') +
+      '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + c + '" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"></polyline></svg>';
+  }
+
+  /* ---------------- 偏好（主题 / 涨跌色 / 密度） ---------------- */
+  var prefs = { theme: 'dark', updown: 'red', density: 'normal', refresh: '30' };
+  try {
+    var saved = JSON.parse(localStorage.getItem('epic-prefs') || '{}');
+    Object.keys(prefs).forEach(function (k) { if (saved[k]) prefs[k] = saved[k]; });
+  } catch (e) { /* ignore */ }
+  // URL 参数优先：?theme=dark / ?theme=light（可临时覆盖本地偏好，便于截图与分享）
+  try {
+    var themeParam = new URLSearchParams(location.search).get('theme');
+    if (themeParam === 'dark' || themeParam === 'light') prefs.theme = themeParam;
+  } catch (e) { /* ignore */ }
+  function savePrefs() { try { localStorage.setItem('epic-prefs', JSON.stringify(prefs)); } catch (e) { /* ignore */ } }
+  function applyPrefs() {
+    document.documentElement.dataset.theme = prefs.theme;
+    document.documentElement.dataset.updown = prefs.updown;
+    document.body.classList.toggle('is-compact', prefs.density === 'compact');
+    $$('#themeOpts .opt').forEach(function (b) { b.classList.toggle('active', b.dataset.themeOpt === prefs.theme); });
+    $$('#updownOpts .opt').forEach(function (b) { b.classList.toggle('active', b.dataset.updownOpt === prefs.updown); });
+    $$('#densityOpts button').forEach(function (b) { b.classList.toggle('active', b.dataset.density === prefs.density); });
+    $$('#refreshOpts button').forEach(function (b) { b.classList.toggle('active', b.dataset.refresh === prefs.refresh); });
+  }
+
+  /* ---------------- 视图切换 ---------------- */
+  var VIEW_META = {
+    overview: { title: '总览', crumb: '总览' },
+    market: { title: '市场行情', crumb: '市场行情' },
+    brief: { title: '每日简报', crumb: '每日简报' },
+    tokens: { title: '设计规范', crumb: '设计规范' }
+  };
+  var currentView = 'overview';
+  function go(view, opts) {
+    if (!VIEW_META[view]) view = 'overview';
+    currentView = view;
+    $$('.view').forEach(function (v) { v.classList.toggle('active', v.dataset.view === view); });
+    $$('.nav-item[data-view]').forEach(function (b) { b.classList.toggle('active', b.dataset.view === view); });
+    var pageTitle = $('#pageTitle');
+    if (pageTitle) pageTitle.textContent = VIEW_META[view].crumb;
+    try {
+      var url = new URL(location.href);
+      url.searchParams.set('view', view);
+      url.hash = '';
+      history.replaceState(null, '', url.pathname + '?' + url.searchParams.toString());
+    } catch (e) { /* ignore */ }
+    window.scrollTo({ top: 0, behavior: opts && opts.instant ? 'auto' : 'smooth' });
+    if (view === 'tokens') { /* no-op */ }
+  }
+  $$('.nav-item[data-view]').forEach(function (b) {
+    b.addEventListener('click', function () { go(b.dataset.view); });
+  });
+  $$('[data-go]').forEach(function (b) {
+    b.addEventListener('click', function () { go(b.dataset.go); });
+  });
+  $$('.nav-item[data-soon]').forEach(function (b) {
+    b.addEventListener('click', function () { toast('「' + b.dataset.soon + '」模块将在 Vue 版接入，本次原型聚焦四个视图', 'info'); });
+  });
+
+  function initialView() {
+    var q = new URLSearchParams(location.search).get('view');
+    var h = (location.hash || '').replace('#', '');
+    if (q && VIEW_META[q]) return q;
+    if (h && VIEW_META[h]) return h;
+    return 'overview';
+  }
+
+  /* ---------------- Toast ---------------- */
+  var toastHost = $('#toastHost');
+  var ICONS = { ok: '#i-check', warn: '#i-alert', info: '#i-info' };
+  function toast(msg, type) {
+    type = type || 'ok';
+    var el = document.createElement('div');
+    el.className = 'toast ' + type;
+    el.innerHTML = '<svg class="ic"><use href="' + (ICONS[type] || '#i-info') + '"></use></svg><span>' + esc(msg) + '</span>';
+    toastHost.appendChild(el);
+    setTimeout(function () {
+      el.classList.add('out');
+      setTimeout(function () { el.remove(); }, 220);
+    }, 2600);
+  }
+
+  /* ---------------- 总览：重点关注 ---------------- */
+  var WATCH = [
+    { name: '洛阳钼业', code: '603993', price: '13.29', unit: '元', chg: 2.15, d20: 11.4, spark: 'luoyang' },
+    { name: '沪金', code: 'AU', price: '874.58', unit: '元/克', chg: 1.62, d20: 4.8, spark: 'au' },
+    { name: '沪银', code: 'AG', price: '12,523.0', unit: '元/千克', chg: 2.34, d20: 7.2, spark: 'ag' },
+    { name: '沪铜', code: 'CU', price: '105,860', unit: '元/吨', chg: 0.94, d20: 3.1, spark: 'cu' },
+    { name: '原油', code: 'SC', price: '633.90', unit: '元/桶', chg: 1.18, d20: -2.4, spark: 'sc' },
+    { name: '沪深300', code: '000300', price: '4,054.3', unit: '点', chg: 0.62, d20: 1.6, spark: 'hs300' },
+    { name: '美元指数', code: 'DXY', price: '102.240', unit: '点', chg: 0.34, d20: 1.2, spark: 'dxy' }
+  ];
+  function renderWatch() {
+    var host = $('#watchGrid');
+    if (!host) return;
+    host.innerHTML = WATCH.map(function (w) {
+      var c = dirCls(w.chg), c20 = dirCls(w.d20);
+      var vals = series(w.spark, 26, w.chg + w.d20 * 0.8, 2.4);
+      var color = w.chg >= 0 ? 'var(--up-color)' : 'var(--down-color)';
+      return '<article class="watch-card" tabindex="0" role="button" data-watch="' + esc(w.name) + '" title="' + esc(w.name + ' ' + w.code + ' · 点击查看历史走势') + '">' +
+        '<div class="watch-top"><span class="w-name">' + esc(w.name) + '</span><span class="w-code">' + esc(w.code) + '</span></div>' +
+        '<div class="w-price">' + esc(w.price) + '<small>' + esc(w.unit) + '</small></div>' +
+        '<div class="w-sub"><span class="w-chg ' + c + '">' + arrow(w.chg) + ' ' + w.chg.toFixed(2) + '%</span>' +
+        '<span class="w-20d">20日 <b class="' + c20 + '">' + (w.d20 > 0 ? '+' : '') + w.d20.toFixed(1) + '%</b></span></div>' +
+        '<div class="w-spark">' + spark(vals, 100, 22, color, true) + '</div>' +
+        '</article>';
+    }).join('');
+    $$('.watch-card', host).forEach(function (card) {
+      card.addEventListener('click', function () {
+        toast('已选择「' + card.dataset.watch + '」· 历史走势面板将在 Vue 版接入', 'info');
+      });
+      card.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.click(); }
+      });
+    });
+  }
+
+  /* ---------------- 总览：跨资产热力图 ---------------- */
+  var HEAT = [
+    { label: '贵金属', items: [['沪金', 1.62], ['沪银', 2.34], ['COMEX金', 0.86], ['伦敦金现', 0.71], ['伦敦银现', 1.92]] },
+    { label: '有色金属', items: [['沪铜', 0.94], ['LME铜', 1.36], ['沪铝', -0.42], ['沪锌', 0.31], ['沪镍', -0.88], ['洛阳钼业', 2.15]] },
+    { label: '能源化工', items: [['原油', 1.18], ['WTI', 0.92], ['布伦特', 0.85], ['天然气', -1.24]] },
+    { label: '黑色建材', items: [['铁矿石', 1.52], ['螺纹钢', -0.25], ['焦煤', 0.94], ['热卷', -0.18]] },
+    { label: '股指', items: [['沪深300', 0.62], ['上证指数', 0.48], ['恒生指数', -0.35], ['标普500', 0.22], ['纳指', 0.41]] },
+    { label: '汇率', items: [['美元指数', 0.34], ['离岸人民币', -0.21], ['欧元美元', -0.28], ['美元日元', 0.46]] }
+  ];
+  function renderHeat() {
+    var host = $('#heatBody');
+    if (!host) return;
+    host.innerHTML = HEAT.map(function (g) {
+      var tiles = g.items.map(function (it) {
+        var v = it[1];
+        var alpha = Math.min(0.16 + Math.abs(v) * 0.21, 0.62);
+        var color = v >= 0 ? 'var(--up)' : 'var(--down)';
+        var strong = alpha > 0.43 ? ' strong' : '';
+        var bg = 'color-mix(in srgb, ' + color + ' ' + Math.round(alpha * 100) + '%, transparent)';
+        return '<div class="heat-tile' + strong + '" style="background:' + bg + '" title="' + esc(it[0] + ' ' + fmtPct(v)) + '">' +
+          '<span class="ht-name">' + esc(it[0]) + '</span><span class="ht-pct">' + fmtPct(v) + '</span></div>';
+      }).join('');
+      return '<div class="heat-row"><div class="heat-label">' + esc(g.label) + '</div><div class="heat-tiles">' + tiles + '</div></div>';
+    }).join('');
+  }
+
+  /* ---------------- 总览：利率快照 ---------------- */
+  var RATES = [
+    { name: 'SOFR', val: '4.32%', d: '−0.01', cls: 'down', seed: 'sofr' },
+    { name: 'EFFR', val: '4.33%', d: '0.00', cls: 'flat', seed: 'effr' },
+    { name: 'SOFR−EFFR', val: '−0.01pp', d: '−0.01', cls: 'down', seed: 'spread', sub: true },
+    { name: 'US 2Y', val: '4.28%', d: '+0.04', cls: 'up', seed: 'us2y' },
+    { name: 'US 10Y', val: '4.42%', d: '+0.05', cls: 'up', seed: 'us10y' },
+    { name: 'US 30Y', val: '4.55%', d: '+0.03', cls: 'up', seed: 'us30y' },
+    { name: 'CN 10Y', val: '2.15%', d: '−0.01', cls: 'down', seed: 'cn10y' },
+    { name: 'JP 10Y', val: '1.62%', d: '+0.02', cls: 'up', seed: 'jp10y' },
+    { name: 'DE 10Y', val: '2.41%', d: '+0.03', cls: 'up', seed: 'de10y' },
+    { name: 'FR 10Y', val: '3.18%', d: '+0.04', cls: 'up', seed: 'fr10y' }
+  ];
+  function renderRates() {
+    var host = $('#ratesBody');
+    if (!host) return;
+    host.innerHTML = RATES.map(function (r) {
+      var color = r.cls === 'up' ? 'var(--up-color)' : (r.cls === 'down' ? 'var(--down-color)' : 'var(--accent)');
+      var trend = r.cls === 'up' ? 1.2 : (r.cls === 'down' ? -1.2 : 0.2);
+      var vals = series(r.seed, 18, trend, 1.1);
+      return '<div class="rate-row"><span class="rate-name' + (r.sub ? ' is-sub' : '') + '">' + esc(r.name) + '</span>' +
+        '<span class="rate-val">' + r.val + '</span>' +
+        '<span class="rate-chg ' + r.cls + '">' + r.d + '</span>' +
+        '<span class="rate-spark">' + spark(vals, 70, 15, color, false) + '</span></div>';
+    }).join('');
+  }
+
+  /* ---------------- 总览：告警 ---------------- */
+  var ALERTS = [
+    { sev: 'high', text: '沪银 AG 日涨幅 2.34%，突破 2% 单日阈值', meta: '行情告警 · 贵金属', time: '09:42' },
+    { sev: 'high', text: 'SOFR−EFFR 利差转负（−0.01pp），隔夜资金面边际转松', meta: '利差告警 · 利率', time: '08:15' },
+    { sev: 'mid', text: '美元指数上破 102 关口至 102.240，压制贵金属', meta: '阈值告警 · 汇率', time: '11-12 21:05' },
+    { sev: 'mid', text: '沪铜库存周环比 −3.2%，连续三周去化', meta: '库存异动 · 有色', time: '11-12 16:30' },
+    { sev: 'low', text: '郑商所夜盘行情延迟 18 分钟，现已恢复', meta: '数据源 · 延迟', time: '11-12 22:10' }
+  ];
+  function renderAlerts() {
+    var host = $('#alertsBody');
+    if (!host) return;
+    host.innerHTML = ALERTS.slice(0, 4).map(function (a) {
+      return '<div class="alert-row"><span class="sev sev--' + a.sev + '"></span>' +
+        '<div><div class="alert-text">' + esc(a.text) + '</div><div class="alert-meta"><span>' + esc(a.meta) + '</span><span>规则已启用</span></div></div>' +
+        '<span class="alert-time">' + esc(a.time) + '</span></div>';
+    }).join('');
+  }
+
+  /* ---------------- 总览：财经日历 + 事件 ---------------- */
+  var CAL = [
+    { t: '21:30', region: '美国', name: '10 月 CPI 同比', imp: '高', note: '预期 3.1%' },
+    { t: '23:00', region: '美国', name: '11 月密歇根消费者信心初值', imp: '中', note: '预期 58.2' },
+    { t: '23:30', region: '美国', name: 'EIA 原油库存周报', imp: '中', note: '前值 −120 万桶' },
+    { t: '03:00', region: '美国', name: '美联储官员公开讲话', imp: '低', note: '次日' }
+  ];
+  var EVENTS = [
+    { d: '12-10', name: 'FOMC 利率决议', note: '降息概率 52%' },
+    { d: '12-01', name: 'OPEC+ 部长级会议', note: '产量政策' },
+    { d: '11-17', name: '中国 11 月 LPR 报价', note: '预期持平' }
+  ];
+  function renderCalendar() {
+    var host = $('#calendarBody');
+    if (!host) return;
+    host.innerHTML = CAL.slice(0, 3).map(function (c) {
+      return '<div class="cal-row"><span class="cal-time">' + c.t + '</span><span class="cal-region">' + c.region + '</span>' +
+        '<span class="cal-name" title="' + esc(c.name) + '">' + esc(c.name) + '</span>' +
+        '<span class="cal-imp' + (c.imp === '高' ? ' high' : '') + '">' + c.imp + ' · ' + esc(c.note) + '</span></div>';
+    }).join('') +
+      '<div class="cal-sep">近期事件</div>' +
+      EVENTS.map(function (e) {
+        return '<div class="tl-row"><span class="tl-date">' + e.d + '</span><span class="tl-name">' + esc(e.name) + '</span><span class="tl-note">' + esc(e.note) + '</span></div>';
+      }).join('');
+  }
+
+  /* ---------------- 市场行情：数据 ---------------- */
+  var CATS = ['贵金属', '有色金属', '能源化工', '黑色建材', '农产品', '指数个股', '汇率'];
+  var INSTRUMENTS = [
+    { cat: '贵金属', code: 'AU', name: '沪金', price: 874.58, disp: '874.58', unit: '元/克', chgAbs: 13.94, chg: 1.62, src: '上期所', time: '15:00', mkt: '国内', status: 'ok', ev: 'E-04' },
+    { cat: '贵金属', code: 'AG', name: '沪银', price: 12523.0, disp: '12,523.0', unit: '元/千克', chgAbs: 286.0, chg: 2.34, src: '上期所', time: '15:00', mkt: '国内', status: 'ok', ev: 'E-04' },
+    { cat: '贵金属', code: 'GC', name: 'COMEX黄金', price: 4077.8, disp: '4,077.8', unit: '美元/盎司', chgAbs: 34.8, chg: 0.86, src: 'CME', time: '05:59', mkt: '外盘', status: 'ok' },
+    { cat: '贵金属', code: 'XAU', name: '伦敦金现', price: 4068.0, disp: '4,068.0', unit: '美元/盎司', chgAbs: 28.7, chg: 0.71, src: 'LBMA', time: '06:00', mkt: '外盘', status: 'ok' },
+    { cat: '贵金属', code: 'XAG', name: '伦敦银现', price: 51.42, disp: '51.42', unit: '美元/盎司', chgAbs: 0.97, chg: 1.92, src: 'LBMA', time: '06:00', mkt: '外盘', status: 'ok' },
+    { cat: '有色金属', code: 'CU', name: '沪铜', price: 105860, disp: '105,860', unit: '元/吨', chgAbs: 986, chg: 0.94, src: '上期所', time: '15:00', mkt: '国内', status: 'ok', ev: 'E-03' },
+    { cat: '有色金属', code: 'HG', name: 'LME铜', price: 13762.4, disp: '13,762.4', unit: '美元/吨', chgAbs: 184.6, chg: 1.36, src: 'LME', time: '05:55', mkt: '外盘', status: 'ok', ev: 'E-03' },
+    { cat: '有色金属', code: 'AL', name: '沪铝', price: 22410, disp: '22,410', unit: '元/吨', chgAbs: -94, chg: -0.42, src: '上期所', time: '15:00', mkt: '国内', status: 'ok' },
+    { cat: '有色金属', code: 'ZN', name: '沪锌', price: 25180, disp: '25,180', unit: '元/吨', chgAbs: 78, chg: 0.31, src: '上期所', time: '15:00', mkt: '国内', status: 'ok' },
+    { cat: '有色金属', code: 'NI', name: '沪镍', price: 128600, disp: '128,600', unit: '元/吨', chgAbs: -1140, chg: -0.88, src: '上期所', time: '15:00', mkt: '国内', status: 'ok' },
+    { cat: '能源化工', code: 'SC', name: '原油', price: 633.9, disp: '633.90', unit: '元/桶', chgAbs: 7.4, chg: 1.18, src: '上期能源', time: '15:00', mkt: '国内', status: 'ok', ev: 'E-02' },
+    { cat: '能源化工', code: 'CL', name: 'WTI原油', price: 72.84, disp: '72.84', unit: '美元/桶', chgAbs: 0.66, chg: 0.92, src: 'NYMEX', time: '05:59', mkt: '外盘', status: 'ok' },
+    { cat: '能源化工', code: 'BRN', name: '布伦特原油', price: 76.51, disp: '76.51', unit: '美元/桶', chgAbs: 0.64, chg: 0.85, src: 'ICE', time: '05:59', mkt: '外盘', status: 'ok' },
+    { cat: '能源化工', code: 'NG', name: '天然气', price: 3.412, disp: '3.412', unit: '美元/百万英热', chgAbs: -0.043, chg: -1.24, src: 'NYMEX', time: '05:59', mkt: '外盘', status: 'ok' },
+    { cat: '能源化工', code: 'TA', name: 'PTA', price: null, disp: '—', unit: '', chgAbs: null, chg: null, src: '郑商所', time: '—', mkt: '国内', status: 'pending' },
+    { cat: '能源化工', code: 'MA', name: '甲醇', price: null, disp: '—', unit: '', chgAbs: null, chg: null, src: '郑商所', time: '—', mkt: '国内', status: 'pending' },
+    { cat: '黑色建材', code: 'I', name: '铁矿石', price: 686.5, disp: '686.50', unit: '元/吨', chgAbs: 10.3, chg: 1.52, src: '大商所', time: '15:00', mkt: '国内', status: 'ok' },
+    { cat: '黑色建材', code: 'RB', name: '螺纹钢', price: 3182, disp: '3,182', unit: '元/吨', chgAbs: -8, chg: -0.25, src: '上期所', time: '15:00', mkt: '国内', status: 'ok' },
+    { cat: '黑色建材', code: 'JM', name: '焦煤', price: null, disp: '—', unit: '', chgAbs: null, chg: null, src: '大商所', time: '—', mkt: '国内', status: 'pending' },
+    { cat: '黑色建材', code: 'HC', name: '热卷', price: null, disp: '—', unit: '', chgAbs: null, chg: null, src: '上期所', time: '—', mkt: '国内', status: 'pending' },
+    { cat: '农产品', code: 'M', name: '豆粕', price: 3024, disp: '3,024', unit: '元/吨', chgAbs: 10, chg: 0.33, src: '大商所', time: '15:00', mkt: '国内', status: 'ok' },
+    { cat: '农产品', code: 'Y', name: '豆油', price: null, disp: '—', unit: '', chgAbs: null, chg: null, src: '大商所', time: '—', mkt: '国内', status: 'pending' },
+    { cat: '农产品', code: 'P', name: '棕榈油', price: 8846, disp: '8,846', unit: '元/吨', chgAbs: 58, chg: 0.66, src: '大商所', time: '15:00', mkt: '国内', status: 'ok' },
+    { cat: '农产品', code: 'C', name: '玉米', price: null, disp: '—', unit: '', chgAbs: null, chg: null, src: '大商所', time: '—', mkt: '国内', status: 'pending' },
+    { cat: '农产品', code: 'CF', name: '棉花', price: 14180, disp: '14,180', unit: '元/吨', chgAbs: -41, chg: -0.29, src: '郑商所', time: '14:42', mkt: '国内', status: 'delayed' },
+    { cat: '指数个股', code: '000300', name: '沪深300', price: 4054.3, disp: '4,054.3', unit: '点', chgAbs: 25.0, chg: 0.62, src: '中证指数', time: '15:00', mkt: '国内', status: 'ok' },
+    { cat: '指数个股', code: '000001', name: '上证指数', price: 3412.8, disp: '3,412.8', unit: '点', chgAbs: 16.3, chg: 0.48, src: '上交所', time: '15:00', mkt: '国内', status: 'ok' },
+    { cat: '指数个股', code: 'HSI', name: '恒生指数', price: 26142.6, disp: '26,142.6', unit: '点', chgAbs: -91.8, chg: -0.35, src: '港交所', time: '16:08', mkt: '外盘', status: 'ok' },
+    { cat: '指数个股', code: 'SPX', name: '标普500', price: 6842.1, disp: '6,842.1', unit: '点', chgAbs: 15.1, chg: 0.22, src: 'CBOE', time: '05:00', mkt: '外盘', status: 'ok' },
+    { cat: '指数个股', code: 'IXIC', name: '纳斯达克', price: 23510.4, disp: '23,510.4', unit: '点', chgAbs: 96.0, chg: 0.41, src: 'NASDAQ', time: '05:00', mkt: '外盘', status: 'ok' },
+    { cat: '指数个股', code: '603993', name: '洛阳钼业', price: 13.29, disp: '13.29', unit: '元/股', chgAbs: 0.28, chg: 2.15, src: '上交所', time: '15:00', mkt: '国内', status: 'ok', ev: 'E-03' },
+    { cat: '汇率', code: 'DXY', name: '美元指数', price: 102.24, disp: '102.240', unit: '点', chgAbs: 0.35, chg: 0.34, src: 'ICE', time: '05:59', mkt: '外盘', status: 'ok', ev: 'E-02' },
+    { cat: '汇率', code: 'USDCNH', name: '离岸人民币', price: 6.6712, disp: '6.6712', unit: '', chgAbs: -0.014, chg: -0.21, src: 'CFETS', time: '23:30', mkt: '外盘', status: 'ok' },
+    { cat: '汇率', code: 'EURUSD', name: '欧元美元', price: 1.0846, disp: '1.0846', unit: '', chgAbs: -0.003, chg: -0.28, src: 'ICE', time: '05:59', mkt: '外盘', status: 'ok' },
+    { cat: '汇率', code: 'USDJPY', name: '美元日元', price: null, disp: '—', unit: '', chgAbs: null, chg: null, src: 'ICE', time: '—', mkt: '外盘', status: 'pending' }
+  ];
+  var mktState = { q: '', seg: '全部', cat: '全部', sortKey: 'chg', sortDir: 'desc' };
+
+  function renderChips() {
+    var host = $('#mktChips');
+    if (!host) return;
+    var counts = {};
+    INSTRUMENTS.forEach(function (x) { counts[x.cat] = (counts[x.cat] || 0) + 1; });
+    var items = [{ k: '全部', n: INSTRUMENTS.length }].concat(CATS.map(function (c) { return { k: c, n: counts[c] || 0 }; }));
+    host.innerHTML = items.map(function (it) {
+      return '<button class="chip' + (mktState.cat === it.k ? ' active' : '') + '" type="button" data-cat="' + esc(it.k) + '">' +
+        esc(it.k) + '<em>' + it.n + '</em></button>';
+    }).join('');
+    $$('[data-cat]', host).forEach(function (b) {
+      b.addEventListener('click', function () {
+        mktState.cat = b.dataset.cat;
+        renderChips(); renderMarket();
+      });
+    });
+  }
+
+  function filteredInstruments() {
+    var s = mktState.seg, q = mktState.q.trim().toLowerCase(), c = mktState.cat;
+    return INSTRUMENTS.filter(function (x) {
+      if (s !== '全部' && x.mkt !== s) return false;
+      if (c !== '全部' && x.cat !== c) return false;
+      if (q && (x.name + ' ' + x.code).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+  }
+
+  function sortList(list) {
+    var k = mktState.sortKey, dir = mktState.sortDir === 'desc' ? -1 : 1;
+    return list.slice().sort(function (a, b) {
+      var va = a[k], vb = b[k];
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return (va - vb) * dir;
+    });
+  }
+
+  function renderMarket() {
+    var host = $('#mktBody');
+    if (!host) return;
+    var list = filteredInstruments();
+    var byCat = {};
+    list.forEach(function (x) { (byCat[x.cat] = byCat[x.cat] || []).push(x); });
+    var html = '';
+    CATS.forEach(function (cat) {
+      var rows = byCat[cat];
+      if (!rows || !rows.length) return;
+      var ups = rows.filter(function (x) { return x.chg > 0; }).length;
+      var downs = rows.filter(function (x) { return x.chg < 0; }).length;
+      html += '<tr class="group-row"><td colspan="8">' + cat +
+        '<span class="g-count">' + rows.length + ' 个品种</span>' +
+        '<span class="g-stat">' + ups + ' 涨 ' + downs + ' 跌</span></td></tr>';
+      sortList(rows).forEach(function (x) {
+        var pending = x.status === 'pending';
+        var chgCls = pending ? 'flat' : dirCls(x.chg);
+        var priceCell = pending ? '<span class="pending">—</span>' :
+          esc(x.disp) + (x.unit ? ' <span style="font-size:8.5px;color:var(--dim);margin-left:2px">' + esc(x.unit) + '</span>' : '');
+        var absCell = pending ? '<span class="pending">—</span>' :
+          '<span class="' + chgCls + '">' + (x.chgAbs > 0 ? '+' : '') + x.chgAbs.toLocaleString('en-US') + '</span>';
+        var pctCell;
+        if (pending) {
+          pctCell = '<span class="pending">—</span>';
+        } else {
+          var w = Math.min(Math.abs(x.chg) / 3, 1) * 100;
+          pctCell = '<span class="chg-bar"><span class="bar"><i class="' + chgCls + '" style="width:' + w.toFixed(0) + '%"></i></span>' +
+            '<span class="' + chgCls + '">' + arrow(x.chg) + ' ' + Math.abs(x.chg).toFixed(2) + '%</span></span>';
+        }
+        var srcCell = pending ? '<span class="badge badge--sm">待接入</span>' :
+          '<span class="src">' + esc(x.src) + '</span>' + (x.status === 'delayed' ? ' <span class="badge badge--warn badge--sm">延迟</span>' : '');
+        var timeCell = pending ? '<span class="tm">—</span>' : '<span class="tm" title="2026-11-13 ' + esc(x.time) + ' 北京时间">' + esc(x.time) + '</span>';
+        var evCell = x.ev ? '<button class="link-btn" type="button" data-ev="' + x.ev + '">' + x.ev + '</button>' : '<span class="dim">—</span>';
+        html += '<tr><td><span class="sym">' + esc(x.code) + '</span></td>' +
+          '<td class="nm">' + esc(x.name) + '</td>' +
+          '<td class="num">' + priceCell + '</td>' +
+          '<td class="num">' + absCell + '</td>' +
+          '<td class="num">' + pctCell + '</td>' +
+          '<td>' + srcCell + '</td>' +
+          '<td>' + timeCell + '</td>' +
+          '<td class="num">' + evCell + '</td></tr>';
+      });
+    });
+    host.innerHTML = html || '<tr><td colspan="8" style="height:120px;text-align:center;color:var(--dim)">没有匹配的品种 · 清空筛选条件后重试</td></tr>';
+    var count = list.length;
+    $('#mktRowCount').textContent = count;
+    $('#mktCount').textContent = '共 ' + count + ' 个品种 · ' + (mktState.cat === '全部' ? '7 个类别' : mktState.cat);
+    var dirText = mktState.sortDir === 'desc' ? '降序' : '升序';
+    var keyText = { chg: '涨跌幅', chgAbs: '涨跌', price: '最新' }[mktState.sortKey] || '涨跌幅';
+    $('#mktSortBadge').textContent = '按 ' + keyText + ' ' + dirText;
+    $('#mktSortFoot').textContent = '排序：' + keyText + ' ' + (mktState.sortDir === 'desc' ? '↓' : '↑');
+    $$('.th-sort').forEach(function (b) {
+      var on = b.dataset.sort === mktState.sortKey;
+      b.classList.toggle('is-sorted', on);
+      b.classList.toggle('asc', on && mktState.sortDir === 'asc');
+      var use = b.querySelector('use');
+      if (use) use.setAttribute('href', on ? '#i-chevron-down' : '#i-sort');
+    });
+    bindEvidenceButtons(host);
+  }
+
+  $$('.th-sort').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.dataset.sort;
+      if (mktState.sortKey === key) mktState.sortDir = mktState.sortDir === 'desc' ? 'asc' : 'desc';
+      else { mktState.sortKey = key; mktState.sortDir = 'desc'; }
+      renderMarket();
+    });
+  });
+  var mktSearch = $('#mktSearch');
+  if (mktSearch) {
+    mktSearch.addEventListener('input', function () { mktState.q = mktSearch.value; renderMarket(); });
+  }
+  $$('#mktSeg button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      mktState.seg = b.dataset.seg;
+      $$('#mktSeg button').forEach(function (x) { x.classList.toggle('active', x === b); });
+      renderMarket();
+    });
+  });
+
+  /* ---------------- 市场：会员持仓 ---------------- */
+  var MEMBER_NAMES = ['永安期货', '中信期货', '国泰君安', '海通期货', '银河期货', '华泰期货', '方正中期', '东证期货', '申银万国', '广发期货', '南华期货', '浙商期货', '光大期货', '中粮期货', '五矿经易', '兴证期货', '东吴期货', '建信期货', '招商期货', '国投安信'];
+  function memberSet(mult, rankSeed) {
+    var r = rng(seedOf(rankSeed));
+    var long = [], short = [];
+    for (var i = 0; i < 10; i++) {
+      var pos = Math.round((9200 - i * 520 + r() * 900) * mult);
+      var chg = Math.round((r() - 0.45) * 600 * mult);
+      long.push([MEMBER_NAMES[i], pos, chg]);
+    }
+    for (var j = 0; j < 10; j++) {
+      var pos2 = Math.round((8800 - j * 490 + r() * 900) * mult);
+      var chg2 = Math.round((r() - 0.5) * 560 * mult);
+      short.push([MEMBER_NAMES[MEMBER_NAMES.length - 1 - j], pos2, chg2]);
+    }
+    return { long: long, short: short };
+  }
+  var MEMBER_DATA = {
+    AU: { mult: 1, seed: 'au-members', net: '+18,420', ratio: '1.08', sub: '沪金 AU 主力 · 2026-11-13 · 净持仓 = 多 − 空' },
+    AG: { mult: 2.4, seed: 'ag-members', net: '+26,850', ratio: '1.14', sub: '沪银 AG 主力 · 2026-11-13 · 净持仓 = 多 − 空' },
+    CU: { mult: 0.7, seed: 'cu-members', net: '−4,960', ratio: '0.96', sub: '沪铜 CU 主力 · 2026-11-13 · 净持仓 = 多 − 空' }
+  };
+  var currentMember = 'AU';
+  function renderMembers() {
+    var data = MEMBER_DATA[currentMember];
+    var set = memberSet(data.mult, data.seed);
+    function row(r, idx) {
+      var cls = r[2] > 0 ? 'up' : (r[2] < 0 ? 'down' : 'flat');
+      return '<div class="member-row"><span class="member-rank">' + (idx + 1) + '</span>' +
+        '<span class="member-name">' + esc(r[0]) + '</span>' +
+        '<span class="member-pos">' + r[1].toLocaleString('en-US') + '</span>' +
+        '<span class="member-chg ' + cls + '">' + (r[2] > 0 ? '+' : '') + r[2].toLocaleString('en-US') + '</span></div>';
+    }
+    $('#memberLong').innerHTML = set.long.map(row).join('');
+    $('#memberShort').innerHTML = set.short.map(row).join('');
+    $('#memberSub').textContent = data.sub;
+    var netEl = $('#memberNet');
+    netEl.textContent = data.net + ' 手';
+    netEl.className = 'mono ' + (data.net.charAt(0) === '+' ? 'up' : 'down');
+    $('#memberRatio').textContent = data.ratio;
+    $$('#memberSeg button').forEach(function (b) { b.classList.toggle('active', b.dataset.mem === currentMember); });
+  }
+  $$('#memberSeg button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      currentMember = b.dataset.mem;
+      renderMembers();
+      toast('已切换会员持仓品种：' + b.textContent, 'info');
+    });
+  });
+
+  /* ---------------- 证据抽屉 ---------------- */
+  var EVIDENCE = {
+    'E-01': {
+      title: '美联储 11 月 FOMC 会议纪要',
+      source: '美联储（Federal Reserve）',
+      type: '官方会议纪要',
+      time: '2026-11-13 03:00',
+      fetched: '2026-11-13 03:12',
+      level: 5,
+      levelLabel: 'A · 高',
+      excerpt: '…多数与会者认为，在通胀回落路径确认之前，进一步调整政策利率仍需保持耐心。若劳动力市场出现超预期走弱，12 月降息可能是合适的。<mark>市场对 12 月降息的定价由此前的 58% 回落至 52%</mark>，美元指数与长端美债收益率同步上行…',
+      claims: [['12月降息概率', '52%'], ['较前值', '−6pp'], ['美元指数', '102.240'], ['US10Y', '4.42%']],
+      tags: ['沪金 AU', '沪银 AG', '美元指数 DXY', 'US10Y'],
+      impact: '该证据直接支撑「美元与长端利率上行压制贵金属」的主线判断，并将 12 月降息定价下修 6pp，是本期最高权重证据（权重 0.32）。',
+      timeline: [['03:00', '会议纪要发布'], ['03:12', 'EPIC 采集并入库'], ['08:15', '触发利差 / 美元告警'], ['17:30', '纳入每日简报 E-01']]
+    },
+    'E-02': {
+      title: '美元指数与美债收益率同步上行',
+      source: 'ICE / 美国财政部',
+      type: '行情与收益率曲线',
+      time: '2026-11-12 21:05',
+      fetched: '2026-11-12 21:08',
+      level: 5,
+      levelLabel: 'A · 高',
+      excerpt: '美元指数收于 <mark>102.240</mark>，日涨 0.34%，上破 102 关口；<mark>10 年期美债收益率升至 4.42%</mark>（+5bp），30 年期升至 4.55%，10−2 利差走阔至 14bp…',
+      claims: [['美元指数', '102.240'], ['US10Y', '4.42%'], ['US30Y', '4.55%'], ['10−2 利差', '14bp']],
+      tags: ['美元指数 DXY', 'US10Y', 'US30Y', '人民币汇率'],
+      impact: '美元与长端利率同步上行提高贵金属持有机会成本，是本期贵金属承压的核心传导链条；同时压制人民币资产估值。',
+      timeline: [['21:05', '纽约收盘数据入库'], ['21:08', 'EPIC 计算利差'], ['21:30', '美元指数突破 102 触发告警'], ['17:30', '纳入简报第 03 节']]
+    },
+    'E-03': {
+      title: '铜库存周报：三大交易所同步去化',
+      source: '上期所 / LME / COMEX',
+      type: '库存周报',
+      time: '2026-11-13 15:30',
+      fetched: '2026-11-13 15:36',
+      level: 4,
+      levelLabel: 'B · 较高',
+      excerpt: 'LME 铜库存周环比 <mark>−3.2%</mark>，上期所铜库存周环比 −2.1%，国内社会库存连续三周去化。供给端冶炼厂检修与进口到港偏慢，短期供需偏紧…',
+      claims: [['LME 库存周环比', '−3.2%'], ['上期所库存', '−2.1%'], ['沪铜主力', '105,860'], ['洛阳钼业', '+2.15%']],
+      tags: ['沪铜 CU', 'LME铜 HG', '洛阳钼业 603993'],
+      impact: '库存去化验证「铜受供给扰动与库存去化支撑」的判断，为沪铜与洛阳钼业的偏强表现提供基本面依据。',
+      timeline: [['15:30', '交易所库存数据发布'], ['15:36', 'EPIC 采集入库'], ['15:40', '库存异动规则命中'], ['17:30', '纳入简报第 01 / 04 节']]
+    },
+    'E-04': {
+      title: '金银比与贵金属资金流',
+      source: '世界黄金协会 / LBMA',
+      type: '资金流与比价',
+      time: '2026-11-13 06:10',
+      fetched: '2026-11-13 06:14',
+      level: 4,
+      levelLabel: 'B · 较高',
+      excerpt: '全球黄金 ETF 连续 5 日净流入，白银 ETF 持仓同步回升；金银比回落至 <mark>82.4</mark>，沪银日涨幅 2.34% 强于沪金 1.62%…',
+      claims: [['金银比', '82.4'], ['沪银日涨幅', '+2.34%'], ['沪金日涨幅', '+1.62%'], ['黄金 ETF', '连续 5 日净流入']],
+      tags: ['沪银 AG', '沪金 AU', '金银比'],
+      impact: '金银比自高位回落，白银弹性更强，支撑「贵金属内部结构分化」的观察；但美元与利率仍限制整体上行空间。',
+      timeline: [['06:10', 'LBMA 定盘价与 ETF 数据更新'], ['06:14', 'EPIC 计算金银比'], ['09:42', '沪银涨幅突破阈值'], ['17:30', '纳入简报第 01 节']]
+    }
+  };
+  var currentEv = 'E-01';
+  var drawer = $('#evidenceDrawer');
+  var scrim = $('#scrim');
+  var settingsDrawer = $('#settingsDrawer');
+
+  function confBars(level) {
+    var s = '';
+    for (var i = 1; i <= 5; i++) s += '<i class="' + (i <= level ? 'on' : '') + '"></i>';
+    return s;
+  }
+  function renderEvidence(id) {
+    var ev = EVIDENCE[id];
+    if (!ev) return;
+    currentEv = id;
+    $('#evId').textContent = id;
+    $('#evTitle').textContent = ev.title;
+    var body = '<div class="ev-source">' +
+      '<div class="ev-source-top"><span class="badge badge--accent badge--sm">' + esc(ev.type) + '</span>' +
+      '<span class="ev-source-name">' + esc(ev.source) + '</span>' +
+      '<span class="badge badge--sm" style="margin-left:auto">' + esc(ev.levelLabel) + '</span></div>' +
+      '<dl class="ev-kv"><dt>证据编号</dt><dd>' + id + '</dd>' +
+      '<dt>发布时间</dt><dd>' + esc(ev.time) + '</dd>' +
+      '<dt>采集时间</dt><dd>' + esc(ev.fetched) + '</dd>' +
+      '<dt>可信度</dt><dd><span class="conf"><span class="conf-bars">' + confBars(ev.level) + '</span>' + esc(ev.levelLabel) + '</span></dd>' +
+      '<dt>关联标的</dt><dd>' + esc(ev.tags.join(' / ')) + '</dd></dl></div>' +
+      '<div class="ev-section"><div class="ev-label">原文摘录</div><div class="ev-quote">' + ev.excerpt + '</div></div>' +
+      '<div class="ev-section"><div class="ev-label">可提取断言</div><div class="ev-claims">' +
+      ev.claims.map(function (c) { return '<span class="claim">' + esc(c[0]) + ' <b>' + esc(c[1]) + '</b></span>'; }).join('') +
+      '</div></div>' +
+      '<div class="ev-section"><div class="ev-label">对本期判断的影响</div><p class="ev-impact">' + esc(ev.impact) + '</p></div>' +
+      '<div class="ev-section"><div class="ev-label">证据链 · 时间线</div><div class="ev-timeline">' +
+      ev.timeline.map(function (t) { return '<div class="ev-tl-row"><span class="t">' + esc(t[0]) + '</span><span class="d">' + esc(t[1]) + '</span></div>'; }).join('') +
+      '</div></div>';
+    $('#evidenceBody').innerHTML = body;
+  }
+  function openEvidence(id) {
+    if (!EVIDENCE[id]) id = 'E-01';
+    closeSettings();
+    renderEvidence(id);
+    drawer.classList.add('open');
+    drawer.setAttribute('aria-hidden', 'false');
+    scrim.classList.add('show');
+    closePalette();
+    document.body.style.overflow = 'hidden';
+    $('.icon-close', drawer).focus();
+  }
+  function closeEvidence() {
+    drawer.classList.remove('open');
+    drawer.setAttribute('aria-hidden', 'true');
+    if (!settingsDrawer.classList.contains('open')) { scrim.classList.remove('show'); document.body.style.overflow = ''; }
+  }
+  function bindEvidenceButtons(root) {
+    $$('[data-ev]', root || document).forEach(function (b) {
+      if (b.dataset.evBound) return;
+      b.dataset.evBound = '1';
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openEvidence(b.dataset.ev);
+      });
+    });
+  }
+  bindEvidenceButtons();
+
+  /* ---------------- 设置抽屉 ---------------- */
+  function openSettings() {
+    closeEvidence();
+    settingsDrawer.classList.add('open');
+    settingsDrawer.setAttribute('aria-hidden', 'false');
+    scrim.classList.add('show');
+    closePalette();
+    document.body.style.overflow = 'hidden';
+    applyPrefs();
+  }
+  function closeSettings() {
+    settingsDrawer.classList.remove('open');
+    settingsDrawer.setAttribute('aria-hidden', 'true');
+    if (!drawer.classList.contains('open')) { scrim.classList.remove('show'); document.body.style.overflow = ''; }
+  }
+  function closeAllOverlays() { closeEvidence(); closeSettings(); closePalette(); }
+
+  scrim.addEventListener('click', closeAllOverlays);
+  $$('[data-close]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (b.dataset.close === 'evidence') closeEvidence(); else closeSettings();
+    });
+  });
+  $$('[data-ev-prev]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var keys = Object.keys(EVIDENCE);
+      var i = keys.indexOf(currentEv);
+      renderEvidence(keys[(i - 1 + keys.length) % keys.length]);
+    });
+  });
+  $$('[data-ev-next]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var keys = Object.keys(EVIDENCE);
+      var i = keys.indexOf(currentEv);
+      renderEvidence(keys[(i + 1) % keys.length]);
+    });
+  });
+
+  $('#openSettings').addEventListener('click', openSettings);
+  $('#btnAlerts').addEventListener('click', function () { toast('告警中心：3 条未读 · 2 条今日新增', 'warn'); });
+  $('#themeToggle').addEventListener('click', function () {
+    prefs.theme = prefs.theme === 'dark' ? 'light' : 'dark';
+    applyPrefs(); savePrefs();
+    toast('已切换为' + (prefs.theme === 'dark' ? '深色' : '浅色') + '主题', 'info');
+  });
+  $('#tokensThemeBtn').addEventListener('click', function () {
+    prefs.theme = prefs.theme === 'dark' ? 'light' : 'dark';
+    applyPrefs(); savePrefs();
+    toast('主题预览：' + (prefs.theme === 'dark' ? '深色' : '浅色'), 'info');
+  });
+  $$('#themeOpts .opt').forEach(function (b) {
+    b.addEventListener('click', function () { prefs.theme = b.dataset.themeOpt; applyPrefs(); savePrefs(); });
+  });
+  $$('#updownOpts .opt').forEach(function (b) {
+    b.addEventListener('click', function () {
+      prefs.updown = b.dataset.updownOpt; applyPrefs(); savePrefs();
+      toast('涨跌配色：' + (prefs.updown === 'red' ? '红涨绿跌' : '绿涨红跌'), 'info');
+    });
+  });
+  $$('#densityOpts button').forEach(function (b) {
+    b.addEventListener('click', function () { prefs.density = b.dataset.density; applyPrefs(); savePrefs(); });
+  });
+  $$('#refreshOpts button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      prefs.refresh = b.dataset.refresh; applyPrefs(); savePrefs();
+      toast(b.dataset.refresh === '0' ? '已改为仅手动刷新' : '自动刷新间隔：' + b.dataset.refresh + ' 秒', 'info');
+    });
+  });
+  $('#resetPrefs').addEventListener('click', function () {
+    prefs = { theme: 'dark', updown: 'red', density: 'normal', refresh: '30' };
+    applyPrefs(); savePrefs();
+    toast('已重置外观偏好', 'ok');
+  });
+
+  /* ---------------- 命令面板 ---------------- */
+  var paletteWrap = $('#paletteWrap');
+  var paletteInput = $('#paletteInput');
+  var paletteList = $('#paletteList');
+  var paletteIndex = 0;
+  var PALETTE = [
+    { group: '页面', label: '总览', hint: '工作台', icon: 'i-grid', keywords: 'overview dashboard kpi 首页', act: function () { go('overview'); } },
+    { group: '页面', label: '市场行情', hint: '35 个品种', icon: 'i-chart', keywords: 'market 行情 表格 外盘 国内', act: function () { go('market'); } },
+    { group: '页面', label: '每日简报', hint: '日报 · 第 128 期', icon: 'i-file', keywords: 'brief 日报 周报 月报 简报', act: function () { go('brief'); } },
+    { group: '页面', label: '设计规范', hint: 'Tokens', icon: 'i-palette', keywords: 'tokens design 色板 字阶 组件', act: function () { go('tokens'); } },
+    { group: '操作', label: '切换深色 / 浅色主题', hint: '外观', icon: 'i-moon', keywords: 'theme dark light 主题 深色 浅色', act: function () { $('#themeToggle').click(); } },
+    { group: '操作', label: '打开设置抽屉', hint: '偏好', icon: 'i-settings', keywords: 'settings 设置 密度 配色', act: openSettings },
+    { group: '操作', label: '查看证据 E-01 · 美联储会议纪要', hint: '证据', icon: 'i-shield-check', keywords: 'evidence 证据 美联储 fomc 降息', act: function () { openEvidence('E-01'); } },
+    { group: '操作', label: '打印当前简报', hint: '打印 / PDF', icon: 'i-print', keywords: 'print pdf 打印 导出', act: function () { go('brief'); setTimeout(function () { window.print(); }, 260); } },
+    { group: '操作', label: '复制简报摘要', hint: '剪贴板', icon: 'i-copy', keywords: 'copy 复制 摘要', act: function () { copyBrief(); } },
+    { group: '操作', label: '导出行情 CSV', hint: '下载', icon: 'i-download', keywords: 'csv 导出 行情 下载', act: exportCsv }
+  ];
+
+  function renderPalette() {
+    var q = paletteInput.value.trim().toLowerCase();
+    var list = PALETTE.filter(function (it) {
+      return !q || (it.label + ' ' + it.hint + ' ' + it.keywords).toLowerCase().indexOf(q) >= 0;
+    });
+    if (paletteIndex >= list.length) paletteIndex = Math.max(0, list.length - 1);
+    if (!list.length) { paletteList.innerHTML = '<div class="palette-empty">没有匹配的命令，试试「简报」「主题」或「证据」</div>'; return; }
+    var html = '', lastGroup = '';
+    list.forEach(function (it, i) {
+      if (it.group !== lastGroup) { html += '<div class="palette-group">' + it.group + '</div>'; lastGroup = it.group; }
+      html += '<div class="palette-item' + (i === paletteIndex ? ' active' : '') + '" data-pi="' + i + '" role="option">' +
+        '<svg class="ic"><use href="#' + it.icon + '"></use></svg><span>' + esc(it.label) + '</span>' +
+        '<span class="pi-hint">' + esc(it.hint) + '</span></div>';
+    });
+    paletteList.innerHTML = html;
+    $$('[data-pi]', paletteList).forEach(function (el) {
+      el.addEventListener('click', function () { runPaletteItem(list[+el.dataset.pi]); });
+      el.addEventListener('mousemove', function () {
+        paletteIndex = +el.dataset.pi;
+        $$('.palette-item', paletteList).forEach(function (x, i) { x.classList.toggle('active', i === paletteIndex); });
+      });
+    });
+    paletteList.dataset.count = list.length;
+    var active = $('.palette-item.active', paletteList);
+    if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
+  }
+  function openPalette() {
+    paletteWrap.classList.add('open');
+    paletteInput.value = '';
+    paletteIndex = 0;
+    renderPalette();
+    closeEvidence(); closeSettings();
+    document.body.style.overflow = 'hidden';
+    setTimeout(function () { paletteInput.focus(); }, 20);
+  }
+  function closePalette() {
+    if (!paletteWrap.classList.contains('open')) return;
+    paletteWrap.classList.remove('open');
+    if (!drawer.classList.contains('open') && !settingsDrawer.classList.contains('open')) document.body.style.overflow = '';
+  }
+  function runPaletteItem(it) {
+    if (!it) return;
+    closePalette();
+    it.act();
+  }
+  function paletteKeydown(e) {
+    if (!paletteWrap.classList.contains('open')) return;
+    var n = +paletteList.dataset.count || 0;
+    if (e.key === 'ArrowDown') { e.preventDefault(); paletteIndex = (paletteIndex + 1) % n; renderPalette(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); paletteIndex = (paletteIndex - 1 + n) % n; renderPalette(); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      var q = paletteInput.value.trim().toLowerCase();
+      var list = PALETTE.filter(function (it) { return !q || (it.label + ' ' + it.hint + ' ' + it.keywords).toLowerCase().indexOf(q) >= 0; });
+      runPaletteItem(list[paletteIndex]);
+    }
+  }
+  $('#openPalette').addEventListener('click', openPalette);
+  paletteInput.addEventListener('input', function () { paletteIndex = 0; renderPalette(); });
+  paletteInput.addEventListener('keydown', paletteKeydown);
+  paletteWrap.addEventListener('click', function (e) { if (e.target === paletteWrap) closePalette(); });
+  document.addEventListener('keydown', function (e) {
+    var tag = (e.target.tagName || '').toLowerCase();
+    var typing = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      if (paletteWrap.classList.contains('open')) closePalette(); else openPalette();
+      return;
+    }
+    if (e.key === 'Escape') { closeAllOverlays(); return; }
+    if (e.key === '/' && !typing) {
+      e.preventDefault();
+      if (currentView === 'market') { if (mktSearch) mktSearch.focus(); }
+      else openPalette();
+    }
+  });
+
+  /* ---------------- 简报交互 ---------------- */
+  function copyText(text, okMsg) {
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); toast(okMsg || '已复制到剪贴板', 'ok'); }
+      catch (e) { toast('浏览器拒绝了剪贴板访问', 'warn'); }
+      ta.remove();
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { toast(okMsg || '已复制到剪贴板', 'ok'); }, fallback);
+    } else fallback();
+  }
+  function briefText() {
+    var art = $('.article');
+    return art ? art.innerText.replace(/\n{3,}/g, '\n\n') : 'EPIC 每日简报';
+  }
+  function copyBrief() { copyText(briefText(), '简报摘要已复制到剪贴板'); }
+  function download(filename, content, mime) {
+    var blob = new Blob([content], { type: mime || 'text/plain;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1200);
+    toast('已开始下载：' + filename, 'ok');
+  }
+  function exportMarkdown() {
+    var text = '# EPIC 每日简报 · 2026-11-13 周五\n\n> ' + briefText() + '\n';
+    download('EPIC-日报-2026-11-13.md', text, 'text/markdown;charset=utf-8');
+  }
+  function exportCsv() {
+    var head = '类别,品种代码,名称,最新,涨跌,涨跌幅(%),数据源,时点,状态\n';
+    var body = INSTRUMENTS.map(function (x) {
+      return [x.cat, x.code, x.name, x.status === 'pending' ? '' : x.disp.replace(/,/g, ''), x.chgAbs == null ? '' : x.chgAbs, x.chg == null ? '' : x.chg.toFixed(2), x.src, x.time, x.status === 'pending' ? '待接入' : (x.status === 'delayed' ? '延迟' : '正常')].join(',');
+    }).join('\n');
+    download('EPIC-行情快照-2026-11-13.csv', '\ufeff' + head + body, 'text/csv;charset=utf-8');
+  }
+  function setBriefTab(name) {
+    $$('#briefSeg button').forEach(function (b) { b.classList.toggle('active', b.dataset.brief === name); });
+    $('#briefPageSub').textContent = '第 128 期 · ' + name;
+    toast('已切换到' + name + '视图（原型示例内容保持日报）', 'info');
+  }
+  $$('#briefSeg button').forEach(function (b) {
+    b.addEventListener('click', function () { setBriefTab(b.dataset.brief); });
+  });
+  $$('.toc-item').forEach(function (b) {
+    b.addEventListener('click', function () {
+      $$('.toc-item').forEach(function (x) { x.classList.toggle('active', x === b); });
+      var target = document.getElementById(b.dataset.target);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  });
+  $$('[data-action]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var action = b.dataset.action;
+      if (action === 'print') { toast('正在调用打印：仅输出简报正文', 'info'); setTimeout(function () { window.print(); }, 260); }
+      else if (action === 'copy-brief') copyBrief();
+      else if (action === 'copy-quote') {
+        copyText('EPIC 证据 ' + currentEv + ' · ' + (EVIDENCE[currentEv] ? EVIDENCE[currentEv].title : '') + '\n来源：' + (EVIDENCE[currentEv] ? EVIDENCE[currentEv].source : '') + '\n时间：' + (EVIDENCE[currentEv] ? EVIDENCE[currentEv].time : ''), '证据引用已复制');
+      }
+      else if (action === 'open-source') toast('离线原型：不跳转外部链接，Vue 版将打开原文地址', 'warn');
+      else if (action === 'export-md') exportMarkdown();
+      else if (action === 'export-csv') exportCsv();
+      else if (action === 'refresh') toast('行情已刷新 · 数据截至 2026-11-13 15:00（原型不请求后端）', 'ok');
+      else if (action === 'quality') toast('数据质检：28 个标的通过 · 7 个待接入 · 0 个格式异常', 'ok');
+      else if (action === 'prev-day' || action === 'next-day' || action === 'today') toast('原型演示：暂无更多历史简报，Vue 版将接入历史归档', 'info');
+      else if (action === 'copy-tokens') copyText(':root {\n  --bg:#0A0E13; --surface:#111721; --surface-2:#172030;\n  --border:rgba(148,163,184,.14); --text:#E6EDF5; --muted:#93A4B8; --dim:#64748B;\n  --accent:#4CC2FF; --up:#F0544F; --down:#2FBF71; --warn:#F5A524;\n}', '设计 Token 已复制');
+    });
+  });
+
+  /* ---------------- 市场时钟 ---------------- */
+  var CLOCK_BASE = Date.UTC(2026, 10, 13, 9, 32, 0); // 北京 2026-11-13 17:32:00
+  var CLOCK_START = Date.now();
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function hhmmss(d) { return pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ':' + pad(d.getUTCSeconds()); }
+  function tickClock() {
+    var nowMs = CLOCK_BASE + (Date.now() - CLOCK_START);
+    var bj = new Date(nowMs + 8 * 3600000);
+    var ldn = new Date(nowMs);
+    var ny = new Date(nowMs - 5 * 3600000);
+    var bjEl = $('#clock-bj'), ldnEl = $('#clock-ldn'), nyEl = $('#clock-ny');
+    if (bjEl) bjEl.textContent = hhmmss(bj);
+    if (ldnEl) ldnEl.textContent = hhmmss(ldn);
+    if (nyEl) nyEl.textContent = hhmmss(ny);
+    var target = Date.UTC(2026, 10, 13, 13, 0, 0); // 北京 21:00
+    var rem = target - nowMs;
+    if (rem < 0) rem += 86400000;
+    var total = Math.floor(rem / 1000);
+    var cd = $('#clockCountdown');
+    if (cd) cd.textContent = pad(Math.floor(total / 3600)) + ':' + pad(Math.floor((total % 3600) / 60)) + ':' + pad(total % 60);
+  }
+  tickClock();
+  setInterval(tickClock, 1000);
+
+  /* ---------------- 初始化 ---------------- */
+  applyPrefs();
+  renderWatch();
+  renderHeat();
+  renderRates();
+  renderAlerts();
+  renderCalendar();
+  renderChips();
+  renderMarket();
+  renderMembers();
+  bindEvidenceButtons();
+  go(initialView(), { instant: true });
+  // 深层链接：?open=evidence / settings / palette（便于分享与截图）
+  try {
+    var openParam = new URLSearchParams(location.search).get('open');
+    if (openParam === 'evidence') openEvidence('E-01');
+    else if (openParam === 'settings') openSettings();
+    else if (openParam === 'palette') setTimeout(openPalette, 60);
+    else if (openParam === 'toast') setTimeout(function () { toast('行情已刷新 · 数据截至 2026-11-13 15:00', 'ok'); }, 120);
+  } catch (e) { /* ignore */ }
+
+  /* ---------------- 自检（?debug=1）：输出页面尺寸与横向溢出元素 ---------------- */
+  if (/[?&]debug=1/.test(location.search)) {
+    var scrollMatch = /[?&]scroll=(\d+)/.exec(location.search);
+    if (scrollMatch) {
+      var scroller = $('.table-wrap');
+      if (scroller) scroller.scrollTop = +scrollMatch[1];
+    }
+    setTimeout(function () {
+      var de = document.documentElement;
+      var ovf = $$('body *').filter(function (el) {
+        if (el.closest('.table-wrap, .drawer, .palette-wrap, .nav, .rate-spark, .heat-body, .palette-list')) return false;
+        var cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+        if (cs.overflowX === 'auto' || cs.overflowX === 'scroll') return false;
+        return el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0;
+      }).slice(0, 10).map(function (el) {
+        return (el.id ? '#' + el.id : el.tagName.toLowerCase()) + '.' + String(el.className || '').split(' ')[0] + '[' + el.scrollWidth + '>' + el.clientWidth + ']';
+      });
+      var alerts = $('.alerts-body');
+      var card = alerts ? alerts.closest('.card') : null;
+      var bottom = card ? Math.round(card.getBoundingClientRect().bottom + window.scrollY) : -1;
+      function box(sel) {
+        var el = $(sel);
+        if (!el) return sel + ':0';
+        var r = el.getBoundingClientRect();
+        return sel.split(' ').pop() + ':' + Math.round(r.top + window.scrollY) + '-' + Math.round(r.bottom + window.scrollY);
+      }
+      var shape = [
+        box('.hero'), box('.kpi-grid'), box('.watch-grid'), box('.overview-row'),
+        box('.overview-row + .overview-row'), box('.table-card'), box('.members-card'),
+        box('.brief-layout'), box('.tk-grid'), box('.tk-grid3')
+      ].join(',');
+      var sunCss = getComputedStyle($('.icon-sun')).display;
+      var moonCss = getComputedStyle($('.icon-moon')).display;
+      document.title = 'DBG|h=' + de.scrollHeight + '|w=' + de.clientWidth + '/' + de.scrollWidth +
+        '|alertsBottom=' + bottom + '|theme=' + de.dataset.theme + ',sun=' + sunCss + ',moon=' + moonCss +
+        '|ovf=' + ovf.join(';') + '|box=' + shape;
+    }, 120);
+  }
+})();
+</script>
+</body>
+</html>

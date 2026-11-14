@@ -53,5 +53,9 @@ Write-Host "[setup] 初始化数据库 ..."
 Push-Location (Join-Path $root "backend")
 try { & $venvPy -m app.init_db } finally { Pop-Location }
 
+Write-Host "[setup] 构建前端（Vue -> web/）..."
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "build.ps1")
+if ($LASTEXITCODE -ne 0) { throw "前端构建失败，请检查 Node.js 与 npm（需要 v22+）" }
+
 Write-Host ""
 Write-Host "[setup] 完成。启动： scripts\start.ps1 ；浏览器打开 http://127.0.0.1:8765"

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -17,6 +17,7 @@ from app.platform.scheduler import start_scheduler, stop_scheduler
 
 logger = logging.getLogger(__name__)
 WEB_DIR = ROOT_DIR / "web"
+LEGACY_DIR = ROOT_DIR / "web-legacy"
 
 
 @asynccontextmanager
@@ -64,7 +65,16 @@ if WEB_DIR.exists():
 
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
-    return FileResponse(WEB_DIR / "index.html")
+    return _web_index()
+
+
+@app.get("/legacy", include_in_schema=False)
+def legacy_index() -> FileResponse:
+    """过渡期保留旧版零构建看板（web-legacy/index.html），V1.1 验收后删除。"""
+    legacy = LEGACY_DIR / "index.html"
+    if not legacy.exists():
+        raise HTTPException(status_code=404, detail="legacy frontend not found")
+    return FileResponse(legacy)
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -75,3 +85,24 @@ def favicon() -> Response:
 @app.get("/healthz", include_in_schema=False)
 def healthz() -> dict:
     return {"status": "ok"}
+
+
+def _web_index() -> FileResponse:
+    index_file = WEB_DIR / "index.html"
+    if not index_file.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="前端尚未构建：请运行 scripts\\build.ps1（或 npm run build）",
+        )
+    return FileResponse(index_file)
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+def spa_fallback(full_path: str) -> FileResponse:
+    """Vue SPA 回退：非 /api 路径统一返回 index.html，静态资源按文件命中。"""
+    if full_path.startswith(("api/", "assets/")):
+        raise HTTPException(status_code=404, detail="not found")
+    candidate = (WEB_DIR / full_path).resolve()
+    if full_path and candidate.is_file() and WEB_DIR.resolve() in candidate.parents:
+        return FileResponse(candidate)
+    return _web_index()
