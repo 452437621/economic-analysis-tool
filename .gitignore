@@ -37,3 +37,4 @@ Thumbs.db
 
 # pytest temp dirs
 pytest-of-*/
+/.idea/
