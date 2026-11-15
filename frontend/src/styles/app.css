@@ -22,6 +22,7 @@
   --up: #F0544F;
   --down: #2FBF71;
   --warn: #F5A524;
+  --gold: #E7B84B;
   --info: #4CC2FF;
   --ok: #2FBF71;
   --up-color: var(--up);
@@ -56,6 +57,7 @@ html[data-theme="light"] {
   --up: #D64541;
   --down: #1B8A55;
   --warn: #B57A00;
+  --gold: #9A6A00;
   --ok: #1B8A55;
   --up-color: var(--up);
   --down-color: var(--down);
@@ -874,6 +876,7 @@ html[data-theme="sepia"] {
   --up: #A33A2A;
   --down: #3F7D3F;
   --warn: #9A6A00;
+  --gold: #8C5A00;
   --ok: #3F7D3F;
   --up-color: var(--up);
   --down-color: var(--down);

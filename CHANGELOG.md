@@ -6,12 +6,32 @@
 
 ## [Unreleased]
 
+### 变更（黄金原手动指标数据源接入，2026-11-15）
+
+- 原 7 项手动指标中 5 项接入免费自动采集，黄金 provider 由 5 个增至 10 个（全部 ok）：
+  - `CB_GOLD_GLOBAL_TONNES`：改接 WGC 央行仪表盘 API（`fsapi.gold.org/api/cbd/v11/charts/getPage`，按国别季度加总，最新季上报不足自动丢弃），季频、`pct_change_3m`、`scale=1.2`，34 条（2018-03 ~ 2026-06，最新完整季 32,044.8 吨）。
+  - `COMEX_GOLD_INVENTORY_TONNES`：CME 官网本机不可达，改读 MetalCharts 免费周频 CSV（gold 行 `total_oz` → 吨），周频，40 条（最新 712.4 吨）；按许可需可见署名 metalcharts.org。
+  - `MM_BANK_GOLD_NET`：接入 CFTC 银行参与报告月报（`CMX GOLD` 汇总行，银行多头 − 空头），月频、`percentile`，30 条（最新 −172,618 张）。
+  - `SGE_GOLD_INVENTORY_TONNES` → `SHFE_GOLD_STOCK_TONNES`：上金所不公布库存，改用上期所黄金仓单日报（指定交割金库千克 → 吨），日频、`direction=-1`、`scale=3`，30 条（最新 118.404 吨）。
+  - `BIS_GOLD_LEASE_RATE` → `SGE_GOLD_LEASE_3M_PCT`：BIS 无公开租赁序列，改用上金所黄金租借费率(3M) XLS 导出，日频、`level`、`scale=1.5`，1,187 条（最新 0.4236%）。
+- `BIS_GOLD_SWAP_USD`、`BIS_GOLD_STORAGE_USD`：确认 BIS 无可机读季度序列（`stats.bis.org` 29 个 dataflow 与 `data.bis.org` 均无 gold），`weight` 改为 **0**（不参与评分）、保留 `manual` 手动录入。
+- 新增依赖 `xlrd>=2.0`（`pyproject.toml`，解析上金所 OLE2 `.xls`）。
+- 评分：参与评分指标 17 个（权重合计 139），`coverage` 由 74% 提升至 **100%**；2026-11-15 实测新增入库 1,321 条，综合评分 **−0.6「中性」**。
+- 测试：`tests/test_gold.py` 新增 5 个 provider 离线解析用例（共 12 条），全库 **127 passed**。
+- 文档：[17 黄金监控与综合研判](docs/17-黄金监控与综合研判.md)（指标矩阵、不可得清单、新增自动源与口径替代、验证记录）、[05 数据源与接口清单](docs/05-数据源与接口清单.md)、[07 开发进度](docs/07-开发进度.md)、README 同步。
+
+### 新增（黄金研判图表交互，2026-11-15）
+
+- `/gold` 走势图表新增时间范围切换：1月 / 3月 / 6月 / 1年 / 2年 / 5年 / 全部，直接复用资产历史走势弹窗的 `HISTORY_RANGES` 与 `cutByRange`，默认 1 年，选项与资产价格趋势图完全一致。
+- 5 张走势图**默认不再显示黄金价格**；每张图卡新增「叠加金价」开关，可按图单独叠加伦敦金价（右侧副轴）与图中指标做趋势对比；原「黄金价格 vs 美债实际利率」改为「美债 10Y 实际利率」。
+- 派生序列历史回填由约 180 天扩到 2,000 个交易日（`DERIVED_HISTORY_BARS`），`GET /api/gold/overview` 的 `series_limit` 上限由 600 提到 3,000、前端请求 2,500，长区间可用（金价 2,002 点 / 实际利率 1,218 点 / 上海溢价 1,850 点），评分与 coverage 不变（−0.6 / 100%）。
+
 ### 计划中（V1.4 候选）
 
 - LLM 全链路实跑（断言/事件/简报编辑/论点证据）——需 `DEEPSEEK_API_KEY`。
 - 港股/A 股扩展、组合级风控、PDF 服务端渲染、移动端单独设计。
 - 大商所官方持仓、LME 日线、美国财政部新闻源替代方案。
-- 黄金监控：WGC 央行购金官方下载（Cloudflare）绕行、CME COMEX 库存镜像、SGE 库存数据源、BIS 报告解析。
+- 黄金监控：BIS 半年报 PDF（Gold and gold loans / Gold deposits）解析与两项 BIS 指标权重回测；CME 官方库存源与 MetalCharts 镜像交叉校验。
 
 ## [1.3.0] - 2026-11-14
 

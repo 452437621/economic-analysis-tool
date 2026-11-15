@@ -2,7 +2,7 @@
 
 > **Economic Positioning, Intelligence & Cycles** —— 本地运行、以证据为中心的个人宏观—市场—交易决策工作台。
 >
-> 状态：**V1.3.0 — 黄金监控与综合研判（2026-11-14）**。数据快照：**35 标的**、约 **6.5 万根日线**、约 **2.2 万条宏观观测**、**2,500+ 财经日历**、**13 品种会员持仓（Top20 多空明细）**、约 **270 篇官方新闻 / 3,700+ 条断言**；**9 个路由页面**（总览 / 市场行情 / 利率与流动性 / 分析引擎 / 交易信号 / 黄金研判 / 论点与证据 / 简报与日志 / 系统状态）；**黄金监控 22 指标**（15 项自动采集 + 7 项手动录入，19 项参与评分）；旧版看板保留在 `/legacy`；LLM 待 Key。
+> 状态：**V1.3.0 — 黄金监控与综合研判（2026-11-14；2026-11-15 补全 5 项原手动指标数据源）**。数据快照（2026-11-15）：**35 标的**、约 **6.5 万根日线**、约 **2.2 万条宏观观测**、**2,500+ 财经日历**、**13 品种会员持仓（Top20 多空明细）**、约 **270 篇官方新闻 / 3,700+ 条断言**；**9 个路由页面**（总览 / 市场行情 / 利率与流动性 / 分析引擎 / 交易信号 / 黄金研判 / 论点与证据 / 简报与日志 / 系统状态）；**黄金监控 22 指标**（20 项自动采集 + 2 项手动录入，17 项参与评分，coverage 100%）；旧版看板保留在 `/legacy`；LLM 待 Key。
 
 ![V1.1 总览](docs/assets/vue/vue-overview.png)
 
@@ -76,7 +76,7 @@ $env:PYTHONPATH = "backend"
 .\.venv\Scripts\python.exe -m app.jobs.runner --all
 
 # 质量门禁
-.\.venv\Scripts\python.exe -m pytest -q                       # 122 条测试
+.\.venv\Scripts\python.exe -m pytest -q                       # 127 条测试
 .\.venv\Scripts\python.exe scripts\lint.py                    # 静态检查
 powershell -ExecutionPolicy Bypass -File .\scripts\ci.ps1     # 前端构建 + lint + pytest + 运行时检查
 powershell -ExecutionPolicy Bypass -File .\scripts\selfcheck.ps1
@@ -103,7 +103,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 
 ---
 
-## 已接入的数据（2026-11-14 快照）
+## 已接入的数据（2026-11-15 快照）
 
 | 数据 | 来源 | 覆盖 |
 |---|---|---|
@@ -122,11 +122,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 | 会员持仓 | 上期所 / 郑商所 / 新浪（大商所） | 铜铝锌镍金银铅锡 + 棉花白糖 + 豆粕棕榈铁矿，共 13 品种 Top20 多空（日频） |
 | 新闻政策 | 官方 RSS/HTML | 美联储、欧洲央行、日本央行、EIA、USTR、国家统计局（6 源） |
 | 事件驱动 | 规则抽取 | 贸易/地缘/货币/供给/数据五类事件，自动关联标的（每 30 分钟） |
-| 黄金监控 | LBMA / WGC / CFTC / 东方财富 / 本地派生 | 伦敦金库、全球黄金 ETF、COMEX 分类持仓、中国央行黄金储备 + 派生指标（22 指标中 15 项自动） |
+| 黄金监控 | LBMA / WGC（ETF + 央行仪表盘） / CFTC（COT + 银行参与报告） / MetalCharts（COMEX 库存镜像） / 上期所（黄金仓单） / 上金所（租借费率） / 东方财富 / 本地派生 | 22 指标中 **20 项自动采集**（17 项参与评分、coverage 100%），2 项 BIS 指标权重 0 保留手动；覆盖伦敦金库、全球黄金 ETF、全球央行储备、COMEX 库存、上期所黄金仓单、上金所 3M 租借费率、CFTC 持仓 + 派生指标 |
 
-> 限制：Yahoo / FRED / BLS 国内直连不可用（403/超时）；LME 无免费官方日线（外盘以新浪替代）；BIS 无公开接口、CME/SGE 库存无免费源（对应黄金指标支持手动录入）。更多见 [05 数据源与接口清单](docs/05-数据源与接口清单.md)、[07 开发进度](docs/07-开发进度.md)。
+> 限制：Yahoo / FRED / BLS 国内直连不可用（403/超时）；LME 无免费官方日线（外盘以新浪替代）；BIS 无公开可机读黄金序列（掉期/存储两项权重 0、保留手动录入）；CME 官网本机不可达，COMEX 库存读 MetalCharts 镜像（需署名）；上金所不公布库存，改以上期所黄金仓单、上金所 3M 租借费率作代理。更多见 [05 数据源与接口清单](docs/05-数据源与接口清单.md)、[07 开发进度](docs/07-开发进度.md)。
 >
-> 数据量随每日采集增长，上表与状态栏为 2026-11-14 数据库快照（35 标的 / 65,485 根日线 / 21,919 条宏观观测 / 2,584 条日历 / 268 篇新闻 / 3,729 条断言）。
+> 数据量随每日采集增长，上表与状态栏为 2026-11-15 数据库快照（35 标的 / 65,485 根日线 / 21,919 条宏观观测 / 2,584 条日历 / 268 篇新闻 / 3,729 条断言），黄金指标 22 项（20 自动 / 2 手动，17 计分）。
 
 ---
 
@@ -153,7 +153,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 | `/rates` | 利率与流动性 | 美/日/德/法/中利率、实际利率、盈亏平衡、SOFR−EFFR 利差与解读 |
 | `/analysis` | 分析引擎 | 市场风向、周期、定价归因、相关性、历史类比、领先滞后、事件研究、黄金评分卡 |
 | `/signals` | 交易信号 | 规则信号、草稿计划（手数/保证金/手续费/风控）、含成本回测、预测校准（Brier） |
-| `/gold` | 黄金研判 | 综合评分环、5 组因子卡、5 个 ECharts、因子明细、数据源监控、手动录入、方法论 |
+| `/gold` | 黄金研判 | 综合评分环、5 组因子卡、5 个 ECharts（时间范围 1月–全部，可按图叠加金价对比）、因子明细、数据源监控、手动录入、方法论 |
 | `/theses` | 论点与证据 | 新闻/事件/日历筛选、原文快照、断言高亮、事件→证据跳转、论点与情景管理 |
 | `/briefs` | 简报与日志 | 日报/周报/月报、历史期次（上一期/下一期）、Markdown 导出、打印/PDF、交易日志 |
 | `/system` | 系统状态 | 健康、数据量、数据源、数据质检、任务、验收自检（14 项 DoD） |
@@ -183,7 +183,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 | [14 全量核验与缺陷修复](docs/14-全量核验与缺陷修复.md) | 目标完成度核验、代码扫描结论、缺陷修复、DevOps 流程 |
 | [15 前端改造方案](docs/15-前端改造方案.md) | 项目整理结论、文件整理、UI 规范、Vue 技术方案、实施与验收 |
 | [16 前后端接口对齐与补齐](docs/16-接口对齐与补齐.md) | 前端接口缺口梳理、V1.2 新增接口契约、联调与验证 |
-| [17 黄金监控与综合研判](docs/17-黄金监控与综合研判.md) | 央行购金/ETF/BIS 租赁掉期存储/三地库存/做市商指标、数据源、评分算法、API 与页面 |
+| [17 黄金监控与综合研判](docs/17-黄金监控与综合研判.md) | 央行购金/ETF/租赁掉期存储/三地库存/做市商指标、数据源与口径替代、评分算法、API 与页面 |
 | [CHANGELOG](CHANGELOG.md) | 版本变更记录与发布约定 |
 
 ---
@@ -195,7 +195,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 | 静态检查 | `.\.venv\Scripts\python.exe scripts\lint.py` | 语法、AST 异味、未用导入、编码、Vue 源码结构与构建产物、外部 CDN、PowerShell BOM、文档链接、版本一致性、`.env.example` 完整性 |
 | 前端类型 | `cd frontend; npm.cmd run typecheck` | vue-tsc（构建时也会执行） |
 | 构建 | `scripts/build.ps1` | vue-tsc + vite build → `web/`；`ci.ps1` 与 CI 都会先构建 |
-| 测试 | `.\.venv\Scripts\python.exe -m pytest -q` | **122 条**：解析器、数据管道、分析、决策、API 冒烟（含写接口与 404）、降级、DevOps、前端源码/产物、黄金监控 |
+| 测试 | `.\.venv\Scripts\python.exe -m pytest -q` | **127 条**：解析器、数据管道、分析、决策、API 冒烟（含写接口与 404）、降级、DevOps、前端源码/产物、黄金监控 |
 | 本地门禁 | `scripts/ci.ps1` | 前端构建 → lint → pytest → 运行时 health/acceptance/quality；服务未启动时跳过运行时检查 |
 | CI | `.github/workflows/ci.yml` | Python 3.11/3.12 矩阵 + Node 22 前端构建 + 安装导入冒烟 |
 | 版本 | `backend/app/__init__.py` | **后端**单一来源，`pyproject.toml` 与 `/api/system/health` 必须一致（前端 `package.json` 版本独立维护） |
@@ -216,7 +216,7 @@ FastAPI（12 组路由 / 63 个端点：api / 导出 / 打印）
 ├─ 知识层      documents / claims / events / theses / evidence（M2）
 ├─ 分析层      regime / attribution / correlation / analogs / wind / leadlag / calendar_study（M3）
 ├─ 决策层      signals / plans / backtest / predictions / review（M4）
-├─ 黄金监控    registry / providers / scoring / runner（V1.3）
+├─ 黄金监控    registry / providers / scoring / runner（V1.3，10 个数据源）
 ├─ LLM 编排    DeepSeek（M2，待 Key）
 └─ 存储        SQLite（WAL）+ data/raw 原文快照 + 导出/日志文件
 ```
@@ -238,8 +238,8 @@ FastAPI（12 组路由 / 63 个端点：api / 导出 / 打印）
 | M6 | 两周试运行与校准 | 🟡 支持工具就绪（日志/周报/月报/验收/自检），待真实使用 |
 | V1.1 | Vue 3 前端重构（8 页路由 / 设计系统 / 证据抽屉 / ECharts / 命令面板）+ 工作区整理 | ✅ 完成（2026-11-14；V1.3 起 9 页，旧版保留 `/legacy`） |
 | V1.2 | 后端接口补齐 + 前端联调（overview 聚合、行情单位落库、简报历史期次、事件/新闻/日历筛选、positions/products、自选 PATCH） | ✅ 完成（2026-11-14；115 tests；见 [16](docs/16-接口对齐与补齐.md)） |
-| V1.3 | 黄金监控与综合研判（22 指标 / 19 项计分、5 类数据源、gold API、`/gold` 页面、分析页评分卡） | ✅ 完成（2026-11-14；122 tests；见 [17](docs/17-黄金监控与综合研判.md)） |
-| V1.4 | LLM 全链路实跑、港股/A 股扩展、组合级风控、PDF 服务端渲染、大商所持仓/LME 日线、黄金 WGC/CME/SGE/BIS 接入 | 🟡 计划中（见 CHANGELOG `Unreleased`） |
+| V1.3 | 黄金监控与综合研判（22 指标 / 17 项计分、10 个 provider、gold API、`/gold` 页面、分析页评分卡） | ✅ 完成（2026-11-14 首发；2026-11-15 补全 5 项数据源后 coverage 100%；127 tests；见 [17](docs/17-黄金监控与综合研判.md)） |
+| V1.4 | LLM 全链路实跑、港股/A 股扩展、组合级风控、PDF 服务端渲染、大商所持仓/LME 日线、黄金 BIS 掉期/存储解析与权重回测 | 🟡 计划中（见 CHANGELOG `Unreleased`） |
 
 ---
 
@@ -264,7 +264,7 @@ data/               运行时数据（gitignore：SQLite、raw 快照、日志�
 ## 已知限制与边界
 
 - **LLM 未配置 Key**：断言为规则抽取、简报为模板生成（`llm_enabled=false`）；配置 `DEEPSEEK_API_KEY` 后启用 LLM 链路。
-- **数据源限制**：外盘约 15 分钟延迟；Yahoo/FRED/BLS 直连不可用；BIS 无公开接口、CME/SGE 库存无免费源；黄金 22 指标中 15 项自动、7 项手动录入，评分以 `coverage` 体现置信度。
+- **数据源限制**：外盘约 15 分钟延迟；Yahoo/FRED/BLS 直连不可用；BIS 无公开可机读黄金序列（掉期/存储两项权重 0、保留手动）；CME 官网本机不可达，COMEX 库存读 MetalCharts 镜像（需署名）；上金所不公布库存，以上期所黄金仓单、上金所 3M 租借费率代理；黄金 22 指标中 20 项自动、2 项手动录入，评分以 `coverage` 体现置信度。
 - **交易边界**：V1 不接自动下单，计划均为草稿；保证金/手续费为近似值，实际以期货公司为准；不覆盖国内独有品种。
 - **回补时长**：数据采集类 bootstrap 在启动后约 3–55 秒触发，分析/决策类约 4–5 分钟；全部回补完成时间取决于网络与数据源响应。
 - **备份与数据**：`data/` 不纳入版本库；重要节点请执行 `scripts\backup.ps1`（保留 14 份）。

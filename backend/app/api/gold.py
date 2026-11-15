@@ -28,7 +28,7 @@ class ManualMetricIn(BaseModel):
 
 @router.get("/overview")
 def overview(
-    series_limit: int = Query(160, ge=10, le=600),
+    series_limit: int = Query(160, ge=10, le=3000),
     session: Session = Depends(get_session),
 ) -> dict:
     """Gold dashboard payload: score + factors + series + provider health."""
@@ -51,6 +51,7 @@ def overview(
                 "unit": item.unit,
                 "freq": item.freq,
                 "source": item.source,
+                "weight": item.weight,
                 "available": bool(obs),
                 "value": round(obs[-1][1], 4) if obs else None,
                 "as_of": obs[-1][0].isoformat() if obs else None,

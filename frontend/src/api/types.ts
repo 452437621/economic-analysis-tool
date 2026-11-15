@@ -703,6 +703,7 @@ export interface GoldManualIndicator {
   unit: string;
   freq: string;
   source: string;
+  weight: number;
   available: boolean;
   value: number | null;
   as_of: string | null;

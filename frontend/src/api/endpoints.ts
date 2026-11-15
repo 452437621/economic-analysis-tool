@@ -123,7 +123,8 @@ export const updateWatch = (symbol: string, patch: WatchPatch) =>
   );
 
 /* 黄金监控（V1.3） */
-export const getGoldOverview = () => getJson<GoldOverviewResponse>("/api/gold/overview");
+export const getGoldOverview = (seriesLimit = 2500) =>
+  getJson<GoldOverviewResponse>("/api/gold/overview", { params: { series_limit: seriesLimit } });
 export const getGoldSeries = (code: string, limit = 240) =>
   getJson<GoldSeriesResponse>("/api/gold/series", { params: { code, limit } });
 export const refreshGold = () => postJson<{ accepted: boolean }>("/api/gold/refresh", {});

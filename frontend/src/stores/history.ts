@@ -29,6 +29,14 @@ const RANGE_DAYS: Record<Exclude<HistoryRange, "all">, number> = {
   "5y": 1826,
 };
 
+/** 按时间范围裁剪升序点序列（黄金研判图表与历史弹窗共用同一套口径）。 */
+export function cutByRange<T extends { t: number }>(points: T[], range: HistoryRange): T[] {
+  if (range === "all" || points.length < 2) return points;
+  const days = RANGE_DAYS[range];
+  const last = points[points.length - 1].t;
+  return points.filter((point) => point.t >= last - days * 86400000);
+}
+
 /** 历史趋势弹窗：标的日线 / 宏观序列共用。 */
 export const useHistoryStore = defineStore("history", () => {
   const open = ref(false);
@@ -45,13 +53,7 @@ export const useHistoryStore = defineStore("history", () => {
     () => HISTORY_RANGES.find((item) => item.value === range.value)?.label ?? "全部",
   );
 
-  const visiblePoints = computed<HistoryPoint[]>(() => {
-    if (!points.value.length) return [];
-    if (range.value === "all") return points.value;
-    const days = RANGE_DAYS[range.value as Exclude<HistoryRange, "all">];
-    const last = points.value[points.value.length - 1].t;
-    return points.value.filter((point) => point.t >= last - days * 86400000);
-  });
+  const visiblePoints = computed<HistoryPoint[]>(() => cutByRange(points.value, range.value));
 
   const stats = computed(() => {
     const list = visiblePoints.value;

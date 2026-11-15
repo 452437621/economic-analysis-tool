@@ -192,8 +192,19 @@
       <div class="sec-row">
         <span class="sec-title">走势图表</span>
         <span class="sec-count">{{ chartCards.length }} 张</span>
-        <span class="sec-meta">数据来自本地数据库 · 颜色随主题与涨跌配色变化</span>
+        <span class="sec-meta">数据来自本地数据库 · 默认不叠加金价，可按图表叠加伦敦金价对比</span>
         <div class="sec-actions">
+          <div class="chart-ranges" role="group" aria-label="图表时间范围">
+            <button
+              v-for="item in HISTORY_RANGES"
+              :key="item.value"
+              type="button"
+              :class="{ active: chartRange === item.value }"
+              @click="setChartRange(item.value)"
+            >
+              {{ item.label }}
+            </button>
+          </div>
           <span class="badge badge--sm">{{ seriesCount }} 条序列</span>
         </div>
       </div>
@@ -213,7 +224,19 @@
               </span>
             </span>
             <span v-if="chart.note" class="chart-note">{{ chart.note }}</span>
-            <div class="card-actions"><span class="card-sub">{{ chartMeta(chart) }}</span></div>
+            <div class="card-actions">
+              <button
+                type="button"
+                class="chart-toggle"
+                :class="{ active: priceOverlays[chart.key] }"
+                :aria-pressed="!!priceOverlays[chart.key]"
+                :title="priceOverlays[chart.key] ? '移除伦敦金价对比' : '叠加伦敦金价趋势对比'"
+                @click="togglePriceOverlay(chart.key)"
+              >
+                叠加金价
+              </button>
+              <span class="card-sub">{{ chartMeta(chart) }}</span>
+            </div>
           </div>
           <div class="card-body chart-body">
             <EChart v-if="chartHasData(chart)" :option="chart.option" :height="chart.height" />
@@ -305,8 +328,8 @@
         <span class="sec-count">{{ okCount }}/{{ providers.length }} 正常</span>
         <span class="sec-meta">自动采集 + 手动录入 · 未获取指标不参与评分</span>
         <div class="sec-actions">
-          <span class="badge badge--sm" :class="pendingCount ? 'badge--warn' : 'badge--live'">
-            {{ pendingCount ? `${pendingCount} 项待录入` : "手动指标已补齐" }}
+          <span class="badge badge--sm" :class="pendingManualCount ? 'badge--warn' : 'badge--live'">
+            {{ pendingManualCount ? `${pendingManualCount} 项手动待录入` : "评分因子已齐全" }}
           </span>
         </div>
       </div>
@@ -339,15 +362,15 @@
           <svg class="ic group-ic"><use href="#i-plus" /></svg>
           <span class="card-title">手动指标</span>
           <span class="badge badge--sm">{{ manual.length }} 项</span>
-          <div class="card-actions"><span class="card-sub">仅手动指标支持录入，保存后立即重算评分</span></div>
+          <div class="card-actions"><span class="card-sub">仅手动指标支持录入；权重 0 表示默认不参与评分</span></div>
         </div>
         <div class="card-body manual-body">
           <div class="manual-grid">
             <div v-for="item in manual" :key="item.code" class="manual-row">
               <span class="mr-name" :title="`${item.name}（${item.code}）`">{{ item.name }}</span>
-              <span class="mr-src">{{ item.source }} · {{ item.unit }} · {{ freqLabel(item.freq) }}</span>
-              <span class="badge badge--sm" :class="item.available ? 'badge--live' : 'badge--warn'">
-                {{ item.available ? "已录入" : "待录入" }}
+              <span class="mr-src">{{ item.source }} · {{ item.unit }} · {{ freqLabel(item.freq) }} · 权重 {{ item.weight }}</span>
+              <span class="badge badge--sm" :class="item.weight > 0 && !item.available ? 'badge--warn' : 'badge--live'">
+                {{ item.weight > 0 ? (item.available ? "已录入" : "待录入") : "不参与评分" }}
               </span>
               <button class="link-btn entry-link" type="button" @click="openEntry(item)">
                 <svg class="ic"><use href="#i-plus" /></svg>{{ item.available ? "更新" : "录入" }}
@@ -357,8 +380,9 @@
           <div class="unavailable-note">
             <svg class="ic"><use href="#i-info" /></svg>
             <span>
-              不可得说明：BIS 官方租赁/掉期数据无公开 API（手动录入）；CME 官网在本机网络不可达；
-              SGE 无公开库存接口；JPM / HSBC 等银行不披露个体持仓，以 CFTC 银行参与报告作为代理。
+              数据源说明：BIS 不公布可机读的黄金掉期/存储序列（保留手动录入，权重 0，默认不参与评分）；
+              CME 官网在本机网络不可达，COMEX 库存改读 MetalCharts 免费镜像（metalcharts.org，按其许可需署名）；
+              上金所不公布库存，以上期所黄金仓单（指定交割金库，千克→吨）作为中国黄金库存代理。
             </span>
           </div>
         </div>
@@ -380,8 +404,9 @@
           <div class="limits">
             <span class="limits-title">局限</span>
             <ul>
-              <li>CFTC 分类持仓（管理基金 / 掉期商）是公开可得的最佳代理指标，不等同于摩根大通、汇丰等个体做市商账簿。</li>
-              <li>BIS 黄金租赁利率、掉期余额、存储等无公开接口，需手动录入；未录入时不参与评分，覆盖率相应下降。</li>
+              <li>CFTC 分类持仓（管理基金 / 掉期商）与银行参与报告是公开可得的最佳代理指标，不等同于摩根大通、汇丰等个体做市商账簿。</li>
+              <li>BIS 不公布可机读的黄金掉期/存储序列，这两项默认权重 0、不参与评分；黄金租赁利率以上金所「黄金租借基准费率 3M」替代（人民币口径）。</li>
+              <li>COMEX 库存来自 MetalCharts 免费 CSV 镜像（周频、需署名 metalcharts.org）；上金所不公布库存，以上期所黄金仓单代理。</li>
               <li>中国官方黄金储备为美元计价，已通过「储备变动 − 金价变动」剔除金价重估影响，得到购金代理值。</li>
             </ul>
           </div>
@@ -466,6 +491,7 @@ import {
 } from "@/composables/useFormat";
 import { getGoldOverview, refreshGold, saveGoldMetric } from "@/api/endpoints";
 import type { GoldFactor, GoldScore } from "@/api/types";
+import { HISTORY_RANGES, cutByRange, type HistoryRange } from "@/stores/history";
 import { usePrefsStore } from "@/stores/prefs";
 import { useToast } from "@/stores/toast";
 
@@ -493,7 +519,12 @@ const GROUP_ICONS: Record<string, string> = {
 const PROVIDER_LABELS: Record<string, string> = {
   lbma: "LBMA 伦敦金库",
   wgc_etf: "WGC 全球 ETF",
+  wgc_cbd: "WGC 全球央行储备",
   cftc: "CFTC COT",
+  cftc_bpr: "CFTC 银行参与报告",
+  sge_lease: "上金所黄金租借费率",
+  metalcharts: "MetalCharts · COMEX 库存",
+  shfe_stock: "上期所黄金仓单",
   eastmoney: "东方财富 · 中国央行",
   derived: "本地派生",
 };
@@ -540,6 +571,9 @@ const gaugeOffset = computed(() => {
 const coveragePct = computed(() => Math.max(0, Math.min(100, coverage.value)));
 const availableFactorCount = computed(() => factors.value.filter((item) => item.available).length);
 const pendingCount = computed(() => factors.value.filter((item) => !item.available).length);
+const pendingManualCount = computed(
+  () => manual.value.filter((item) => item.weight > 0 && !item.available).length,
+);
 const okCount = computed(() => providers.value.filter((item) => item.ok).length);
 const providerCheckedLabel = computed(() => {
   const times = providers.value
@@ -660,6 +694,7 @@ interface ManualTarget {
   unit: string;
   freq: string;
   note: string;
+  weight?: number;
   source?: string;
 }
 interface EntryState {
@@ -791,6 +826,7 @@ const palette = computed(() => {
     text: cssVar("--text", "#E6EDF5"),
     accent: cssVar("--accent", "#4CC2FF"),
     warn: cssVar("--warn", "#F5A524"),
+    gold: cssVar("--gold", "#E7B84B"),
   };
 });
 
@@ -818,6 +854,12 @@ interface ChartCard {
   option: EChartsOption;
 }
 
+/** 图表时间范围：选项与默认值与资产标的价格趋势图（HistoryModal）完全一致。 */
+const chartRange = ref<HistoryRange>("1y");
+/** 每张图表是否叠加伦敦金价（默认关闭，按图表单独开关）。 */
+const priceOverlays = reactive<Record<string, boolean>>({});
+const GOLD_PRICE_LABEL = "伦敦金价";
+
 function seriesPoints(code: string): Array<{ t: number; v: number }> {
   const raw = overview.value?.series?.[code] ?? [];
   const points: Array<{ t: number; v: number }> = [];
@@ -825,7 +867,15 @@ function seriesPoints(code: string): Array<{ t: number; v: number }> {
     const time = new Date(point.t).getTime();
     if (Number.isFinite(time) && Number.isFinite(point.v)) points.push({ t: time, v: point.v });
   }
-  return points.sort((a, b) => a.t - b.t);
+  return cutByRange(points.sort((a, b) => a.t - b.t), chartRange.value);
+}
+
+function togglePriceOverlay(key: string): void {
+  priceOverlays[key] = !priceOverlays[key];
+}
+
+function setChartRange(next: HistoryRange): void {
+  chartRange.value = next;
 }
 
 function buildChartOption(specs: SeriesSpec[], axes: AxisSpec[], zeroLine = false): EChartsOption {
@@ -910,38 +960,58 @@ const contractsAxis = (value: number): string => {
 const chartCards = computed<ChartCard[]>(() => {
   const colors = palette.value;
   const swapAvailable = seriesPoints("COT_SWAP_NET").length > 0;
+  const priceAvailable = seriesPoints("GOLD_PRICE_USD").length > 0;
+  const priceSpec = (axis: number): SeriesSpec => ({
+    code: "GOLD_PRICE_USD",
+    label: GOLD_PRICE_LABEL,
+    color: colors.gold,
+    axis,
+    format: (value) => `${fmtNumber(value, 1)} 美元/盎司`,
+  });
+  const priceLegend = { label: GOLD_PRICE_LABEL, cls: "lg-g", available: priceAvailable };
+  const cardCodes = (key: string, base: string[]): string[] =>
+    priceOverlays[key] ? [...base, "GOLD_PRICE_USD"] : base;
+  const cardLegend = (
+    key: string,
+    base: Array<{ label: string; cls: string; available: boolean }>,
+  ): Array<{ label: string; cls: string; available: boolean }> =>
+    priceOverlays[key] ? [...base, priceLegend] : base;
+  const cardOption = (
+    key: string,
+    specs: SeriesSpec[],
+    axes: AxisSpec[],
+    zeroLine = false,
+  ): EChartsOption => {
+    if (!priceOverlays[key]) return buildChartOption(specs, axes, zeroLine);
+    return buildChartOption(
+      [...specs, priceSpec(axes.length)],
+      [...axes, { format: (value) => fmtNumber(value, 0) }],
+      zeroLine,
+    );
+  };
   return [
     {
       key: "price-real",
-      title: "黄金价格 vs 美债实际利率",
-      unit: "美元/盎司 · %",
+      title: "美债 10Y 实际利率",
+      unit: "%",
       wide: true,
       height: 250,
-      codes: ["GOLD_PRICE_USD", "US10Y_REAL"],
-      legend: [
-        { label: "伦敦金价", cls: "lg-a", available: true },
-        { label: "10Y 实际利率", cls: "lg-w", available: true },
-      ],
-      note: "",
-      emptyText: "暂无价格或实际利率序列",
-      emptyHint: "等待黄金采集任务写入行情与利率数据。",
-      option: buildChartOption(
+      codes: cardCodes("price-real", ["US10Y_REAL"]),
+      legend: cardLegend("price-real", [{ label: "10Y 实际利率", cls: "lg-a", available: true }]),
+      note: priceOverlays["price-real"] ? "" : "可叠加金价对比",
+      emptyText: "暂无实际利率序列",
+      emptyHint: "等待黄金采集任务写入利率数据，或切换更长的时间范围。",
+      option: cardOption(
+        "price-real",
         [
-          {
-            code: "GOLD_PRICE_USD",
-            label: "伦敦金价",
-            color: colors.accent,
-            format: (value) => `${fmtNumber(value, 1)} 美元/盎司`,
-          },
           {
             code: "US10Y_REAL",
             label: "10Y 实际利率",
-            color: colors.warn,
-            axis: 1,
+            color: colors.accent,
             format: (value) => `${fmtNumber(value, 2)}%`,
           },
         ],
-        [{ format: (value) => fmtNumber(value, 0) }, { format: (value) => `${fmtNumber(value, 1)}%` }],
+        [{ format: (value) => `${fmtNumber(value, 1)}%` }],
       ),
     },
     {
@@ -949,12 +1019,13 @@ const chartCards = computed<ChartCard[]>(() => {
       title: "全球黄金 ETF 持仓",
       unit: "吨",
       height: 230,
-      codes: ["ETF_GLOBAL_TONNES"],
-      legend: [{ label: "ETF 持仓", cls: "lg-a", available: true }],
+      codes: cardCodes("etf-tonnes", ["ETF_GLOBAL_TONNES"]),
+      legend: cardLegend("etf-tonnes", [{ label: "ETF 持仓", cls: "lg-a", available: true }]),
       note: "",
       emptyText: "暂无 ETF 持仓序列",
-      emptyHint: "WGC 全球黄金 ETF 数据未采集。",
-      option: buildChartOption(
+      emptyHint: "WGC 全球黄金 ETF 数据未采集，或当前时间范围无数据。",
+      option: cardOption(
+        "etf-tonnes",
         [
           {
             code: "ETF_GLOBAL_TONNES",
@@ -971,12 +1042,13 @@ const chartCards = computed<ChartCard[]>(() => {
       title: "伦敦金库黄金库存",
       unit: "吨",
       height: 230,
-      codes: ["LBMA_GOLD_TONNES"],
-      legend: [{ label: "金库库存", cls: "lg-a", available: true }],
+      codes: cardCodes("lbma-tonnes", ["LBMA_GOLD_TONNES"]),
+      legend: cardLegend("lbma-tonnes", [{ label: "金库库存", cls: "lg-a", available: true }]),
       note: "",
       emptyText: "暂无伦敦金库库存序列",
-      emptyHint: "LBMA 月度库存数据未采集。",
-      option: buildChartOption(
+      emptyHint: "LBMA 月度库存数据未采集，或当前时间范围无数据。",
+      option: cardOption(
+        "lbma-tonnes",
         [
           {
             code: "LBMA_GOLD_TONNES",
@@ -993,15 +1065,16 @@ const chartCards = computed<ChartCard[]>(() => {
       title: "CFTC 持仓（管理基金 / 掉期商）",
       unit: "张",
       height: 230,
-      codes: ["COT_MONEY_NET", "COT_SWAP_NET"],
-      legend: [
+      codes: cardCodes("cftc-net", ["COT_MONEY_NET", "COT_SWAP_NET"]),
+      legend: cardLegend("cftc-net", [
         { label: "管理基金净持仓", cls: "lg-a", available: true },
         { label: "掉期商净持仓", cls: "lg-m", available: swapAvailable },
-      ],
+      ]),
       note: swapAvailable ? "" : "掉期商序列缺失",
       emptyText: "暂无 CFTC 持仓序列",
-      emptyHint: "等待 CFTC COT 采集写入数据。",
-      option: buildChartOption(
+      emptyHint: "等待 CFTC COT 采集写入数据，或当前时间范围无数据。",
+      option: cardOption(
+        "cftc-net",
         [
           {
             code: "COT_MONEY_NET",
@@ -1025,12 +1098,13 @@ const chartCards = computed<ChartCard[]>(() => {
       title: "上海金溢价",
       unit: "%",
       height: 230,
-      codes: ["CN_GOLD_PREMIUM_PCT"],
-      legend: [{ label: "上海金溢价", cls: "lg-a", available: true }],
+      codes: cardCodes("cn-premium", ["CN_GOLD_PREMIUM_PCT"]),
+      legend: cardLegend("cn-premium", [{ label: "上海金溢价", cls: "lg-a", available: true }]),
       note: "",
       emptyText: "暂无上海金溢价序列",
-      emptyHint: "等待沪金与伦敦金折算价序列写入。",
-      option: buildChartOption(
+      emptyHint: "等待沪金与伦敦金折算价序列写入，或当前时间范围无数据。",
+      option: cardOption(
+        "cn-premium",
         [
           {
             code: "CN_GOLD_PREMIUM_PCT",
@@ -1444,6 +1518,9 @@ function chartMeta(chart: ChartCard): string {
 .lg-m {
   background: var(--muted);
 }
+.lg-g {
+  background: var(--gold);
+}
 .lg-dim .lg-dot {
   background: var(--dim);
 }
@@ -1452,6 +1529,50 @@ function chartMeta(chart: ChartCard): string {
   font-size: 9px;
   color: var(--warn);
   white-space: nowrap;
+}
+/* 时间范围切换：与资产历史走势弹窗（HistoryModal）保持同一组选项与样式 */
+.chart-ranges {
+  display: flex;
+  gap: 3px;
+}
+.chart-ranges button {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.chart-ranges button:hover {
+  color: var(--text);
+}
+.chart-ranges button.active {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--accent-weak);
+}
+/* 按图表叠加伦敦金价对比 */
+.chart-toggle {
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.chart-toggle:hover {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 45%, var(--border));
+}
+.chart-toggle.active {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 55%, var(--border));
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
 }
 
 /* ---------- 因子明细表 ---------- */

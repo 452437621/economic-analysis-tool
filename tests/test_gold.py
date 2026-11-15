@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 import openpyxl
 import pytest
+import xlrd
 from fastapi.testclient import TestClient
 
 from app.gold import providers
@@ -80,8 +81,13 @@ def test_registry_is_consistent():
     assert "LBMA_GOLD_TONNES" in INDICATORS
     assert "ETF_GLOBAL_TONNES" in INDICATORS
     assert "COT_MONEY_NET" in INDICATORS
-    assert "BIS_GOLD_LEASE_RATE" in manual_codes()
-    assert "COMEX_GOLD_INVENTORY_TONNES" in manual_codes()
+    manual = manual_codes()
+    # 已找到自动数据源的手动指标应转入自动采集
+    assert "CB_GOLD_GLOBAL_TONNES" not in manual
+    assert "COMEX_GOLD_INVENTORY_TONNES" not in manual
+    assert "MM_BANK_GOLD_NET" not in manual
+    # BIS 官方无公开序列，仍保留手动录入
+    assert "BIS_GOLD_LEASE_RATE" in manual or "BIS_GOLD_SWAP_USD" in manual
     for item in INDICATORS.values():
         assert item.weight >= 0
         assert item.direction in (1, -1)
@@ -176,6 +182,143 @@ def test_eastmoney_provider_parses_reserves(monkeypatch):
     assert result.records[0]["value"] == 3064.11
 
 
+def test_wgc_cbd_provider_sums_countries_and_drops_partial_quarter(monkeypatch):
+    def stamp(year: int, month: int, day: int) -> int:
+        return int(datetime(year, month, day, tzinfo=timezone.utc).timestamp() * 1000)
+
+    payload = {
+        "chartData": {
+            "linechart": {
+                "QTD_FULL": {
+                    "gold_reserves_tns": {
+                        "data": [
+                            {
+                                "name": "USA",
+                                "data": [
+                                    [stamp(2026, 3, 31), 8000.0],
+                                    [stamp(2026, 6, 30), 8100.0],
+                                    [stamp(2026, 9, 30), 8100.0],
+                                ],
+                            },
+                            {
+                                "name": "DEU",
+                                "data": [
+                                    [stamp(2026, 3, 31), 3000.0],
+                                    [stamp(2026, 6, 30), 3010.0],
+                                    [stamp(2026, 9, 30), None],
+                                ],
+                            },
+                            {
+                                "name": "CHN",
+                                "data": [
+                                    [stamp(2026, 3, 31), 2200.0],
+                                    [stamp(2026, 6, 30), 2250.0],
+                                ],
+                            },
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    _FakeClient.responses = {"getPage": _FakeResponse(payload=payload)}
+    monkeypatch.setattr(providers, "HttpClient", _FakeClient)
+    result = providers.fetch_wgc_central_banks()
+    assert result.ok, result.error
+    values = [round(record["value"], 1) for record in result.records]
+    # 2026-09 只有 1 个国家上报，应被丢弃，避免总量假暴跌
+    assert values == [13200.0, 13360.0]
+    assert all(record["code"] == "CB_GOLD_GLOBAL_TONNES" for record in result.records)
+
+
+def test_cftc_bpr_provider_parses_bank_net(monkeypatch):
+    html = (
+        "<html><body><div>REPORT DATE: 4/7/2026</div><table>"
+        "<tr><td rowspan=\"3\">CMX GOLD</td><td>U.S.</td><td>5</td><td>13,092</td><td>3.7</td>"
+        "<td>74,688</td><td>21.0</td><td>354,877</td></tr>"
+        "<tr><td>NON U.S.</td><td>24</td><td>15,645</td><td>4.4</td><td>109,086</td><td>30.7</td><td>&nbsp;</td></tr>"
+        "<tr><td>&nbsp;</td><td>29</td><td>28,737</td><td>8.1</td><td>183,774</td><td>51.8</td><td>&nbsp;</td></tr>"
+        "</table></body></html>"
+    )
+    _FakeClient.responses = {"BankParticipation": _FakeResponse(text=html)}
+    monkeypatch.setattr(providers, "HttpClient", _FakeClient)
+    monkeypatch.setattr(providers, "_bpr_periods", lambda months=30: [(2026, 4)])
+    result = providers.fetch_cftc_bank_participation()
+    assert result.ok, result.error
+    assert len(result.records) == 1
+    record = result.records[0]
+    assert record["code"] == "MM_BANK_GOLD_NET"
+    assert record["value"] == 28_737 - 183_774
+    assert record["as_of"].date().isoformat() == "2026-04-07"
+
+
+def test_comex_inventory_provider_converts_oz_to_tonnes(monkeypatch):
+    csv_text = (
+        "week_start,metal,report_date,registered_oz,eligible_oz,total_oz\n"
+        "2026-11-09,gold,2026-11-13,14220956.883,8683384.707,22904341.59\n"
+        "2026-11-02,silver,2026-11-06,1,2,3\n"
+    )
+    _FakeClient.responses = {"comex-gold": _FakeResponse(text=csv_text)}
+    monkeypatch.setattr(providers, "HttpClient", _FakeClient)
+    result = providers.fetch_comex_inventory()
+    assert result.ok, result.error
+    assert len(result.records) == 1
+    assert result.records[0]["code"] == "COMEX_GOLD_INVENTORY_TONNES"
+    assert result.records[0]["value"] == pytest.approx(22904341.59 * 31.1034768 / 1_000_000)
+
+
+def test_sge_lease_provider_reads_3m_column(monkeypatch):
+    class _FakeSheet:
+        rows = [
+            ["日期", "O/N", "1M", "3M", "6M", "9M", "1Y", "3Y"],
+            ["2026-11-13", "0.4269", "0.4195", "0.4236", "0.4359", "0.4420", "0.4472", "0.4758"],
+            ["2026-11-12", "0.4240", "0.4184", "0.4228", "0.4335", "0.4391", "0.4441", "0.4716"],
+        ]
+        nrows = len(rows)
+        ncols = 8
+
+        def cell_value(self, row: int, col: int):
+            return self.rows[row][col]
+
+    class _FakeBook:
+        def sheet_by_index(self, index: int):
+            return _FakeSheet()
+
+    monkeypatch.setattr(xlrd, "open_workbook", lambda **kwargs: _FakeBook())
+    _FakeClient.responses = {"rent/download/export": _FakeResponse(content=b"\xd0\xcf\x11\xe0fake-xls")}
+    monkeypatch.setattr(providers, "HttpClient", _FakeClient)
+    result = providers.fetch_sge_gold_lease()
+    assert result.ok, result.error
+    assert [record["code"] for record in result.records] == ["SGE_GOLD_LEASE_3M_PCT"] * 2
+    assert result.records[0]["value"] == pytest.approx(0.4236)
+
+
+def test_shfe_gold_stock_provider_parses_kilograms(monkeypatch):
+    listing = {
+        "dataList": "[20261112, 20261113]",
+        "startDate": "20260815",
+        "endDate": "20261113",
+    }
+    html = (
+        "<html><table>"
+        "<tr><th>地区</th><th>仓库</th><th>期货</th><th>增减</th></tr>"
+        "<tr><td colspan=\"3\">黄金</td><td>单位：千克</td></tr>"
+        "<tr><td colspan=\"2\">上期所指定交割金库</td><td>118,404</td><td>0</td></tr>"
+        "</table></html>"
+    )
+    _FakeClient.responses = {
+        "stock_data_list": _FakeResponse(payload=listing),
+        "dailystock_": _FakeResponse(text=html),
+    }
+    monkeypatch.setattr(providers, "HttpClient", _FakeClient)
+    result = providers.fetch_shfe_gold_stock()
+    assert result.ok, result.error
+    assert len(result.records) == 2
+    assert result.records[0]["code"] == "SHFE_GOLD_STOCK_TONNES"
+    assert result.records[0]["value"] == pytest.approx(118.404)
+    assert result.records[-1]["as_of"].date().isoformat() == "2026-11-13"
+
+
 def test_scoring_with_synthetic_metrics():
     init_db()
     with SessionLocal() as session:
@@ -207,7 +350,7 @@ def test_scoring_with_synthetic_metrics():
         assert score["coverage"] >= 0
         factor_codes = {factor["code"] for factor in score["factors"]}
         assert "ETF_GLOBAL_TONNES" in factor_codes
-        assert "BIS_GOLD_LEASE_RATE" in factor_codes
+        assert "SGE_GOLD_LEASE_3M_PCT" in factor_codes
         for row in session.query(GoldMetric).filter(GoldMetric.source == "test").all():
             session.delete(row)
         session.commit()
@@ -230,7 +373,7 @@ def test_gold_api_overview_and_manual_metric():
 
         saved = client.post(
             "/api/gold/metrics",
-            json={"code": "COMEX_GOLD_INVENTORY_TONNES", "value": 500.0, "as_of": "2026-11-01", "note": "test"},
+            json={"code": "BIS_GOLD_SWAP_USD", "value": 120.0, "as_of": "2026-11-01", "note": "test"},
         )
         assert saved.status_code == 200
         assert saved.json()["saved"] is True
