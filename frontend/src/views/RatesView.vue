@@ -87,9 +87,12 @@
             >
               <span class="mi-top">
                 <span class="mi-name">{{ row.label }}<em v-if="row.freq" class="mi-freq">{{ row.freq }}</em></span>
-                <span class="mi-code" :class="{ 'mi-code--stale': daysAgo(row) > 5 }">{{ row.code }} · {{ asOfText(row) }}</span>
+                <span class="mi-code">{{ row.code }}</span>
               </span>
-              <span class="mi-value">{{ fmtMacro(row.value, row.unit) }}</span>
+              <span class="mi-value-row">
+                <span class="mi-value">{{ fmtMacro(row.value, row.unit) }}</span>
+                <span class="mi-asof" :class="{ 'mi-asof--stale': daysAgo(row) > 5 }">{{ asOfText(row) }}</span>
+              </span>
               <span class="mi-bottom">
                 <span class="mi-chg" :class="changeClass(row.code)">{{ changeText(row.code) }}</span>
                 <span class="mi-spark">
@@ -536,7 +539,21 @@ onMounted(() => {
   color: var(--dim);
   white-space: nowrap;
 }
-.mi-code--stale {
+.mi-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.mi-asof {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.mi-asof--stale {
   color: var(--warn-color, #d08700);
 }
 .mi-value {
