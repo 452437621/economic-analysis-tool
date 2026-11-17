@@ -203,6 +203,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 | [研究笔记：代码库审计](docs/research/codebase-audit.md) | 63 端点/40 表/算法逐个说明/调度/EPIC-C 差距/10 条技术债/10 条工程建议 |
 | [V2.0 交互原型](docs/design/mockup-v2/index.html) | 单文件 HTML 原型：周期罗盘 / 世界长河 / 透明管线 / 预警台 / 为什么抽屉 / 浅色，含 6 张 1440×1000 截图 |
 
+### 工程与维护
+
+| 文档 / 工具 | 内容 |
+|---|---|
+| [25 事故复盘：`git reset --hard` 覆盖未提交改动](docs/25-事故复盘-git-reset-2026-11-17.md) | 2026-11-17 事故链、取证结论、损失与等价重建、行为级验证证据、5 Whys、预防规约 R1–R8、残余风险 |
+| [scripts/snapshot.ps1](scripts/snapshot.ps1) | 破坏性操作前的工作区快照：`head.txt` / `status.txt` / `worktree.patch` / `index.patch` / `untracked/`，产物写 `data/backups/snapshot-<时间戳>/` |
+
 ---
 
 ## 质量与 DevOps

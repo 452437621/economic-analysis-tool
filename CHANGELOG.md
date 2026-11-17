@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+### 工程（git reset --hard 事故复盘：取证、等价重建验证、防复发快照脚本，2026-11-17）
+
+诉求：「针对 git commit-tree 的事故，请进行全面排查处理，如果有必要请把之前丢失的文件相关工作重新做一遍，避免功能丢失，请深刻反省。」
+
+- **事故定性（如实）**：2026-11-17 15:3x，为消除提交信息里的 UTF-8 BOM 用 `git commit-tree` 重建了两个提交，随后用 `git reset --hard 3e4bf3b` 想"同步引用"，但它把**工作区强制回滚到该 tree**，覆盖了当时未提交的 `frontend/src` 6 个源文件、`scripts/_common.ps1`、`web/index.html`。BOM 的来源是 PowerShell **5.1** 的 `Out-File -Encoding utf8`（5.1 会写 BOM）。
+- **取证结论**：`git fsck --unreachable --no-reflogs` 仅 `dd8206d`、`331529f` 两个不可达提交；`git diff dd8206d 4c8c7d1` 与 `git diff 331529f 3e4bf3b` **均为空** → commit-tree 未丢任何已提交内容；无 stash / 无 remote / 无 VSCode·Cursor 历史 / 回收站无副本；丢失内容从未 `git add`，**原始字节不可恢复**，只能从事故后幸存的未跟踪新构建产物（`web/assets/*` 18 个文件）反推重建。
+- **等价重建与验证**：重建后与事故前最后提交 `28bca2e` 的差异收敛为 7 个文件 +120/−13，逐 hunk 对应「时点语义 / 黄金 as_of / netstat LISTENING」三类意图；本轮重新做行为级验证——`pytest tests -q` → **210 passed**、`scripts/lint.py` → PASSED、47 个 GET 端点 200、**headless Chrome 对 9 个路由做 DOM 断言全通过**（`/market` 采集时点与 4 分钟去重文案、`/rates` `mi-asof` 与「N 天前」、`/gold` `frow-asof` 与「各因子里最早的观测日」等）。
+- **新增 [25 事故复盘文档](docs/25-事故复盘-git-reset-2026-11-17.md)**：结论摘要、时间线、取证表、损失清单与恢复方式、6 条"功能没丢"的证据、5 Whys 根因、反省、预防规约 R1–R8、复发演练、残余风险声明。
+- **新增 `scripts/snapshot.ps1`（防复发工具，已自测）**：破坏性操作前把工作区落盘为 `data/backups/snapshot-<时间戳>/`（`head.txt`、`status.txt`、`worktree.patch`、`index.patch`、`untracked/` 原样副本），实测可用 `git apply` 回填被 `git checkout --` 抹掉的改动。
+- **预防规约 R1–R8（立即生效）**：R1 有未提交改动时禁用 `reset --hard` / `checkout -- .` / `clean -fd` / `stash drop`；R2 破坏性操作前必跑 `snapshot.ps1`；R3 历史改写只在干净工作区或独立 worktree，引用迁移用 `git update-ref` / `reset --soft`；R4 提交信息用 Python `write_text(encoding="utf-8")` 生成，不在 PS 5.1 用 `Out-File -Encoding utf8`；R5 先提交能提交的、再动引用；R6 操作前后 `git status --porcelain` 对照留档；R7 每轮收尾 `git bundle create data/backups/repo-<日期>.bundle --all`；R8 验证产物保留到提交完成。
+- **残余风险**：6 个前端文件为语义等价重建（注释/空行/辅助函数写法可能与原文不同，不影响运行）；vite 资产哈希与事故前不同；无法反推"不进入编译产物"的内容（如 SFC 注释）；仓库仍无 remote，结构级兜底依赖 R7 的 bundle。
+
 ### 维护（构建产物不入库、删除过渡期旧看板、利率卡 as_of 布局修正，2026-11-17）
 
 诉求：全面复查前序改动是否仍在、功能是否正常，并做三项收尾——构建产物不进仓库、清理历史版本里没用的文件、把编译生成的 `web/` 从版本库摘出去。
