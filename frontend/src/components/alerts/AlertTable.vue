@@ -2,7 +2,12 @@
   <section class="card table-card alr-table-card">
     <header class="card-head">
       <span class="card-title">预警表</span>
-      <span class="card-sub">全量 {{ counts.all }} 条 · 显示 {{ visible.length }} 条 · 触发项置顶（沿用后端排序）</span>
+      <span class="card-sub">
+        全量 {{ counts.all }} 条 · 显示 {{ visible.length }} 条 · 触发项置顶（沿用后端排序）
+        <template v-if="counts.unknown">
+          · <b class="alr-unknown-note">未知 {{ counts.unknown }} 条</b>：缺失指标记为未知，不默认未触发
+        </template>
+      </span>
       <div class="card-actions">
         <span v-if="loading" class="badge badge--sm badge--live">同步中</span>
         <div class="seg alr-seg" role="group" aria-label="严重度筛选">
@@ -271,6 +276,11 @@ function distanceClass(item: AlertRow): string {
   font-family: var(--mono);
   font-size: 9px;
   color: var(--dim);
+}
+
+.alr-unknown-note {
+  color: var(--warn);
+  font-weight: 600;
 }
 
 .alr-seg button.active .alr-seg-count {

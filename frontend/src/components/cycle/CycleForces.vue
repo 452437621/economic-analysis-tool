@@ -4,9 +4,7 @@
       <span class="card-title">五力仪表 <span class="cyc-card-sub">达利欧大周期驱动</span></span>
       <span class="cyc-card-right">{{ stressCount }} 项进入压力区</span>
     </div>
-    <p class="cyc-forces-sub">
-      0–100 分数越高压力 / 强度越大 · 前三力为六分量口径，后两力为代理口径 E1（仅供方向参考）
-    </p>
+    <p class="cyc-forces-sub">五力 = 达利欧大周期驱动；分值 0–100，越高越接近压力区。</p>
     <div class="cyc-forces-body">
       <div v-for="force in forces" :key="force.key" class="cyc-force-row">
         <div class="cyc-force-head">
@@ -15,7 +13,7 @@
             <i
               class="cyc-force-fill"
               :class="`cyc-force-fill--${level(force.score).cls}`"
-              :style="{ width: force.score === null ? '100%' : `${Math.max(0, Math.min(100, force.score))}%` }"
+              :style="{ width: fillWidth(force.score) }"
             ></i>
             <i class="cyc-force-tick" style="left: 25%"></i>
             <i class="cyc-force-tick" style="left: 50%"></i>
@@ -57,12 +55,18 @@ interface ForceRow {
 
 defineProps<{ forces: ForceRow[]; stressCount: number }>();
 
-function level(score: number | null): { cls: string; label: string } {
-  if (score === null || !Number.isFinite(score)) return { cls: "missing", label: "数据缺失" };
+function level(score: number | null | undefined): { cls: string; label: string } {
+  if (score === null || score === undefined || !Number.isFinite(score)) return { cls: "missing", label: "数据缺失" };
   if (score >= 75) return { cls: "hot", label: "压力区" };
   if (score >= 60) return { cls: "warn", label: "偏高" };
   if (score < 40) return { cls: "ok", label: "低位" };
   return { cls: "flat", label: "中性" };
+}
+
+/** 缺失分项用虚线满条提示「无数据」，不伪造分值宽度 */
+function fillWidth(score: number | null | undefined): string {
+  if (score === null || score === undefined || !Number.isFinite(score)) return "100%";
+  return `${Math.max(0, Math.min(100, score))}%`;
 }
 </script>
 
@@ -117,7 +121,7 @@ function level(score: number | null): { cls: string; label: string } {
   gap: 8px;
 }
 .cyc-force-name {
-  width: 84px;
+  width: 78px;
   flex: none;
   font-size: 10.5px;
   color: var(--muted);
@@ -159,7 +163,7 @@ function level(score: number | null): { cls: string; label: string } {
   top: 0;
   bottom: 0;
   width: 1px;
-  background: rgba(255, 255, 255, 0.2);
+  background: color-mix(in srgb, var(--text) 22%, transparent);
 }
 .cyc-force-num {
   width: 24px;
@@ -172,7 +176,7 @@ function level(score: number | null): { cls: string; label: string } {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding-left: 92px;
+  padding-left: 86px;
   font-size: 8.5px;
   color: var(--dim);
 }
@@ -194,7 +198,7 @@ function level(score: number | null): { cls: string; label: string } {
 .cyc-force-scale {
   display: flex;
   justify-content: space-between;
-  padding: 3px 74px 6px 92px;
+  padding: 3px 74px 1px 86px;
   font-family: var(--mono);
   font-size: 8px;
   color: var(--dim);
@@ -204,7 +208,7 @@ function level(score: number | null): { cls: string; label: string } {
     padding-left: 0;
   }
   .cyc-force-scale {
-    padding-left: 92px;
+    padding-left: 86px;
   }
 }
 </style>

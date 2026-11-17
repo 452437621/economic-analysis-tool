@@ -1,10 +1,20 @@
 <template>
-  <aside class="card hst-detail">
+  <aside class="card hst-detail" :class="{ 'hst-detail--embedded': embedded }">
     <div class="card-head">
       <span class="card-title">事件详情</span>
       <span v-if="event" class="card-sub">{{ event.year }} 年</span>
       <span v-else-if="contextYear !== null" class="card-sub">时间切片</span>
       <div v-if="event || contextYear !== null" class="card-actions">
+        <button
+          v-if="!embedded"
+          class="icon-btn"
+          type="button"
+          title="在抽屉中放大查看"
+          aria-label="在抽屉中放大查看"
+          @click="emit('expand')"
+        >
+          <svg class="ic"><use href="#i-eye" /></svg>
+        </button>
         <button class="icon-btn" type="button" aria-label="清除选中" @click="emit('close')">
           <svg class="ic"><use href="#i-close" /></svg>
         </button>
@@ -56,6 +66,7 @@
           打开原始来源
           <svg class="ic"><use href="#i-external" /></svg>
         </a>
+        <p v-else-if="sourceText" class="hst-detail-muted">来源：{{ sourceText }}</p>
         <p v-else class="hst-detail-muted">该事件为叙事判断，未附单一来源，请结合多份史料交叉核对。</p>
 
         <section v-if="related.length" class="hst-detail-related">
@@ -98,9 +109,11 @@ import type { TimelineEventItem } from "@/api/types";
 
 interface Props {
   event: TimelineEventItem | null;
-  contextYear: number | null;
-  nearby: TimelineEventItem[];
+  contextYear?: number | null;
+  nearby?: TimelineEventItem[];
   related: TimelineEventItem[];
+  /** 放进抽屉时去掉 sticky 定位与卡片外观，避免双重容器。 */
+  embedded?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -108,11 +121,13 @@ const props = withDefaults(defineProps<Props>(), {
   contextYear: null,
   nearby: () => [],
   related: () => [],
+  embedded: false,
 });
 
 const emit = defineEmits<{
   (event: "close"): void;
   (event: "select", item: TimelineEventItem): void;
+  (event: "expand"): void;
 }>();
 
 const impactText = computed(() => {
@@ -122,6 +137,11 @@ const impactText = computed(() => {
     .filter(Boolean);
   return paragraphs.length > 1 ? paragraphs.slice(1).join("\n\n") : "该事件的当代映射见历史类比。";
 });
+
+/** 设计稿静态事件自带来源说明文本（无 URL），后端真实事件没有该字段。 */
+const sourceText = computed(
+  () => (props.event as (TimelineEventItem & { source_text?: string | null }) | null)?.source_text ?? "",
+);
 
 const gradeClass = (grade: string | null | undefined) => {
   if (grade === "A") return "badge--accent";
@@ -136,6 +156,21 @@ const gradeClass = (grade: string | null | undefined) => {
   position: sticky;
   top: calc(var(--topbar-h) + 10px);
   min-width: 0;
+}
+.hst-detail--embedded {
+  position: static;
+  top: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.hst-detail--embedded > .card-head {
+  padding-left: 0;
+  padding-right: 0;
+}
+.hst-detail--embedded > .card-body {
+  padding-left: 0;
+  padding-right: 0;
 }
 .hst-detail-body {
   padding: 12px 13px;

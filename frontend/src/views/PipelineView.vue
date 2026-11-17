@@ -7,13 +7,11 @@
           透明管线 · 数据如何生成结论
           <span class="page-sub">从采集到结论的每一步都可追溯：节点状态、输入特征、规则命中、反证与失效条件</span>
         </h1>
+        <span class="gen-at">（生成于 {{ generatedLabel }}）</span>
       </div>
       <div class="page-actions pipe-page-actions">
-        <span class="badge badge--sm">最近运行 {{ lastRun ? fmtDateTime(lastRun.started_at) : "—" }}</span>
         <span class="badge badge--sm" :class="runBadgeClass(lastRun?.status)">{{ runStatusText(lastRun?.status) }}</span>
-        <span class="badge badge--sm">耗时 {{ fmtDuration(lastRun?.duration_ms) }}</span>
-        <span class="badge badge--sm pipe-updated-badge" :title="`状态接口更新于 ${updatedLabel}`">更新于 {{ updatedLabel }}</span>
-        <button class="btn btn--sm" type="button" :disabled="pageLoading" :title="`更新于 ${updatedLabel}`" @click="refreshAll">
+        <button class="btn btn--sm" type="button" :disabled="pageLoading" @click="refreshAll">
           <svg class="ic" :class="{ spin: pageLoading }"><use href="#i-refresh" /></svg>刷新
         </button>
       </div>
@@ -36,6 +34,35 @@
           </span>
         </div>
       </header>
+      <div v-if="selectedRun" class="pipe-run-summary">
+        <div class="pipe-sum-cell">
+          <span class="pipe-sum-label">运行编号</span>
+          <b class="pipe-sum-value mono" :title="selectedRun.id">{{ shortId(selectedRun.id) }}</b>
+        </div>
+        <div class="pipe-sum-cell">
+          <span class="pipe-sum-label">任务 · 环境</span>
+          <b class="pipe-sum-value mono" :title="runEnvTitle">{{ runEnvText }}</b>
+        </div>
+        <div class="pipe-sum-cell">
+          <span class="pipe-sum-label">耗时</span>
+          <b class="pipe-sum-value mono">{{ fmtDuration(selectedRun.duration_ms) }}</b>
+        </div>
+        <div class="pipe-sum-cell">
+          <span class="pipe-sum-label">步骤成功率</span>
+          <b class="pipe-sum-value mono">{{ stepSuccessText }}</b>
+        </div>
+        <div class="pipe-sum-cell">
+          <span class="pipe-sum-label">数据覆盖</span>
+          <b class="pipe-sum-value mono" :title="coverageTitle">{{ coverageText }}</b>
+        </div>
+        <div class="pipe-sum-cell">
+          <span class="pipe-sum-label">完成于</span>
+          <b class="pipe-sum-value mono">{{ fmtDateTime(selectedRun.finished_at) }}</b>
+        </div>
+      </div>
+      <div v-else class="pipe-run-summary pipe-run-summary--empty">
+        未选择运行：选中下方任一运行后，这里展示运行编号、任务环境、耗时、步骤成功率、数据覆盖与完成时间。
+      </div>
       <div class="pipe-run-chips">
         <SkeletonBlock v-if="runsLoading && !runs.length" :rows="1" :height="28" />
         <ErrorState v-else-if="runsError && !runs.length" :error="runsError" @retry="refreshRuns" />
@@ -61,6 +88,9 @@
           <span v-if="run.degraded" class="pipe-run-flag">降级</span>
         </button>
       </div>
+      <footer class="card-foot pipe-run-foot">
+        步骤成功率 = 本运行成功步骤 / 全部步骤；数据覆盖取 /api/system/coverage；接口未返回时显示 —，不做估算。
+      </footer>
     </section>
 
     <div class="kpi-grid pipe-kpi">
@@ -98,7 +128,7 @@
       </div>
     </div>
 
-    <PipelineDag :nodes="nodes" :selected="selectedNode" @select="onNodeSelect" />
+    <PipelineDag :nodes="nodes" :selected="selectedNode" :unmapped-count="unmappedStepCount" @select="onNodeSelect" />
 
     <NodeDetail
       v-if="selectedNodeData"
@@ -285,6 +315,7 @@ import {
   getV2Status,
 } from "@/api/endpoints";
 import type {
+  CoverageResponse,
   CycleKey,
   CycleStateResponse,
   LedgerCalibration,
@@ -304,7 +335,7 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import SkeletonBlock from "@/components/ui/SkeletonBlock.vue";
 import { usePolling } from "@/composables/usePolling";
-import { fmtDate, fmtDateTime, fmtInt, fmtTime } from "@/composables/useFormat";
+import { fmtDate, fmtDateTime, fmtInt, fmtPct, fmtTime } from "@/composables/useFormat";
 
 type NodeStatus = "ok" | "degraded" | "failed" | "pending";
 type NodeId = "ingest" | "quality" | "feature" | "cycle" | "scenario" | "publish";
@@ -321,26 +352,77 @@ interface PipeNode {
 }
 
 const NODE_DEFS: Array<{ id: NodeId; name: string; en: string; match: string[] }> = [
-  { id: "ingest", name: "采集", en: "ingest", match: ["load_bars", "load_panel"] },
-  { id: "quality", name: "质检", en: "quality", match: ["align_calendar", "quality", "degrade"] },
-  { id: "feature", name: "特征", en: "feature", match: ["indicators", "read_indicators"] },
-  { id: "cycle", name: "周期引擎", en: "cycle-engine", match: ["composite_scores", "phases", "sustainability", "world_order"] },
-  { id: "scenario", name: "情景", en: "scenario", match: ["scenarios"] },
+  { id: "ingest", name: "采集", en: "ingest", match: ["load_bars", "load_panel", "load_cycle", "load"] },
+  {
+    id: "quality",
+    name: "质检",
+    en: "quality",
+    match: ["align_calendar", "quality", "degrade", "sync_principles", "check_principles"],
+  },
+  {
+    id: "feature",
+    name: "特征",
+    en: "feature",
+    match: [
+      "indicators",
+      "read_indicators",
+      "regimes",
+      "wind",
+      "correlation",
+      "attribution",
+      "analogs",
+      "leadlag",
+      "events",
+      "calendar_study",
+    ],
+  },
+  {
+    id: "cycle",
+    name: "周期引擎",
+    en: "cycle-engine",
+    match: ["composite_scores", "phases", "sustainability", "world_order", "history"],
+  },
+  { id: "scenario", name: "情景", en: "scenario", match: ["scenarios", "alerts"] },
   { id: "publish", name: "输出", en: "publish", match: ["derive", "finish", "publish"] },
 ];
 
-/** 契约外步骤的兜底归并：先按关键词，再按步骤顺序归到上一个已匹配节点。 */
+/** 契约外步骤的兜底归并：先按关键词，再按步骤 kind。 */
 const NODE_ALIASES: Array<{ id: NodeId; keywords: string[] }> = [
-  { id: "ingest", keywords: ["load", "collect", "fetch"] },
-  { id: "quality", keywords: ["seed", "clean", "validate"] },
+  { id: "ingest", keywords: ["load", "collect", "fetch", "seed"] },
+  { id: "quality", keywords: ["clean", "validate", "align", "reconcile", "freshness"] },
   {
     id: "feature",
-    keywords: ["indicator", "regime", "wind", "correlation", "attribution", "leadlag", "events", "study"],
+    keywords: [
+      "indicator",
+      "regime",
+      "wind",
+      "correlation",
+      "attribution",
+      "leadlag",
+      "event",
+      "study",
+      "analog",
+    ],
   },
   { id: "cycle", keywords: ["composite", "phase", "sustainability", "world_order", "history", "read_cycle"] },
   { id: "scenario", keywords: ["scenario", "alert"] },
   { id: "publish", keywords: ["derive", "finish", "publish", "score"] },
 ];
+
+/** 步骤 kind → 节点：步骤名完全在契约外时按类型归并。 */
+const KIND_NODE: Record<string, NodeId> = {
+  fetch: "ingest",
+  ingest: "ingest",
+  transform: "quality",
+  compute: "feature",
+  derive: "publish",
+  publish: "publish",
+};
+
+/** 同名步骤在特定运行类型下归到不同节点（例如 cycle 运行里的 analogs 属于周期引擎）。 */
+const RUN_KIND_OVERRIDES: Record<string, Record<string, NodeId>> = {
+  cycle: { analogs: "cycle", alerts: "scenario" },
+};
 
 const CYCLE_KEYS: CycleKey[] = ["DMI", "ICI", "ECI", "GROWTH", "INFLATION", "LIQUIDITY"];
 
@@ -357,8 +439,12 @@ const derivationsPoll = usePolling(
 );
 const methodsPoll = usePolling(getV2Methods, { interval: 30000, immediate: true });
 const calibrationPoll = usePolling(getLedgerCalibration, { interval: 30000, immediate: true });
+const coveragePoll = usePolling<CoverageResponse>(() => getJson<CoverageResponse>("/api/system/coverage"), {
+  interval: 60000,
+  immediate: true,
+});
 
-const { data: statusData, error: statusError, loading: statusLoading, lastUpdated: statusUpdated, refresh: refreshStatus } = statusPoll;
+const { data: statusData, error: statusError, loading: statusLoading, refresh: refreshStatus } = statusPoll;
 const { data: runsData, error: runsError, loading: runsLoading, refresh: refreshRuns } = runsPoll;
 const {
   data: derivationsData,
@@ -369,6 +455,7 @@ const {
 const { data: methodsData, error: methodsError, loading: methodsLoading, refresh: refreshMethods } = methodsPoll;
 const { data: calibrationData, error: calibrationError, loading: calibrationLoading, refresh: refreshCalibration } =
   calibrationPoll;
+const { data: coverageData, error: coverageError, refresh: refreshCoverage } = coveragePoll;
 
 const counts = computed(() => statusData.value?.counts ?? null);
 const runs = computed<V2Run[]>(() => runsData.value?.items ?? []);
@@ -377,7 +464,10 @@ const methods = computed<V2Method[]>(() => methodsData.value?.items ?? []);
 const calibration = computed<LedgerCalibration | null>(() => calibrationData.value?.calibration ?? null);
 
 const pageLoading = computed(() => statusLoading.value || runsLoading.value || derivationsLoading.value);
-const updatedLabel = computed(() => (statusUpdated.value ? fmtDateTime(statusUpdated.value.toISOString()) : "—"));
+/** 用状态接口的生成时间，而不是浏览器当前时间：避免把「刷新了页面」误读成「数据刚生成」。 */
+const generatedLabel = computed(() =>
+  statusData.value?.generated_at ? fmtDateTime(statusData.value.generated_at) : "—",
+);
 
 const selectedRunId = ref<string | null>(null);
 const detail = ref<V2RunDetail | null>(null);
@@ -403,6 +493,67 @@ const selectedRun = computed<V2Run | null>(
   () => runs.value.find((run) => run.id === selectedRunId.value) ?? detail.value?.run ?? null,
 );
 
+function shortId(id: string | null | undefined): string {
+  if (!id) return "—";
+  return id.length > 12 ? `${id.slice(0, 8)}…` : id;
+}
+
+/** 运行摘要条：任务类型 + 代码版本/方法作为「环境」，缺失一律 —，不做推断。 */
+const runEnvText = computed(() => {
+  const run = selectedRun.value;
+  if (!run) return "—";
+  const parts = [run.kind, run.code_version || run.method_id].filter((part): part is string => !!part);
+  return parts.length ? parts.join(" · ") : "—";
+});
+
+const runEnvTitle = computed(() => {
+  const run = selectedRun.value;
+  if (!run) return "";
+  return [
+    `运行 ID：${run.id}`,
+    `类型：${run.kind}`,
+    `方法：${run.method_id || "—"}`,
+    `代码版本：${run.code_version || "—"}`,
+    `标的：${run.subject || "—"}`,
+  ].join("\n");
+});
+
+/** 步骤成功率 = 本运行 ok 步骤 / 全部步骤；未加载到步骤明细时显示 —。 */
+const stepSuccessText = computed(() => {
+  const steps = detail.value?.steps ?? [];
+  if (!steps.length) return "—";
+  const ok = steps.filter((step) => step.status === "ok" && !step.error).length;
+  return `${ok}/${steps.length}`;
+});
+
+const coverageText = computed(() => {
+  const coverage = coverageData.value;
+  if (!coverage) return "—";
+  const covered = fmtInt(coverage.series_covered);
+  const total = fmtInt(coverage.series_total);
+  const pct = typeof coverage.data_quality_pct === "number" ? ` (${fmtPct(coverage.data_quality_pct, 0)})` : "";
+  return `${covered}/${total}${pct}`;
+});
+
+const coverageTitle = computed(() => {
+  const coverage = coverageData.value;
+  if (!coverage) return coverageError.value ? "覆盖率接口不可用" : "覆盖率数据尚未返回";
+  return [
+    `来源：${coverage.method || "/api/system/coverage"}`,
+    `序列：${coverage.series_covered}/${coverage.series_total}`,
+    `任务：${coverage.jobs_ok ?? "—"}/${coverage.jobs_total ?? "—"}`,
+    `最近同步：${coverage.last_sync ? fmtDateTime(coverage.last_sync) : "—"}`,
+    `数据日：${coverage.as_of ? fmtDate(coverage.as_of) : "—"}`,
+  ].join("\n");
+});
+
+/** 契约外步骤数：这些步骤按 kind 兜底归并，提示里如实说明。 */
+const unmappedStepCount = computed(() => {
+  const steps = detail.value?.steps ?? [];
+  const runKind = selectedRun.value?.kind;
+  return steps.filter((step) => stepNode(step, runKind) === null).length;
+});
+
 const lastRun = computed<V2Run | null>(() => statusData.value?.last_run ?? runs.value[0] ?? null);
 
 const initialComposites = computed<Record<CycleKey, number | null>>(() => {
@@ -415,16 +566,18 @@ const initialComposites = computed<Record<CycleKey, number | null>>(() => {
   return result;
 });
 
-function stepNode(step: V2Step): NodeId | null {
+function stepNode(step: V2Step, runKind?: string | null): NodeId | null {
   const name = (step.name || "").toLowerCase().trim();
   const last = name.split(".").pop() ?? name;
+  const override = runKind ? RUN_KIND_OVERRIDES[runKind]?.[last] : undefined;
+  if (override) return override;
   for (const def of NODE_DEFS) {
     if (def.match.includes(last)) return def.id;
   }
   for (const alias of NODE_ALIASES) {
     if (alias.keywords.some((keyword) => name.includes(keyword))) return alias.id;
   }
-  return null;
+  return KIND_NODE[(step.kind || "").toLowerCase()] ?? null;
 }
 
 function nodeStatus(nodeSteps: V2Step[], run: V2Run | null, def: { id: NodeId; match: string[] }): NodeStatus {
@@ -446,7 +599,7 @@ const nodes = computed<PipeNode[]>(() => {
   for (const def of NODE_DEFS) grouped.set(def.id, []);
   let cursor: NodeId = "ingest";
   for (const step of steps) {
-    const id = stepNode(step);
+    const id = stepNode(step, run?.kind);
     if (id) cursor = id;
     grouped.get(cursor)?.push(step);
   }
@@ -620,6 +773,7 @@ async function refreshAll() {
     refreshDerivations(),
     refreshMethods(),
     refreshCalibration(),
+    refreshCoverage(),
     loadCycleState(),
     loadCycleMeta(),
   ]);
@@ -671,6 +825,22 @@ watch(
   },
 );
 
+// 深链 ?code=：命中同 code 的推导后自动打开溯源抽屉，方便从「世界长河 / 预警台」跳进来直接看证据链。
+let autoOpenCode: string | null = null;
+watch(
+  [derivations, codeFilter],
+  ([list, code]) => {
+    if (!code || !list.length) return;
+    if (autoOpenCode === code) return;
+    const match = list.find((item) => item.code === code || item.id === code);
+    if (!match) return;
+    autoOpenCode = code;
+    selectedDerivationId.value = match.id;
+    openId.value = match.id;
+  },
+  { immediate: true },
+);
+
 void loadCycleState();
 void loadCycleMeta();
 </script>
@@ -689,10 +859,6 @@ void loadCycleMeta();
 .pipe-page-actions {
   flex-wrap: wrap;
   row-gap: 5px;
-}
-.pipe-updated-badge {
-  color: var(--dim);
-  font-weight: 400;
 }
 .pipe-status-strip {
   display: flex;
@@ -713,6 +879,51 @@ void loadCycleMeta();
 
 .pipe-run-strip {
   margin-top: 10px;
+}
+.pipe-run-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 12px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--border);
+  overflow: hidden;
+}
+.pipe-run-summary--empty {
+  display: block;
+  padding: 10px 12px;
+  border-style: dashed;
+  background: transparent;
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.pipe-sum-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--panel, var(--bg));
+}
+.pipe-sum-label {
+  font-size: 9px;
+  letter-spacing: 0.03em;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.pipe-sum-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pipe-run-foot {
+  color: var(--dim);
+  line-height: 1.5;
 }
 .pipe-run-actions {
   flex-wrap: wrap;
@@ -1041,6 +1252,9 @@ void loadCycleMeta();
   .pipe-main-grid {
     grid-template-columns: minmax(0, 1fr) minmax(0, 0.95fr);
   }
+  .pipe-run-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 @media (max-width: 1024px) {
   .pipe-main-grid {
@@ -1048,6 +1262,11 @@ void loadCycleMeta();
   }
   .pipe-filter-field {
     width: 210px;
+  }
+}
+@media (max-width: 900px) {
+  .pipe-run-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

@@ -237,54 +237,15 @@
       </aside>
     </div>
 
-    <!-- 交易日志 -->
-    <section class="card journal-card">
+    <!-- 交易记录 -->
+        <section class="card">
       <div class="card-head">
-        <span class="card-title">交易日志</span>
-        <span class="card-sub">记录判断、执行与偏差 · 最近 5 条</span>
-        <div class="card-actions"><span class="badge badge--sm">{{ journal.length }} 条</span></div>
-      </div>
-      <div class="journal-body">
-        <div class="journal-form">
-          <textarea
-            v-model="journalDraft"
-            class="journal-input"
-            rows="4"
-            maxlength="2000"
-            placeholder="记录今天的判断、执行偏差与复盘要点…"
-            @keydown.ctrl.enter.prevent="saveEntry"
-          ></textarea>
-          <div class="journal-actions">
-            <span class="journal-hint">{{ journalDraft.length }} / 2000 · Ctrl + Enter 保存</span>
-            <button
-              class="btn btn--sm btn--primary"
-              type="button"
-              :disabled="journalSaving || !journalDraft.trim()"
-              @click="saveEntry"
-            >
-              <svg class="ic"><use href="#i-check" /></svg>{{ journalSaving ? "保存中…" : "保存日志" }}
-            </button>
-          </div>
-        </div>
-        <div class="journal-list">
-          <div v-if="journalLoading" class="journal-skeleton">
-            <SkeletonBlock :rows="3" :cells="2" :height="10" />
-          </div>
-          <ErrorState v-else-if="journalError && !journal.length" :error="journalError" @retry="loadJournal" />
-          <EmptyState
-            v-else-if="!journal.length"
-            text="暂无交易日志"
-            hint="保存第一条日志，记录当日判断与执行偏差，周报会自动汇总。"
-          />
-          <div v-else class="journal-entries">
-            <div v-for="entry in journal" :key="entry.id ?? `${entry.entry_date}-${entry.content.slice(0, 12)}`" class="journal-entry">
-              <div class="je-head">
-                <span class="je-date mono">{{ entry.entry_date }}</span>
-                <span v-if="entry.created_at" class="je-time mono">{{ fmtTime(entry.created_at, true) }}</span>
-              </div>
-              <div class="je-content">{{ entry.content }}</div>
-            </div>
-          </div>
+        <span class="card-title">交易记录</span>
+        <span class="card-sub">已独立为单独页面：股票 / 期货等多品种的交易计划、执行与复盘</span>
+        <div class="card-actions">
+          <RouterLink class="btn btn--sm btn--ghost" to="/trades">
+            <svg class="ic"><use href="#i-book" /></svg>打开交易
+          </RouterLink>
         </div>
       </div>
     </section>
@@ -306,12 +267,10 @@ import {
   getBrief,
   getBriefKinds,
   getBriefList,
-  getJournal,
   getLatestBrief,
   getWatchlist,
-  saveJournal,
 } from "@/api/endpoints";
-import type { Brief, BriefSummary, JournalEntry, WatchlistItem } from "@/api/types";
+import type { Brief, BriefSummary, WatchlistItem } from "@/api/types";
 import { useEvidenceStore } from "@/stores/evidence";
 import { useHistoryStore } from "@/stores/history";
 import { usePrefsStore } from "@/stores/prefs";
@@ -411,11 +370,6 @@ const latestNeighbors = ref<{ previous_id: string | null; next_id: string | null
 });
 const navLoading = ref<"" | "prev" | "next">("");
 
-const journal = ref<JournalEntry[]>([]);
-const journalDraft = ref("");
-const journalLoading = ref(false);
-const journalError = ref<Error | null>(null);
-const journalSaving = ref(false);
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: false });
 
@@ -432,7 +386,7 @@ function kindFromQuery(value: unknown): BriefKind {
 const pageSub = computed(() =>
   brief.value
     ? `${kindLabel(brief.value.kind)} · ${brief.value.trade_date} ${weekdayLabel.value}`
-    : "日报 / 周报 / 月报 · 真实历史期次 · 交易日志",
+    : "日报 / 周报 / 月报 · 真实历史期次 · 交易记录",
 );
 
 const weekdayLabel = computed(() => {
@@ -827,33 +781,7 @@ async function loadWatchlist(): Promise<void> {
   }
 }
 
-async function loadJournal(): Promise<void> {
-  journalLoading.value = true;
-  journalError.value = null;
-  try {
-    journal.value = (await getJournal(5)).data ?? [];
-  } catch (err) {
-    journalError.value = err instanceof Error ? err : new Error(String(err));
-  } finally {
-    journalLoading.value = false;
-  }
-}
 
-async function saveEntry(): Promise<void> {
-  const content = journalDraft.value.trim();
-  if (!content || journalSaving.value) return;
-  journalSaving.value = true;
-  try {
-    await saveJournal(content);
-    journalDraft.value = "";
-    toast.ok("交易日志已保存");
-    await loadJournal();
-  } catch (err) {
-    toast.bad(`保存失败：${err instanceof Error ? err.message : String(err)}`);
-  } finally {
-    journalSaving.value = false;
-  }
-}
 
 /* ---------- 交互 ---------- */
 
@@ -876,7 +804,6 @@ function reload(): void {
   void loadKindCounts();
   void loadLatest();
   void loadIssueHistory();
-  void loadJournal();
   toast.info(`已刷新${KIND_TABS.find((option) => option.value === kind.value)?.label ?? "简报"}`);
 }
 
@@ -955,7 +882,6 @@ async function bootstrap(): Promise<void> {
   kind.value = kindFromQuery(route.query.kind);
   void loadKindCounts();
   void loadWatchlist();
-  void loadJournal();
   await loadLatest();
   // URL 深链：?brief=<id> 直接打开某一期历史简报
   const wanted = typeof route.query.brief === "string" ? route.query.brief : "";
@@ -1060,59 +986,6 @@ onBeforeUnmount(() => {
 .aside-print { width: 100%; margin-top: 6px; }
 .token-note { margin-top: 7px; font-size: 9px; line-height: 1.6; color: var(--dim); }
 
-/* ---------- 交易日志 ---------- */
-.journal-card { margin-top: 10px; }
-.journal-body {
-  display: grid;
-  grid-template-columns: 348px minmax(0, 1fr);
-  gap: 0;
-}
-.journal-form {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 11px 13px;
-  border-right: 1px solid var(--border);
-}
-.journal-input {
-  width: 100%;
-  min-height: 84px;
-  resize: vertical;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--surface-2);
-  color: var(--text);
-  font: inherit;
-  font-size: 11.5px;
-  line-height: 1.65;
-}
-.journal-input:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-weak);
-}
-.journal-input::placeholder { color: var(--dim); }
-.journal-actions { display: flex; align-items: center; gap: 8px; }
-.journal-hint { font-size: 9px; color: var(--dim); }
-.journal-actions .btn { margin-left: auto; }
-.journal-list { min-width: 0; padding: 6px 13px 8px; }
-.journal-skeleton { padding: 6px 0; }
-.journal-entries { display: flex; flex-direction: column; }
-.journal-entry { padding: 5px 0; border-bottom: 1px dashed var(--border); }
-.journal-entry:last-child { border-bottom: 0; }
-.je-head { display: flex; align-items: center; gap: 8px; }
-.je-date { font-size: 9.5px; color: var(--accent); }
-.je-time { font-size: 9px; color: var(--dim); }
-.je-content {
-  margin-top: 2px;
-  font-size: 11px;
-  line-height: 1.6;
-  color: color-mix(in srgb, var(--text) 88%, var(--muted));
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
 /* ---------- 打印：仅输出正文 ---------- */
 @media print {
   :global(body) {
@@ -1122,7 +995,6 @@ onBeforeUnmount(() => {
   }
   .article { background: #fff !important; border-color: #ddd !important; box-shadow: none !important; }
   .article-eyebrow a { display: none !important; }
-  .journal-card { display: none !important; }
   .md-body { font-size: 12px; line-height: 1.75; color: #222; }
   .md-body :deep(.ev-link) { display: none !important; }
   .md-body :deep(.a-p),
@@ -1148,11 +1020,5 @@ onBeforeUnmount(() => {
   .article h1 { color: #111 !important; }
   .md-body :deep(.up),
   .md-body :deep(.down) { color: #333 !important; }
-}
-
-/* ---------- 窄屏兜底 ---------- */
-@media (max-width: 1180px) {
-  .journal-body { grid-template-columns: 1fr; }
-  .journal-form { border-right: 0; border-bottom: 1px solid var(--border); }
 }
 </style>

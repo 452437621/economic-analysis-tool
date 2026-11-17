@@ -2,10 +2,10 @@
   <div class="view active">
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">研究分析 · 利率 · {{ todayLabel }}</div>
+        <div class="page-eyebrow">市场 · 利率与流动性</div>
         <h1 class="page-h1">
           利率与流动性
-          <span class="page-sub">{{ rows.length }} 个序列 · 更新于 {{ latestAsOfText }}</span>
+          <span class="page-sub">{{ rows.length }} 个序列 · 数据时点 {{ latestAsOfText }}</span>
         </h1>
       </div>
       <div class="page-actions">

@@ -105,6 +105,12 @@
                 :stroke="series.color"
               />
             </svg>
+            <span
+              v-for="tick in RESERVE_TICKS"
+              :key="`rt-${tick.value}`"
+              class="hst-res-tick mono"
+              :style="{ top: `${tick.top}%`, transform: tick.transform }"
+            >{{ tick.label }}</span>
             <template v-for="series in reserveSeries" :key="`dot-group-${series.key}`">
               <span
                 v-for="point in series.points"
@@ -313,6 +319,13 @@ const RESERVE_META: Record<string, { label: string; color: string }> = {
 
 const RESERVE_ORDER = ["usd", "gbp", "eur", "cny"];
 const RESERVE_GRID = [0, 50, 100];
+/** 储备份额纵轴刻度：数值 100% 在顶部（SVG y=0），0% 在底部。 */
+const RESERVE_TICKS = RESERVE_GRID.map((value) => ({
+  value,
+  top: 100 - value,
+  label: `${value}%`,
+  transform: value === 100 ? "translateY(2px)" : value === 0 ? "translateY(-100%)" : "translateY(-50%)",
+}));
 
 /* ── 事件泳道（泳道内去重叠） ────────────────────────────────────────── */
 
@@ -700,6 +713,14 @@ const onTrackClick = (event: MouseEvent) => {
   stroke: var(--border);
   stroke-dasharray: 3 4;
   vector-effect: non-scaling-stroke;
+}
+.hst-res-tick {
+  position: absolute;
+  left: 2px;
+  font-size: 8px;
+  line-height: 1;
+  color: var(--dim);
+  pointer-events: none;
 }
 .hst-res-line {
   fill: none;

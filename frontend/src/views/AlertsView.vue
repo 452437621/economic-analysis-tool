@@ -5,6 +5,7 @@
         <div class="page-eyebrow">研究分析 · 预警台</div>
         <h1 class="page-h1">预警台 · 规则何时会被触发</h1>
         <div class="page-sub">{{ ruleTotal }} 条可证伪规则 · 缺失指标记为未知，不默认未触发</div>
+        <span class="gen-at">（生成于 {{ generatedLabel }}）</span>
       </div>
       <div class="page-actions alr-actions">
         <span
@@ -24,10 +25,6 @@
           :title="`已触发 ${triggeredCount} 条 / 共 ${ruleTotal} 条规则`"
         >
           已触发 {{ triggeredCount }}/{{ ruleTotal }}
-        </span>
-        <span class="badge badge--sm" :title="`最近运行时间 ${runLabel}`">
-          <svg class="ic"><use href="#i-clock" /></svg>
-          运行 {{ runLabel }}
         </span>
         <button class="btn btn--sm btn--primary" type="button" :disabled="running" @click="recalc">
           <svg class="ic" :class="{ spin: running }"><use href="#i-refresh" /></svg>
@@ -87,18 +84,20 @@
         </div>
       </div>
 
-      <section class="alr-block" aria-label="预警表">
-        <AlertTable :alerts="alertRows" :loading="stateLoading" />
-      </section>
+      <div class="alr-grid">
+        <section class="alr-block alr-block--table" aria-label="预警表">
+          <AlertTable :alerts="alertRows" :loading="stateLoading" />
+        </section>
 
-      <section class="alr-block" aria-label="阈值编辑器">
-        <ThresholdEditor
-          :rules="rules"
-          :current="alertRows"
-          :loading="configLoading"
-          @saved="onSaved"
-        />
-      </section>
+        <section class="alr-block alr-block--rules" aria-label="阈值编辑器">
+          <ThresholdEditor
+            :rules="rules"
+            :current="alertRows"
+            :loading="configLoading"
+            @saved="onSaved"
+          />
+        </section>
+      </div>
 
       <section class="alr-block" aria-label="财经日历">
         <MarketCalendar :political="politicalCalendar" />
@@ -128,7 +127,7 @@ import ThresholdEditor from "@/components/alerts/ThresholdEditor.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import SkeletonBlock from "@/components/ui/SkeletonBlock.vue";
-import { fmtDate, fmtTime } from "@/composables/useFormat";
+import { fmtDate, fmtDateTime } from "@/composables/useFormat";
 import { usePolling } from "@/composables/usePolling";
 import { useToast } from "@/stores/toast";
 
@@ -138,7 +137,6 @@ const {
   data: payload,
   error: stateError,
   loading: stateLoading,
-  lastUpdated,
   refresh,
 } = usePolling<CycleStateResponse>(getCycleState, { interval: 60_000 });
 
@@ -178,11 +176,10 @@ const dataDate = computed(() => {
   return iso ? fmtDate(iso) : "—";
 });
 
-const runLabel = computed(() => {
+/** 数据生成时间（state.generated_at），缺失时退回数据日 asof；不显示浏览器当前时间。 */
+const generatedLabel = computed(() => {
   const iso = payload.value?.generated_at ?? payload.value?.asof;
-  if (iso) return fmtTime(iso, true);
-  const updated = lastUpdated.value;
-  return updated ? fmtTime(updated.toISOString(), true) : "—";
+  return iso ? fmtDateTime(iso) : "—";
 });
 
 const runIdShort = computed(() => payload.value?.run_id?.slice(0, 8) ?? "—");
@@ -281,6 +278,20 @@ async function onSaved(): Promise<void> {
   margin-top: 10px;
 }
 
+/* 预警表 + 阈值编辑器并排：贴近设计稿左右两栏，窄屏再降为单列。 */
+.alr-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  margin-top: 10px;
+}
+
+.alr-grid .alr-block {
+  margin-top: 0;
+  min-width: 0;
+}
+
 .alr-foot {
   display: flex;
   flex-wrap: wrap;
@@ -322,6 +333,9 @@ async function onSaved(): Promise<void> {
 @media (max-width: 1240px) {
   .alr-actions {
     gap: 5px;
+  }
+  .alr-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

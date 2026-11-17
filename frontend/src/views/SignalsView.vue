@@ -2,18 +2,18 @@
   <div class="view active">
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">研究分析 · 交易信号 · 更新于 {{ updatedLabel }}</div>
+        <div class="page-eyebrow">研究分析 · 交易信号</div>
         <h1 class="page-h1">
           交易信号
           <span class="page-sub">信号 · 交易计划 · 回测 · 预测校准</span>
         </h1>
+        <span class="gen-at">（生成于 {{ updatedLabel }}）</span>
       </div>
       <div class="page-actions">
         <span v-if="summaryError && decisions" class="badge badge--warn badge--sm">
           <svg class="ic" style="width: 11px; height: 11px"><use href="#i-alert" /></svg>刷新失败
         </span>
-        <span class="badge badge--sm"><span class="dot"></span>{{ todayLabel }}</span>
-        <button class="btn btn--sm" type="button" :disabled="summaryLoading" @click="refreshSummary()">
+                <button class="btn btn--sm" type="button" :disabled="summaryLoading" @click="refreshSummary()">
           <svg class="ic" :class="{ spin: summaryLoading }"><use href="#i-refresh" /></svg>刷新
         </button>
       </div>

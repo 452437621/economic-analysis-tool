@@ -2,7 +2,7 @@
   <section class="card cyc-compass-card">
     <div class="card-head">
       <span class="card-title">周期罗盘 <span class="cyc-card-sub">四象限 · 相位角</span></span>
-      <span class="cyc-card-right">状态 <b class="mono">{{ statusLabel || "—" }}</b></span>
+      <span class="cyc-card-right">状态 <b class="mono">{{ stateText }}</b></span>
     </div>
     <div class="cyc-compass-body">
       <svg
@@ -10,53 +10,69 @@
         viewBox="0 0 520 280"
         preserveAspectRatio="xMidYMid meet"
         role="img"
-        :aria-label="`周期相位罗盘，当前${quadrant}`"
+        :aria-label="`周期相位罗盘，当前${quadrantName}`"
       >
-        <!-- 四象限底色 -->
-        <rect x="260" y="20" width="240" height="120" class="cyc-quad cyc-quad--hot" />
-        <rect x="20" y="20" width="240" height="120" class="cyc-quad cyc-quad--stag" />
-        <rect x="20" y="140" width="240" height="120" class="cyc-quad cyc-quad--recession" />
-        <rect x="260" y="140" width="240" height="120" class="cyc-quad cyc-quad--recovery" />
+        <!-- 四象限环（扇区） -->
+        <path
+          v-for="quad in quads"
+          :key="quad.key"
+          :d="quad.path"
+          class="cyc-quad"
+          :class="`cyc-quad--${quad.key}`"
+        />
+        <text
+          v-for="quad in quads"
+          :key="`label-${quad.key}`"
+          :x="quad.labelX"
+          :y="quad.labelY"
+          text-anchor="middle"
+          class="cyc-quad-label"
+          :class="`cyc-quad-label--${quad.key}`"
+        >
+          {{ quad.label }}
+        </text>
 
-        <!-- 象限名 -->
-        <text x="380" y="74" class="cyc-quad-label" fill="#F5A524" text-anchor="middle">过热</text>
-        <text x="140" y="74" class="cyc-quad-label" fill="#F0544F" text-anchor="middle">滞胀</text>
-        <text x="140" y="214" class="cyc-quad-label" fill="#4CC2FF" text-anchor="middle">衰退</text>
-        <text x="380" y="214" class="cyc-quad-label" fill="#2FBF71" text-anchor="middle">复苏</text>
+        <!-- 坐标轴文字：上通胀 / 右增长 -->
+        <text x="260" y="14" text-anchor="middle" class="cyc-axis-text">通胀 ↑</text>
+        <text x="260" y="274" text-anchor="middle" class="cyc-axis-text">通缩 ↓</text>
+        <text x="8" y="143" text-anchor="start" class="cyc-axis-text">增长 ↓</text>
+        <text x="512" y="143" text-anchor="end" class="cyc-axis-text">增长 ↑</text>
 
-        <!-- 坐标轴 -->
-        <line x1="20" y1="140" x2="500" y2="140" class="cyc-axis" />
-        <line x1="260" y1="20" x2="260" y2="260" class="cyc-axis" />
-        <line x1="20" y1="140" x2="500" y2="140" class="cyc-axis-tick" stroke-dasharray="2 4" />
-
-        <!-- 刻度 -->
-        <text x="20" y="155" class="cyc-axis-label" text-anchor="start">0</text>
-        <text x="500" y="155" class="cyc-axis-label" text-anchor="end">100</text>
-        <text x="252" y="32" class="cyc-axis-label" text-anchor="end">通胀 100</text>
-        <text x="252" y="256" class="cyc-axis-label" text-anchor="end">0</text>
-        <text x="496" y="132" class="cyc-axis-label" text-anchor="end">增长 →</text>
-        <text x="268" y="24" class="cyc-axis-label" text-anchor="start">↑ 通胀</text>
-
-        <!-- 当前相位指针 -->
-        <template v-if="available">
-          <line x1="260" y1="140" :x2="point.x" :y2="point.y" class="cyc-pointer" />
-          <line x1="260" y1="140" :x2="point.x" y2="140" class="cyc-guide" />
-          <line :x1="point.x" y1="140" :x2="point.x" :y2="point.y" class="cyc-guide" />
-          <circle :cx="point.x" :cy="point.y" r="7" class="cyc-point-halo" />
-          <circle :cx="point.x" :cy="point.y" r="4.2" class="cyc-point" />
-          <text :x="point.x" :y="point.y - 12" class="cyc-point-label" text-anchor="middle">当前</text>
+        <!-- 外层置信度圆环 -->
+        <circle cx="260" cy="140" :r="R_CONF" class="cyc-conf-bg" />
+        <template v-if="confArc">
+          <path :d="confArc" class="cyc-conf-arc" />
+          <circle :cx="confTip.x" :cy="confTip.y" r="2.6" class="cyc-conf-tip" />
         </template>
 
-        <!-- 中心 -->
-        <circle cx="260" cy="140" r="2.6" class="cyc-center" />
+        <!-- 指针（楔形，按相位角旋转） -->
+        <path v-if="available" :d="needlePath" class="cyc-needle" />
+        <text
+          v-if="available"
+          :x="needleTip.x"
+          :y="needleTip.y - 7"
+          text-anchor="middle"
+          class="cyc-needle-label"
+        >
+          {{ offsetText }}
+        </text>
+
+        <!-- 中心盘 -->
+        <circle cx="260" cy="140" r="58" class="cyc-core" />
+        <text x="260" y="138" text-anchor="middle" class="cyc-center-title">{{ centerTitle }}</text>
+        <text x="260" y="158" text-anchor="middle" class="cyc-center-sub">{{ centerSub }}</text>
+        <text x="260" y="174" text-anchor="middle" class="cyc-center-tag">{{ centerTag }}</text>
       </svg>
+
       <div class="cyc-compass-foot">
-        <span v-for="item in LEGEND" :key="item.label" class="cyc-legend-item">
-          <span class="cyc-legend-dot" :style="{ background: item.color }"></span>{{ item.label }}
+        <span v-for="item in LEGEND" :key="item.key" class="cyc-legend-item">
+          <span class="cyc-legend-dot" :class="`cyc-legend-dot--${item.key}`"></span>{{ item.label }}
         </span>
         <span class="cyc-spacer"></span>
         <span class="cyc-phase-note">{{ phaseNote }}</span>
-        <RouterLink class="cyc-how-link" to="/analysis">如何判定 ›</RouterLink>
+        <RouterLink class="cyc-how-link" :to="{ path: '/pipeline', query: { code: 'cycle.state.world' } }">
+          如何判定 ›
+        </RouterLink>
       </div>
     </div>
   </section>
@@ -67,53 +83,182 @@ import { computed } from "vue";
 
 const props = withDefaults(
   defineProps<{
+    /** 增长分量 0–100（缺失传 null） */
     growth: number | null;
+    /** 通胀分量 0–100（缺失传 null） */
     inflation: number | null;
-    statusLabel?: string | null;
+    /** 短周期状态文案（中心标签 / 卡头右侧） */
+    state?: string | null;
+    /** 综合置信度 0–100（缺失传 null） */
+    confidence?: number | null;
   }>(),
-  { statusLabel: null },
+  { state: null, confidence: null },
 );
+
+/** 罗盘几何：与设计稿 buildCompass() 的参数保持一致。 */
+const CX = 260;
+const CY = 140;
+/** 四象限环的内外半径 */
+const R0 = 60;
+const R1 = 112;
+/** 置信度圆环半径 */
+const R_CONF = 122;
+/** 指针尖端半径 */
+const R_TIP = 106;
+
+interface QuadDef {
+  key: string;
+  label: string;
+  a0: number;
+  a1: number;
+  mid: number;
+}
+
+/** 角度定义：0° = 正上方（通胀↑），顺时针增长；90° = 右（增长↑）。 */
+const QUADS: QuadDef[] = [
+  { key: "hot", label: "过热", a0: 3, a1: 87, mid: 45 },
+  { key: "recovery", label: "复苏", a0: 93, a1: 177, mid: 135 },
+  { key: "recession", label: "衰退", a0: 183, a1: 267, mid: 225 },
+  { key: "stagflation", label: "滞胀", a0: 273, a1: 357, mid: 315 },
+];
 
 const LEGEND = [
-  { label: "复苏", color: "#2FBF71" },
-  { label: "过热", color: "#F5A524" },
-  { label: "滞胀", color: "#F0544F" },
-  { label: "衰退", color: "#4CC2FF" },
+  { key: "recovery", label: "复苏" },
+  { key: "hot", label: "过热" },
+  { key: "stagflation", label: "滞胀" },
+  { key: "recession", label: "衰退" },
 ] as const;
 
+function polar(radius: number, deg: number): { x: number; y: number } {
+  const rad = (deg * Math.PI) / 180;
+  return {
+    x: round(CX + radius * Math.sin(rad)),
+    y: round(CY - radius * Math.cos(rad)),
+  };
+}
+
+function round(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function sectorPath(a0: number, a1: number): string {
+  const outer0 = polar(R1, a0);
+  const outer1 = polar(R1, a1);
+  const inner0 = polar(R0, a0);
+  const inner1 = polar(R0, a1);
+  const large = a1 - a0 > 180 ? 1 : 0;
+  return [
+    `M ${outer0.x} ${outer0.y}`,
+    `A ${R1} ${R1} 0 ${large} 1 ${outer1.x} ${outer1.y}`,
+    `L ${inner1.x} ${inner1.y}`,
+    `A ${R0} ${R0} 0 ${large} 0 ${inner0.x} ${inner0.y}`,
+    "Z",
+  ].join(" ");
+}
+
+const quads = QUADS.map((quad) => {
+  const point = polar(86, quad.mid);
+  return {
+    ...quad,
+    path: sectorPath(quad.a0, quad.a1),
+    labelX: point.x,
+    labelY: round(point.y + 3.5),
+  };
+});
+
+function clamp(value: number | null | undefined): number {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 50;
+  return Math.max(0, Math.min(100, value));
+}
+
 const available = computed<boolean>(
-  () => props.growth !== null && props.inflation !== null && Number.isFinite(props.growth) && Number.isFinite(props.inflation),
+  () =>
+    props.growth !== null &&
+    props.inflation !== null &&
+    Number.isFinite(props.growth) &&
+    Number.isFinite(props.inflation),
 );
 
-const growthCentered = computed<number>(() => clamp(props.growth) - 50);
-const inflationCentered = computed<number>(() => clamp(props.inflation) - 50);
-
-/** 相位角：以增长为横轴、通胀为纵轴；角度 0° 指向过热方向，正角度偏过热 */
-const angle = computed<number>(() => Math.round((Math.atan2(inflationCentered.value, growthCentered.value) * 180) / Math.PI));
-
-const quadrant = computed<string>(() => {
-  const growth = growthCentered.value;
-  const inflation = inflationCentered.value;
-  if (growth >= 0 && inflation >= 0) return "过热";
-  if (growth < 0 && inflation >= 0) return "滞胀";
-  if (growth < 0 && inflation < 0) return "衰退";
-  return "复苏";
+/** 相位角：0° 指向通胀↑，90° 指向增长↑，顺时针推进。 */
+const angle = computed<number>(() => {
+  const growth = clamp(props.growth) - 50;
+  const inflation = clamp(props.inflation) - 50;
+  if (growth === 0 && inflation === 0) return 0;
+  const raw = (Math.atan2(growth, inflation) * 180) / Math.PI;
+  return (raw + 360) % 360;
 });
+
+const currentQuad = computed<QuadDef>(() => {
+  const deg = angle.value;
+  return QUADS.find((quad) => deg >= quad.a0 - 3 && deg <= quad.a1 + 3) ?? QUADS[0];
+});
+
+const quadrantName = computed<string>(() => (available.value ? currentQuad.value.label : "数据缺失"));
+
+const stateText = computed<string>(() => {
+  const text = (props.state ?? "").trim();
+  return text || "—";
+});
+
+const offset = computed<number>(() => {
+  const raw = angle.value - currentQuad.value.mid;
+  // 归一到 −180…180，避免跨 0/360 时出现 ±350°
+  return Math.round(((raw + 540) % 360) - 180);
+});
+
+const offsetText = computed<string>(() => `${offset.value >= 0 ? "+" : ""}${offset.value}°`);
+
+function neighborName(step: number): string {
+  const index = QUADS.findIndex((quad) => quad.key === currentQuad.value.key);
+  const next = QUADS[(index + step + QUADS.length) % QUADS.length];
+  return next?.label ?? "—";
+}
 
 const phaseNote = computed<string>(() => {
   if (!available.value) return "相位数据缺失";
-  return `${angle.value > 0 ? "+" : ""}${angle.value}° 偏${quadrant.value}`;
+  if (offset.value === 0) return `位于${currentQuad.value.label}象限中心`;
+  const side = offset.value > 0 ? neighborName(1) : neighborName(-1);
+  return `${offsetText.value} 偏${side}`;
 });
 
-const point = computed<{ x: number; y: number }>(() => ({
-  x: 260 + (growthCentered.value / 50) * 220,
-  y: 140 - (inflationCentered.value / 50) * 110,
-}));
+const confidencePct = computed<number | null>(() => {
+  const raw = props.confidence;
+  if (raw === null || raw === undefined || !Number.isFinite(raw)) return null;
+  return Math.max(0, Math.min(100, Math.round(raw)));
+});
 
-function clamp(value: number | null): number {
-  if (value === null || !Number.isFinite(value)) return 50;
-  return Math.max(0, Math.min(100, value));
-}
+const confArc = computed<string | null>(() => {
+  const pct = confidencePct.value;
+  if (pct === null || pct <= 0) return null;
+  const deg = Math.min(359.9, (pct / 100) * 360);
+  const start = polar(R_CONF, 0);
+  const end = polar(R_CONF, deg);
+  return `M ${start.x} ${start.y} A ${R_CONF} ${R_CONF} 0 ${deg > 180 ? 1 : 0} 1 ${end.x} ${end.y}`;
+});
+
+const confTip = computed(() => {
+  const pct = confidencePct.value ?? 0;
+  return polar(R_CONF, Math.min(359.9, (pct / 100) * 360));
+});
+
+const needleTip = computed(() => polar(R_TIP, angle.value));
+
+const needlePath = computed<string>(() => {
+  const tip = needleTip.value;
+  const left = polar(9, angle.value - 90);
+  const right = polar(9, angle.value + 90);
+  return `M ${tip.x} ${tip.y} L ${left.x} ${left.y} L ${right.x} ${right.y} Z`;
+});
+
+const centerTitle = computed<string>(() => (available.value ? currentQuad.value.label : "—"));
+
+const centerSub = computed<string>(() =>
+  confidencePct.value === null ? "置信度 —" : `置信度 ${confidencePct.value}%`,
+);
+
+const centerTag = computed<string>(() =>
+  available.value ? `短周期 · ${stateText.value}` : "相位数据缺失",
+);
 </script>
 
 <style scoped>
@@ -135,7 +280,7 @@ function clamp(value: number | null): number {
 .cyc-compass-card {
   display: flex;
   flex-direction: column;
-  min-height: 334px;
+  height: 334px;
   overflow: hidden;
 }
 .cyc-compass-body {
@@ -149,82 +294,109 @@ function clamp(value: number | null): number {
   width: 100%;
   flex: 1 1 auto;
   min-height: 0;
-  max-height: 300px;
+  overflow: visible;
 }
+
+/* 四象限环 */
 .cyc-quad {
-  stroke-width: 1;
-  fill-opacity: 0.1;
-  stroke-opacity: 0.32;
+  fill-opacity: 0.18;
+  stroke: var(--bg);
+  stroke-width: 1.2;
 }
 .cyc-quad--hot {
-  fill: #f5a524;
-  stroke: #f5a524;
-}
-.cyc-quad--stag {
-  fill: #f0544f;
-  stroke: #f0544f;
-}
-.cyc-quad--recession {
-  fill: #4cc2ff;
-  stroke: #4cc2ff;
+  fill: var(--warn);
 }
 .cyc-quad--recovery {
-  fill: #2fbf71;
-  stroke: #2fbf71;
+  fill: var(--down);
+}
+.cyc-quad--stagflation {
+  fill: var(--up);
+}
+.cyc-quad--recession {
+  fill: var(--accent);
 }
 .cyc-quad-label {
-  font-size: 11px;
-  font-weight: 600;
-  opacity: 0.72;
   font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0.78;
 }
-.cyc-axis {
-  stroke: var(--border-strong);
-  stroke-width: 1;
+.cyc-quad-label--hot {
+  fill: var(--warn);
 }
-.cyc-axis-tick {
+.cyc-quad-label--recovery {
+  fill: var(--down);
+}
+.cyc-quad-label--stagflation {
+  fill: var(--up);
+}
+.cyc-quad-label--recession {
+  fill: var(--accent);
+}
+
+/* 坐标轴文字 */
+.cyc-axis-text {
+  font-family: var(--mono);
+  font-size: 9px;
+  fill: var(--muted);
+  letter-spacing: 0.4px;
+}
+
+/* 置信度圆环 */
+.cyc-conf-bg {
+  fill: none;
   stroke: var(--border);
-  stroke-width: 1;
+  stroke-width: 3;
 }
-.cyc-axis-label {
+.cyc-conf-arc {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.cyc-conf-tip {
+  fill: var(--accent);
+}
+
+/* 指针与中心盘 */
+.cyc-needle {
+  fill: var(--accent);
+  opacity: 0.92;
+}
+.cyc-needle-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  fill: var(--accent);
+}
+.cyc-core {
+  fill: var(--surface);
+  stroke: var(--border-strong);
+}
+.cyc-center-title {
+  font-family: var(--sans);
+  font-size: 21px;
+  font-weight: 700;
+  fill: var(--text);
+}
+.cyc-center-sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  fill: var(--muted);
+}
+.cyc-center-tag {
+  font-family: var(--sans);
   font-size: 8px;
   fill: var(--dim);
-  font-family: var(--mono);
 }
-.cyc-pointer {
-  stroke: var(--accent);
-  stroke-width: 2;
-  stroke-dasharray: 4 3;
-}
-.cyc-guide {
-  stroke: var(--accent-line);
-  stroke-width: 1;
-  stroke-dasharray: 2 3;
-}
-.cyc-point-halo {
-  fill: var(--accent);
-  opacity: 0.22;
-}
-.cyc-point {
-  fill: var(--accent);
-  stroke: var(--surface);
-  stroke-width: 1.4;
-}
-.cyc-point-label {
-  font-size: 8.5px;
-  fill: var(--muted);
-  font-family: var(--mono);
-}
-.cyc-center {
-  fill: var(--dim);
-}
+
+/* 底部图例 */
 .cyc-compass-foot {
   flex: none;
   display: flex;
   align-items: center;
   gap: 11px;
   flex-wrap: wrap;
-  padding: 4px 2px 8px;
+  padding: 0 2px 8px;
   font-size: 9.5px;
   color: var(--dim);
 }
@@ -239,6 +411,18 @@ function clamp(value: number | null): number {
   height: 7px;
   border-radius: 2px;
   flex: none;
+}
+.cyc-legend-dot--hot {
+  background: var(--warn);
+}
+.cyc-legend-dot--recovery {
+  background: var(--down);
+}
+.cyc-legend-dot--stagflation {
+  background: var(--up);
+}
+.cyc-legend-dot--recession {
+  background: var(--accent);
 }
 .cyc-spacer {
   flex: 1 1 auto;
@@ -257,5 +441,12 @@ function clamp(value: number | null): number {
 }
 .cyc-how-link:hover {
   text-decoration: underline;
+}
+
+@media (max-width: 1023px) {
+  .cyc-compass-card {
+    height: auto;
+    min-height: 318px;
+  }
 }
 </style>

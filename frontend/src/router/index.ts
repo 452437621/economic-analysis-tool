@@ -86,10 +86,14 @@ const routes: RouteRecordRaw[] = [
     meta: { title: "简报与日志", group: "今日" },
   },
   {
-    path: "/tokens",
-    name: "tokens",
-    component: () => import("@/views/TokensView.vue"),
-    meta: { title: "设计规范", group: "系统" },
+    path: "/trades",
+    name: "trades",
+    component: () => import("@/views/TradesView.vue"),
+    meta: { title: "交易", group: "今日" },
+  },
+  {
+    path: "/journal",
+    redirect: "/trades",
   },
   {
     path: "/system",

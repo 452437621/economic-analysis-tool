@@ -26,6 +26,9 @@ import type {
   Health,
   JobRow,
   JournalEntry,
+  JournalEntryItem,
+  JournalInput,
+  JournalList,
   LatestBriefResponse,
   MacroLatestItem,
   MacroSeriesResponse,
@@ -42,6 +45,14 @@ import type {
   Thesis,
   ThesisReview,
   TradePlan,
+  TradeAssetClass,
+  TradeDirection,
+  TradeInput,
+  TradeItem,
+  TradeList,
+  TradeStats,
+  TradeStatus,
+  TradeSummary,
   V2DerivationDetail,
   V2DerivationList,
   V2MethodList,
@@ -61,6 +72,7 @@ import type {
   TimelineEventItem,
   TimelineOverview,
   TimelineRunResult,
+  TranslateResponse,
   WatchCandidate,
   WatchlistItem,
   WatchPatch,
@@ -173,6 +185,10 @@ export const getThesisReview = () => getJson<{ data: ThesisReview }>("/api/these
 export const updateThesisStatus = (id: string, status: string) =>
   patchJson<{ id: string; status: string }>(`/api/theses/${id}`, { status });
 
+/* 中文对照：英文事件 / 新闻标题与摘要 → 简体中文（本地语料优先，LLM 兜底） */
+export const translateTexts = (texts: string[]) =>
+  postJson<TranslateResponse>("/api/knowledge/translate", { texts });
+
 /* 简报 / 文档 */
 export const getLatestBrief = (kind?: "daily" | "weekly" | "monthly") =>
   getJson<LatestBriefResponse>("/api/briefs/latest", {
@@ -194,9 +210,22 @@ export const ackAlert = (id: string) =>
   postJson<{ ok: boolean }>(`/api/alerts/${encodeURIComponent(id)}/ack`, {});
 
 /* 日志 */
-export const getJournal = (limit = 5) =>
-  getJson<{ data: JournalEntry[] }>("/api/journal", { params: { limit } });
-export const saveJournal = (content: string) => postJson<JournalEntry>("/api/journal", { content });
+export interface JournalQuery {
+  limit?: number;
+  offset?: number;
+  q?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
+export const listJournal = (query: JournalQuery = {}) =>
+  getJson<JournalList>("/api/journal", { params: query as Record<string, string | number | undefined> });
+export const getJournalEntry = (id: string) => getJson<JournalEntryItem>(`/api/journal/${id}`);
+export const createJournal = (payload: JournalInput) =>
+  postJson<{ item: JournalEntryItem; created: boolean }>("/api/journal", payload);
+export const updateJournal = (id: string, payload: Partial<JournalInput>) =>
+  patchJson<JournalEntryItem>(`/api/journal/${id}`, payload);
+export const deleteJournal = (id: string) => deleteJson<{ ok: boolean }>(`/api/journal/${id}`);
 
 /* 下载链接 */
 export const briefPrintUrl = (id: string) => `/api/briefs/${id}/print`;
@@ -244,3 +273,29 @@ export const createLedgerForecast = (payload: LedgerForecastInput) =>
 export const runLedger = () => postJson<LedgerRunResult>("/api/v2/ledger/run", {});
 
 export const getSystemCoverage = () => getJson<CoverageResponse>("/api/system/coverage");
+
+/* 交易记录（V2.0）：股票 / 期货 / 期权等多品种 CRUD、筛选分页与统计 */
+export interface TradeQuery {
+  limit?: number;
+  offset?: number;
+  q?: string;
+  asset_class?: TradeAssetClass;
+  direction?: TradeDirection;
+  status?: TradeStatus;
+  date_from?: string;
+  date_to?: string;
+  sort?: "trade_date" | "pnl" | "created_at";
+  order?: "desc" | "asc";
+}
+
+export const listTrades = (query: TradeQuery = {}) =>
+  getJson<TradeList>("/api/trades", {
+    params: query as Record<string, string | number | boolean | undefined>,
+  });
+export const getTrade = (id: string) => getJson<TradeItem>(`/api/trades/${encodeURIComponent(id)}`);
+export const createTrade = (body: TradeInput) => postJson<TradeItem>("/api/trades", body);
+export const updateTrade = (id: string, body: Partial<TradeInput>) =>
+  patchJson<TradeItem>(`/api/trades/${encodeURIComponent(id)}`, body);
+export const deleteTrade = (id: string) =>
+  deleteJson<{ deleted: boolean; id: string }>(`/api/trades/${encodeURIComponent(id)}`);
+export const getTradeStats = () => getJson<TradeStats>("/api/trades/stats");

@@ -111,7 +111,7 @@ svg { display: block; }
 .dim { color: var(--dim); }
 .nowrap { white-space: nowrap; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.ic { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.ic { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .icon-sun { display: none; }
 html[data-theme="light"] .icon-sun { display: block; }
 html[data-theme="light"] .icon-moon { display: none; }
@@ -899,3 +899,17 @@ html.no-hover-highlight .brief-table tr:hover td { background: transparent; }
 .mono { font-family: var(--mono); }
 .tabular { font-variant-numeric: tabular-nums; }
 .hidden { display: none !important; }
+
+
+/* 生成时间：统一挂在区块标题右侧（系统当前时间只在顶栏） */
+.gen-at {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 400;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.pill-sep {
+  color: var(--dim);
+}

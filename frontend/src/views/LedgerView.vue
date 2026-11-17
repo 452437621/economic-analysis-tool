@@ -7,13 +7,13 @@
           预测台账
           <span class="page-sub">把「当时怎么判断」写下来，到期自动结算 —— 判断力只能靠事后对账校准</span>
         </h1>
+        <span class="gen-at">（生成于 {{ generatedLabel }}）</span>
       </div>
       <div class="page-actions">
         <span v-if="payload?.asof" class="badge badge--sm">数据日 {{ fmtDate(payload.asof) }}</span>
         <span v-if="payload?.status" class="badge badge--sm" :class="payload.status === 'ok' ? 'badge--live' : 'badge--warn'">
           {{ payload.status === "ok" ? "运行正常" : "降级运行" }}
         </span>
-        <span class="badge badge--sm"><span class="dot"></span>更新于 {{ updatedLabel }}</span>
         <button class="btn btn--sm" type="button" :disabled="running" @click="recalc">
           <svg class="ic" :class="{ spin: running }"><use href="#i-refresh" /></svg>
           {{ running ? "核对中…" : "立即核对" }}
@@ -48,10 +48,10 @@
           <div class="kpi-top">
             <span class="kpi-icon"><svg class="ic"><use href="#i-layers" /></svg></span>
             <span class="kpi-label">未结 / 已结</span>
-            <span class="kpi-flag badge badge--sm">{{ payload.forecasts.open }} 待到期</span>
+            <span class="kpi-flag badge badge--sm">已结 {{ payload.forecasts.resolved }} 条</span>
           </div>
           <div class="kpi-value">{{ payload.forecasts.open }}<small>/ {{ payload.forecasts.resolved }}</small></div>
-          <div class="kpi-sub">下一到期 {{ payload.forecasts.next_due ?? "—" }}</div>
+          <div class="kpi-sub">最近到期 {{ nextDueText }}</div>
         </article>
         <article class="card kpi">
           <div class="kpi-top">
@@ -132,7 +132,13 @@
           </div>
         </div>
         <div class="card-body">
-          <EmptyState v-if="!visible.length" text="还没有预测记录" hint="在上方登记一条：方向 + 基线 + 期限 + 主观概率" />
+          <EmptyState
+            v-if="!visible.length"
+            :text="items.length ? '当前筛选下没有预测' : '还没有预测记录'"
+            :hint="items.length
+              ? '切换到「全部」查看；「已结」只在到期结算后才有内容。'
+              : '在上方登记一条：方向 + 基线 + 期限 + 主观概率；到期后由「立即核对」自动结算并写入 forecast_outcomes。'"
+          />
           <div v-else class="table-wrap">
             <table class="data-table">
               <thead>
@@ -147,6 +153,7 @@
                   <th>状态</th>
                   <th>实际</th>
                   <th>Brier</th>
+                  <th>备注</th>
                 </tr>
               </thead>
               <tbody>
@@ -166,6 +173,7 @@
                   </td>
                   <td class="mono">{{ row.actual == null ? "—" : fmtNumber(row.actual, 2) }}</td>
                   <td class="mono">{{ row.brier == null ? "—" : fmtNumber(row.brier, 3) }}</td>
+                  <td class="ldg-note" :title="row.notes ?? ''">{{ row.notes || "—" }}</td>
                 </tr>
               </tbody>
             </table>
@@ -177,17 +185,14 @@
         <div class="card">
           <div class="card-head">
             <div class="card-title">校准分桶</div>
-            <div class="card-sub">{{ calibration.note ?? "样本积累后再看分桶差异" }}</div>
+            <div class="card-sub">{{ calibration.note ?? "按期限分桶；样本积累后再看分桶差异" }}</div>
           </div>
           <div class="card-body">
-            <EmptyState v-if="!calibration.by_horizon.length" text="暂无已结预测" hint="到期结算后这里会出现按期限分桶的 Brier" />
-            <div v-else class="ldg-buckets">
-              <div v-for="bucket in calibration.by_horizon" :key="bucket.bucket" class="ldg-bucket">
-                <span class="ldg-bucket-label">{{ bucket.bucket }}</span>
-                <span class="ldg-bucket-bar"><i :style="{ width: barWidth(bucket.brier) }"></i></span>
-                <span class="mono">{{ fmtNumber(bucket.brier, 3) }}（n={{ bucket.n }}）</span>
-              </div>
-            </div>
+            <EmptyState v-if="!calibration.by_horizon.length" text="暂无已结预测" hint="到期结算后这里会出现按期限分桶的 Brier；先在上方登记一条预测并等待到期。" />
+            <EChart v-else :option="calibrationOption" :height="200" />
+            <p class="ldg-cal-note">
+              参考：Brier 0.25 ≈ 随机猜测（恒定 50% 概率）；低于 0.15 说明概率已带信息量。已结 {{ calibration.n }} 条。
+            </p>
           </div>
         </div>
 
@@ -196,6 +201,7 @@
             <div class="card-title">原则核对现状</div>
             <div class="card-actions">
               <RouterLink class="ldg-link" to="/principles">打开原则库 →</RouterLink>
+              <RouterLink class="ldg-link" to="/pipeline">追溯本次运行 →</RouterLink>
             </div>
           </div>
           <div class="card-body">
@@ -206,13 +212,16 @@
                 <span class="ldg-status-label">{{ row.label }}</span>
               </div>
             </div>
-            <ul class="ldg-list">
+            <ul v-if="hitSample.length" class="ldg-list">
               <li v-for="item in hitSample" :key="item.id">
                 <span class="mono">{{ item.id }}</span>
                 {{ item.name }}
                 <span v-if="item.value != null" class="dim mono">= {{ fmtNumber(item.value, 2) }}</span>
               </li>
             </ul>
+            <p v-else class="ldg-list-empty">
+              本轮没有「成立」状态的原则：可能是指标暂缺（记为未知），也可能是阈值确实未命中。逐条原因见原则库。
+            </p>
           </div>
         </div>
       </div>
@@ -224,6 +233,7 @@
 
       <div class="card-foot">
         <span class="mono">run {{ payload.run_id.slice(0, 8) }} · method {{ payload.method_id }}</span>
+        <RouterLink class="ldg-link" to="/pipeline">在透明管线查看本次运行的每一步 →</RouterLink>
         <span>阈值与规则维护在 backend/app/ledger/principles.py；修改后点「立即核对」</span>
       </div>
     </template>
@@ -232,6 +242,8 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
+import type { EChartsOption } from "echarts";
+import EChart from "@/components/charts/EChart.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import SkeletonBlock from "@/components/ui/SkeletonBlock.vue";
@@ -240,7 +252,7 @@ import { fmtDate, fmtDateTime, fmtNumber } from "@/composables/useFormat";
 import { createLedgerForecast, getLedgerOverview, runLedger } from "@/api/endpoints";
 import type { LedgerForecast } from "@/api/types";
 
-const { data: payload, error, loading, lastUpdated, refresh } = usePolling(getLedgerOverview, {
+const { data: payload, error, loading, refresh } = usePolling(getLedgerOverview, {
   interval: 60_000,
 });
 
@@ -265,13 +277,76 @@ watch(payload, (value) => {
   }
 });
 
-const updatedLabel = computed(() =>
-  lastUpdated.value ? fmtDateTime(lastUpdated.value.toISOString()) : "—",
-);
+/** 台账接口生成时间（generated_at），不是浏览器当前时间。 */
+const generatedLabel = computed(() => {
+  const iso = payload.value?.generated_at;
+  return iso ? fmtDateTime(iso) : "—";
+});
+
+/** 最近到期的预测：给出日期与剩余天数；没有未结预测时说明原因。 */
+const nextDueText = computed(() => {
+  const next = payload.value?.forecasts.next_due;
+  if (!next) return "暂无未结预测（登记后按期限自动到期）";
+  const target = new Date(next);
+  if (Number.isNaN(target.getTime())) return next;
+  const days = Math.ceil((target.getTime() - Date.now()) / 86_400_000);
+  if (days < 0) return `${next}（已过期 ${Math.abs(days)} 天，下次核对时结算）`;
+  if (days === 0) return `${next}（今天到期）`;
+  return `${next}（${days} 天后）`;
+});
 
 const calibration = computed(
   () => payload.value?.calibration ?? { n: 0, brier: null, hit_rate: null, by_horizon: [] },
 );
+
+/** 校准分桶图：横轴期限桶、纵轴 Brier，虚线为 0.25（随机猜测）参考线。 */
+const calibrationOption = computed<EChartsOption>(() => {
+  const rows = calibration.value.by_horizon;
+  return {
+    grid: { left: 40, right: 16, top: 26, bottom: 26 },
+    tooltip: { trigger: "axis" },
+    xAxis: {
+      type: "category",
+      data: rows.map((row) => row.bucket),
+      axisLine: { lineStyle: { color: "rgba(148,163,184,.25)" } },
+      axisTick: { show: false },
+      axisLabel: { color: "#93A4B8", fontSize: 10 },
+    },
+    yAxis: {
+      type: "value",
+      min: 0,
+      max: 0.5,
+      axisLine: { show: false },
+      splitLine: { lineStyle: { color: "rgba(148,163,184,.10)" } },
+      axisLabel: { color: "#93A4B8", fontSize: 10 },
+    },
+    series: [
+      {
+        type: "bar",
+        barMaxWidth: 30,
+        data: rows.map((row) => row.brier),
+        itemStyle: { color: "#5B9CFF", borderRadius: [3, 3, 0, 0] },
+        label: {
+          show: true,
+          position: "top",
+          color: "#93A4B8",
+          fontSize: 10,
+          formatter: (params: { dataIndex: number }) => {
+            const row = rows[params.dataIndex];
+            return row ? `${fmtNumber(row.brier, 3)} (n=${row.n})` : "";
+          },
+        },
+        markLine: {
+          silent: true,
+          symbol: "none",
+          label: { formatter: "随机 0.25", color: "#93A4B8", fontSize: 9, position: "insideEndTop" },
+          lineStyle: { color: "#F5A623", type: "dashed" },
+          data: [{ yAxis: 0.25 }],
+        },
+      },
+    ],
+  };
+});
 
 const items = computed<LedgerForecast[]>(() => payload.value?.forecasts.items ?? []);
 
@@ -333,10 +408,6 @@ const statusRows = computed(() => {
 });
 
 const hitSample = computed(() => (payload.value?.principles ?? []).filter((row) => row.status === "hit").slice(0, 6));
-
-function barWidth(brier: number): string {
-  return `${Math.min(100, Math.max(4, (brier / 0.5) * 100))}%`;
-}
 
 function directionText(direction: string): string {
   return direction === "up" ? "上行" : direction === "down" ? "下行" : "持平";
@@ -480,35 +551,6 @@ async function submit(): Promise<void> {
   }
 }
 
-.ldg-buckets {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.ldg-bucket {
-  display: grid;
-  grid-template-columns: 76px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.ldg-bucket-bar {
-  background: var(--surface-3);
-  border-radius: 999px;
-  height: 6px;
-  overflow: hidden;
-}
-
-.ldg-bucket-bar i {
-  background: var(--accent);
-  border-radius: 999px;
-  display: block;
-  height: 100%;
-}
-
 .ldg-claim {
   margin: 0 0 12px;
   font-size: 11.5px;
@@ -572,6 +614,28 @@ async function submit(): Promise<void> {
   color: var(--dim);
 }
 
+.ldg-list-empty {
+  margin: 12px 0 0;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--dim);
+}
+
+.ldg-cal-note {
+  margin: 12px 0 0;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--dim);
+}
+
+.ldg-note {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
 .ldg-link {
   color: var(--accent);
   font-size: 10.5px;
@@ -583,8 +647,8 @@ async function submit(): Promise<void> {
 }
 
 .ldg-degraded {
-  background: rgba(245, 165, 36, 0.08);
-  border: 1px solid rgba(245, 165, 36, 0.3);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
   border-radius: 10px;
   color: var(--warn);
   display: flex;

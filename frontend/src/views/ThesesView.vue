@@ -272,8 +272,14 @@
           <span class="event-date mono">{{ fmtTime(event.event_date, true) }}</span>
           <span class="badge badge--sm event-type">{{ eventTypeLabel(event.type) }}</span>
           <span class="event-main">
-            <span class="event-title">{{ event.title }}</span>
-            <span v-if="readableSummary(event.summary)" class="event-summary">
+            <span v-if="eventTitleZh(event)" class="event-title-zh">{{ eventTitleZh(event) }}</span>
+            <span class="event-title" :class="{ 'is-original': !!eventTitleZh(event) }">{{ event.title }}</span>
+            <span v-if="eventSummaryZh(event)" class="event-summary-zh">{{ eventSummaryZh(event) }}</span>
+            <span
+              v-if="readableSummary(event.summary)"
+              class="event-summary"
+              :class="{ 'is-original': !!eventSummaryZh(event) }"
+            >
               {{ readableSummary(event.summary) }}
             </span>
           </span>
@@ -293,6 +299,9 @@
       </div>
       <div class="card-foot">
         <span class="dot dot--live"></span>事件已关联来源文档：点击整行 → 右侧证据抽屉；影响强度按规则打分映射低 / 中 / 高。
+        <span v-if="showZhHint" class="zh-hint">
+          部分英文条目暂无中文对照，配置 DEEPSEEK_API_KEY 后会自动生成。
+        </span>
       </div>
     </section>
 
@@ -352,8 +361,12 @@
             <span class="news-time mono">{{ fmtTime(item.published_at, true) }}</span>
           </span>
           <span class="news-main">
-            <span class="news-title">{{ item.title }}</span>
-            <span v-if="item.summary" class="news-summary">{{ item.summary }}</span>
+            <span v-if="newsTitleZh(item)" class="news-title-zh">{{ newsTitleZh(item) }}</span>
+            <span class="news-title" :class="{ 'is-original': !!newsTitleZh(item) }">{{ item.title }}</span>
+            <span v-if="newsSummaryZh(item)" class="news-summary-zh">{{ newsSummaryZh(item) }}</span>
+            <span v-if="item.summary" class="news-summary" :class="{ 'is-original': !!newsSummaryZh(item) }">
+              {{ item.summary }}
+            </span>
           </span>
           <span class="news-side-right">
             <span class="badge badge--sm" :class="item.tier === 'S1' ? 'badge--accent' : ''">{{ item.tier ?? "—" }}</span>
@@ -361,7 +374,12 @@
           </span>
         </button>
       </div>
-      <div class="card-foot">点击新闻行 → 右侧证据抽屉：文档详情、原文摘录与断言高亮。</div>
+      <div class="card-foot">
+        点击新闻行 → 右侧证据抽屉：文档详情、原文摘录与断言高亮。
+        <span v-if="showZhHint" class="zh-hint">
+          部分英文条目暂无中文对照，配置 DEEPSEEK_API_KEY 后会自动生成。
+        </span>
+      </div>
     </section>
 
     <!-- 日历 -->
@@ -436,7 +454,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
@@ -451,7 +469,7 @@ import {
   trendClass,
 } from "@/composables/useFormat";
 import { THESIS_STATUS_LABEL } from "@/utils/market";
-import { getCalendar, getEvents, getNews, getTheses, getThesisReview } from "@/api/endpoints";
+import { getCalendar, getEvents, getNews, getTheses, getThesisReview, translateTexts } from "@/api/endpoints";
 import type { CalendarEvent, EventItem, NewsItem, Thesis, ThesisReview } from "@/api/types";
 import { useEvidenceStore } from "@/stores/evidence";
 import { useToast } from "@/stores/toast";
@@ -526,6 +544,124 @@ const eventsTotal = computed(() => eventsPoll.data.value?.meta?.total ?? events.
 const calendarTotal = computed(() => calendarPoll.data.value?.meta?.total ?? calendar.value.length);
 const calendarFacetTotal = computed(
   () => calendarFacetsPoll.data.value?.meta?.total ?? 0,
+);
+
+/* ---------- 中文对照（英文事件 / 新闻） ----------
+ * 后端双层方案：仓库内人工种子语料 + 运行期缓存，配置 DEEPSEEK_API_KEY 后自动补译。
+ * 前端只负责把「当前可见」的英文 title/summary 批量送过去，结果按 hash 缓存；
+ * 接口失败或未命中都不报错——只显示英文原文，卡片脚注提示可配置 key。
+ */
+const ZH_BATCH_LIMIT = 30; // 一屏最多 30 条，和后端 MAX_ITEMS=50 留了余量
+const ZH_TEXT_LIMIT = 1200; // 与后端 MAX_CHARS 一致，超长摘要不送翻译
+const ZH_QUOTE_CHARS = /^["'“”‘’「」『』`]+|["'“”‘’「」『』`]+$/g;
+const ZH_CJK = /[\u3400-\u4dbf\u4e00-\u9fff]/;
+
+/** 与后端 normalize() 对齐：合并空白、去首尾引号、截断 1200 字，作为文本索引键。 */
+function zhKey(text: string | null | undefined): string {
+  const body = String(text ?? "").replace(/\s+/g, " ").trim();
+  return body.replace(ZH_QUOTE_CHARS, "").trim().slice(0, ZH_TEXT_LIMIT);
+}
+
+/** 中文字符占比 ≥30% 视为已有中文，不再送翻译（与后端同一阈值）。 */
+function isChineseText(text: string): boolean {
+  const body = text.replace(/\s+/g, "");
+  if (!body) return false;
+  const hits = body.match(ZH_CJK)?.length ?? 0;
+  return hits / body.length >= 0.3;
+}
+
+const zhByHash = ref<Map<string, string>>(new Map()); // hash → 中文译文
+const zhHashByText = new Map<string, string>(); // 归一化原文 → hash（由接口返回）
+const zhAttempted = new Set<string>(); // 已请求过的文本，避免每轮轮询重复打扰后端
+const zhLoading = ref(false);
+const zhChecked = ref(false); // 至少成功拿到过一次接口结果
+
+/** 查一条可见文本的中文对照；没有或与原文相同（本身即中文）时返回 null。 */
+function zhFor(text: string | null | undefined): string | null {
+  const key = zhKey(text);
+  if (!key) return null;
+  const hash = zhHashByText.get(key);
+  if (!hash) return null;
+  const zh = zhByHash.value.get(hash) ?? null;
+  if (!zh || zhKey(zh) === key) return null;
+  return zh;
+}
+
+const eventTitleZh = (event: EventItem) => zhFor(event.title);
+const eventSummaryZh = (event: EventItem) => zhFor(readableSummary(event.summary));
+const newsTitleZh = (item: NewsItem) => zhFor(item.title);
+const newsSummaryZh = (item: NewsItem) => zhFor(item.summary);
+
+/** 当前 tab 可见的英文文本（事件 / 新闻两块才需要中文对照）。 */
+function visibleZhTexts(): string[] {
+  const texts: string[] = [];
+  if (tab.value === "events") {
+    for (const event of events.value) texts.push(event.title, readableSummary(event.summary));
+  } else if (tab.value === "news") {
+    for (const item of news.value) texts.push(item.title, item.summary ?? "");
+  }
+  return texts;
+}
+
+async function ensureZhTranslations(): Promise<void> {
+  if (tab.value !== "events" && tab.value !== "news") return;
+  if (zhLoading.value) return;
+  const pending: string[] = [];
+  const queued = new Set<string>();
+  for (const text of visibleZhTexts()) {
+    const key = zhKey(text);
+    if (!key || queued.has(key) || zhHashByText.has(key) || zhAttempted.has(key)) continue;
+    if (isChineseText(key)) continue;
+    queued.add(key);
+    pending.push(key);
+    if (pending.length >= ZH_BATCH_LIMIT) break;
+  }
+  if (!pending.length) {
+    zhChecked.value = true;
+    return;
+  }
+  zhLoading.value = true;
+  try {
+    const response = await translateTexts(pending);
+    const next = new Map(zhByHash.value);
+    for (const item of response.items) {
+      const key = zhKey(item.text);
+      if (key) zhHashByText.set(key, item.hash);
+      if (item.zh) next.set(item.hash, item.zh);
+      zhAttempted.add(key || item.hash);
+    }
+    zhByHash.value = next;
+    zhChecked.value = true;
+  } catch {
+    // 翻译接口失败不打扰用户：继续显示原文，等下一次轮询再试。
+  } finally {
+    zhLoading.value = false;
+  }
+}
+
+/** 可见英文条目里仍缺中文对照的条数（用于卡片脚注提示）。 */
+const zhMissingVisible = computed(() => {
+  if (!zhChecked.value || zhLoading.value) return 0;
+  const seen = new Set<string>();
+  let missing = 0;
+  for (const text of visibleZhTexts()) {
+    const key = zhKey(text);
+    if (!key || seen.has(key) || isChineseText(key)) continue;
+    seen.add(key);
+    if (!zhFor(key)) missing += 1;
+  }
+  return missing;
+});
+
+const showZhHint = computed(() => zhMissingVisible.value > 0);
+
+// 打开页面 / 切换 tab / 筛选或轮询换了一批数据后，重新补齐可见条目的中文对照。
+watch(
+  () => [tab.value, events.value, news.value] as const,
+  () => {
+    void ensureZhTranslations();
+  },
+  { immediate: true },
 );
 
 /** 国家筛选 chips：按 14 天内事项数取前 8 个国家（数据驱动，不写死） */
@@ -947,6 +1083,8 @@ function refreshAll(): void {
 .event-type { margin-top: 1px; }
 .event-main { min-width: 0; display: flex; flex-direction: column; }
 .event-title { font-size: 11.5px; line-height: 1.45; color: var(--text); }
+.event-title-zh { font-size: 11.5px; line-height: 1.45; color: var(--text); }
+.event-title.is-original { font-size: 10.5px; color: var(--muted); }
 .event-summary {
   margin-top: 1px;
   min-width: 0;
@@ -957,6 +1095,17 @@ function refreshAll(): void {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.event-summary-zh {
+  margin-top: 1px;
+  min-width: 0;
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.event-summary.is-original { font-size: 9px; color: var(--dim); }
 .event-impact { padding-top: 1px; white-space: nowrap; }
 .event-tags { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: nowrap; padding-top: 1px; font-size: 9.5px; white-space: nowrap; }
 .event-tags > * { flex: none; }
@@ -987,9 +1136,16 @@ function refreshAll(): void {
 .news-time { font-size: 9px; color: var(--dim); }
 .news-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .news-title { font-size: 11.5px; line-height: 1.45; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.news-title-zh { font-size: 11.5px; line-height: 1.45; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.news-title.is-original { font-size: 10.5px; color: var(--muted); }
 .news-summary { font-size: 9.5px; line-height: 1.45; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.news-summary-zh { font-size: 9.5px; line-height: 1.45; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.news-summary.is-original { font-size: 9px; color: var(--dim); }
 .news-side-right { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .news-go { width: 11px; height: 11px; color: var(--dim); }
+
+/* ---------- 中文对照提示（未命中时挂在卡片脚注） ---------- */
+.zh-hint { margin-left: 6px; color: var(--muted); }
 
 /* ---------- 日历 ---------- */
 .calendar-list { padding: 1px 13px 4px; }

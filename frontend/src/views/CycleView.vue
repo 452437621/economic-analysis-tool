@@ -13,13 +13,26 @@
         <span v-if="payload?.status" class="badge badge--sm" :class="runTone(payload.status)">
           {{ runText(payload.status) }}
         </span>
-        <span class="badge badge--sm"><span class="dot"></span>更新于 {{ updatedLabel }}</span>
         <button class="btn btn--sm" type="button" :disabled="running" @click="recalc">
           <svg class="ic" :class="{ spin: running }"><use href="#i-refresh" /></svg>
           {{ running ? "重算中…" : "立即重算" }}
         </button>
       </div>
     </div>
+
+    <p v-if="payload?.generated_at" class="cyc-generated">生成于 {{ generatedLabel }}</p>
+
+    <p v-if="recalcError" class="cyc-inline-error">
+      <svg class="ic"><use href="#i-alert" /></svg>
+      <span>重算失败：{{ recalcError }}</span>
+      <button class="btn btn--ghost btn--sm" type="button" :disabled="running" @click="recalc">重试</button>
+    </p>
+
+    <p v-if="error && payload" class="cyc-inline-error">
+      <svg class="ic"><use href="#i-alert" /></svg>
+      <span>自动刷新失败：{{ error.message }}；当前展示上一次成功的数据。</span>
+      <button class="btn btn--ghost btn--sm" type="button" @click="refresh()">重试</button>
+    </p>
 
     <SkeletonBlock v-if="!payload && loading" :rows="6" :cells="3" :height="16" />
     <ErrorState v-else-if="!payload && error" :error="error" @retry="refresh" />
@@ -59,7 +72,12 @@
 
       <!-- B. 周期罗盘 + 五力仪表 -->
       <div class="cyc-row2">
-        <CycleCompass :growth="compassGrowth" :inflation="compassInflation" :status-label="short.state" />
+        <CycleCompass
+          :growth="compassGrowth"
+          :inflation="compassInflation"
+          :state="short.state"
+          :confidence="longConfidencePct"
+        />
         <CycleForces :forces="forces" :stress-count="stressCount" />
       </div>
 
@@ -142,7 +160,7 @@
             今日预警
             <span class="badge badge--up badge--sm">{{ alertCount }} 条</span>
           </span>
-          <span class="cyc-card-sub">更新于 {{ updatedLabel }}</span>
+          <span class="cyc-card-sub">生成于 {{ generatedLabel }}</span>
           <div class="card-actions">
             <RouterLink class="btn btn--ghost btn--sm" to="/alerts">全部 ›</RouterLink>
           </div>
@@ -153,7 +171,7 @@
               <i></i>{{ sevLabel(alert.severity) }}
             </span>
             <div class="cyc-alert-main">
-              <div class="cyc-alert-title">{{ alert.name }}</div>
+              <div class="cyc-alert-title">{{ alert.name ?? alert.metric_name ?? "未命名预警" }}</div>
               <div class="cyc-alert-cond" :title="alert.why ?? ''">{{ alert.why ?? "—" }}</div>
             </div>
             <div class="cyc-alert-val">
@@ -161,12 +179,7 @@
               <span>{{ alertThreshold(alert) }}</span>
             </div>
             <div class="cyc-alert-meta">{{ alertAsOf(alert) }}</div>
-            <RouterLink
-              class="btn btn--ghost btn--sm cyc-alert-src"
-              :to="{ path: '/pipeline', query: { code: 'cycle.alerts' } }"
-            >
-              溯源
-            </RouterLink>
+            <RouterLink class="btn btn--ghost btn--sm cyc-alert-src" to="/alerts">溯源</RouterLink>
           </div>
         </div>
         <EmptyState v-else text="今日无触发预警" hint="规则均未达到阈值；全部预警可在预警中心查看。" />
@@ -176,7 +189,11 @@
       <div class="cyc-section-label">
         <span class="cyc-sl-title">历史类比 Top3</span>
         <span>
-          {{ analogs ? `${analogs.n ?? 0} 个样本内近邻 · 剔除最近 ${analogs.min_gap_months} 个月` : "样本内近邻" }}
+          {{
+            analogs
+              ? `${analogs.n ?? 0} 个样本内近邻 · 剔除最近 ${analogs.min_gap_months ?? 12} 个月`
+              : "样本内近邻"
+          }}
         </span>
       </div>
       <div v-if="topAnalogs.length" class="cyc-analogy-row">
@@ -189,11 +206,11 @@
             <div>
               <div class="cyc-analogy-name">{{ item.month }}</div>
               <div class="cyc-analogy-sub">
-                增长 {{ fmtNumber(item.state.growth, 0) }} · 通胀 {{ fmtNumber(item.state.inflation, 0) }}
+                增长 {{ fmtNumber(item.state?.growth, 0) }} · 通胀 {{ fmtNumber(item.state?.inflation, 0) }}
               </div>
             </div>
             <div class="cyc-analogy-sim">
-              <b>{{ Math.round(item.similarity * 100) }}%</b>
+              <b>{{ ratioText(item.similarity) }}</b>
               <span>相似度</span>
             </div>
           </RouterLink>
@@ -207,7 +224,9 @@
         </template>
       </div>
       <EmptyState v-else text="暂无历史类比" hint="样本不足 24 个月时不会生成类比。" />
-      <p v-if="analogs?.caveats?.length" class="cyc-caveat">{{ analogs.caveats[0] }}</p>
+      <p v-if="Array.isArray(analogs?.caveats) && analogs.caveats.length" class="cyc-caveat">
+        {{ analogs.caveats[0] }}
+      </p>
 
       <!-- F. 设计区块之后：保留全部原有功能 -->
       <div class="cyc-section-label cyc-section-label--retain">
@@ -223,7 +242,7 @@
           </div>
           <div class="cyc-ov-value">{{ fmtNumber(long.score, 1) }}<small>DMI</small></div>
           <div class="cyc-ov-sub">
-            区间 {{ long.band[0] }}–{{ long.band[1] }} · 位置上沿 {{ Math.round(long.position * 100) }}% · 置信
+            区间 {{ long.bandText }} · 位置上沿 {{ long.positionPct === null ? "—" : `${long.positionPct}%` }} · 置信
             {{ fmtNumber(long.confidence, 2) }}
           </div>
         </article>
@@ -260,10 +279,10 @@
             <span class="badge badge--sm">{{ analogs?.n ?? 0 }} 个</span>
           </div>
           <div class="cyc-ov-value">
-            {{ analogs?.analogs?.[0] ? Math.round(analogs.analogs[0].similarity * 100) : "—" }}<small>% 最相似</small>
+            {{ topAnalogs[0] ? ratioText(topAnalogs[0].similarity) : "—" }}<small>最相似</small>
           </div>
           <div class="cyc-ov-sub">
-            {{ analogs?.analogs?.[0]?.month ?? "—" }} · 相似≠相同，需人工核对时代背景
+            {{ topAnalogs[0]?.month ?? "—" }} · 相似≠相同，需人工核对时代背景
           </div>
         </article>
       </div>
@@ -338,7 +357,9 @@
                 <span class="badge badge--sm" :class="toneClass(longTone)">{{ long.phase }}</span>
                 <span class="cyc-layer-val mono">{{ fmtNumber(long.score, 1) }}</span>
               </div>
-              <div class="cyc-bar"><i :style="{ width: `${Math.round(long.position * 100)}%` }"></i></div>
+              <div class="cyc-bar">
+                <i :style="{ width: `${barWidth(long.position === null ? null : long.position * 100)}%` }"></i>
+              </div>
               <p class="cyc-layer-meaning">{{ long.meaning }}</p>
               <p class="cyc-layer-meta">下一阶段：{{ long.next_phase ?? "—" }} · {{ long.exit_condition }}</p>
             </div>
@@ -398,14 +419,14 @@
       <section class="card cyc-history-card">
         <div class="card-head">
           <span class="card-title">分量历史轨迹</span>
-          <span class="cyc-card-sub">{{ history?.months.length ?? 0 }} 个月 · 月度末值 · 覆盖不足的分量留空</span>
+          <span class="cyc-card-sub">{{ historyMonths.length }} 个月 · 月度末值 · 覆盖不足的分量留空</span>
           <div class="card-actions"><span class="cyc-card-sub mono">{{ historyRange }}</span></div>
         </div>
         <EChart v-if="chartHasData" :option="chartOption" :height="240" />
         <EmptyState v-else text="暂无历史轨迹" hint="至少有 24 个月数据后才会生成月度序列。" />
         <div class="card-foot">
           <span>历史轨迹用于判断「现在与过去哪里相似」，不作为拐点预测。</span>
-          <span class="mono">样本从 {{ history?.months[0] ?? "—" }} 起</span>
+          <span class="mono">样本从 {{ historyMonths[0] ?? "—" }} 起</span>
         </div>
       </section>
 
@@ -417,17 +438,19 @@
             <div class="card-actions"><span class="cyc-card-sub mono">Σ {{ fmtNumber(scenarios?.sum, 2) }}</span></div>
           </div>
           <div class="card-body cyc-scenario-list">
-            <div v-for="item in scenarios?.scenarios ?? []" :key="item.id" class="cyc-scenario-row">
+            <div v-for="item in scenarioList" :key="item.id" class="cyc-scenario-row">
               <div class="cyc-scenario-head">
                 <span class="cyc-scenario-id mono">{{ item.id }}</span>
                 <span class="cyc-scenario-name">{{ item.name }}</span>
-                <b class="cyc-scenario-prob mono">{{ Math.round(item.probability * 100) }}%</b>
+                <b class="cyc-scenario-prob mono">{{ ratioText(item.probability) }}</b>
               </div>
-              <div class="cyc-bar"><i :style="{ width: `${Math.round(item.probability * 100)}%` }"></i></div>
+              <div class="cyc-bar">
+                <i :style="{ width: `${barWidth(item.probability * 100)}%` }"></i>
+              </div>
               <p class="cyc-scenario-desc">{{ item.desc }}</p>
               <p class="cyc-scenario-assets">资产含义：{{ item.assets }}</p>
             </div>
-            <EmptyState v-if="!scenarios?.scenarios?.length" text="暂无情景" hint="情景由规则化先验生成。" />
+            <EmptyState v-if="!scenarioList.length" text="暂无情景" hint="情景由规则化先验生成。" />
           </div>
           <div class="card-foot">
             <span>{{ scenarios?.formula ?? "" }}</span>
@@ -440,6 +463,12 @@
             <span class="cyc-card-sub">r−g / 利息负担 / 赤字三模式判别 · 证据 {{ sustainability?.evidence ?? "—" }}</span>
           </div>
           <div class="card-body">
+            <EmptyState
+              v-if="!sustainability"
+              text="债务可持续性数据缺失"
+              hint="本次运行未返回 sustainability 段；模式判别与阈值读数暂不可用。"
+            />
+            <template v-else>
             <div class="cyc-sustain-head">
               <span class="badge badge--sm badge--warn">{{ sustainability?.mode ?? "—" }}</span>
               <span class="mono cyc-sustain-risk">{{ sustainability?.risk ?? "" }}</span>
@@ -464,10 +493,11 @@
               </div>
             </div>
             <p class="cyc-layer-meta">
-              关注阈值：利息/收入 ≥{{ sustainability?.thresholds.interest_watch }}%（警戒）、≥{{
-                sustainability?.thresholds.interest_alarm
-              }}%（警报）；赤字/GDP ≥{{ sustainability?.thresholds.deficit_watch }}%。
+              关注阈值：利息/收入 ≥{{ sustainabilityThresholds.interest_watch ?? "—" }}%（警戒）、≥{{
+                sustainabilityThresholds.interest_alarm ?? "—"
+              }}%（警报）；赤字/GDP ≥{{ sustainabilityThresholds.deficit_watch ?? "—" }}%。
             </p>
+            </template>
           </div>
         </section>
       </div>
@@ -488,7 +518,7 @@
               <div v-for="stage in stages" :key="stage.id" class="cyc-stage-row">
               <div class="cyc-stage-head">
                 <span class="cyc-stage-name">{{ stage.name }}</span>
-                <span class="badge badge--sm badge--warn">第 {{ stage.stage }} 阶段 · {{ stage.stage_name }}</span>
+                <span class="badge badge--sm badge--warn">第 {{ stage.stage ?? "—" }} 阶段 · {{ stage.stage_name }}</span>
                 <span class="mono cyc-stage-conf">置信 {{ fmtNumber(stage.confidence, 2) }}</span>
               </div>
               <p class="cyc-layer-meaning">{{ stage.reason }}</p>
@@ -497,21 +527,21 @@
             <div class="cyc-power-block">
               <div class="cyc-power-head">
                 <span class="cyc-layer-name">八项实力指数</span>
-                <b class="mono">{{ fmtNumber(world?.power_index.value, 1) }}</b>
-                <span class="badge badge--sm" :class="world?.power_index.degraded ? 'badge--warn' : ''">
-                  {{ world?.power_index.degraded ? "部分口径降级" : "口径完整" }}
+                <b class="mono">{{ fmtNumber(powerIndex?.value, 1) }}</b>
+                <span class="badge badge--sm" :class="powerIndex?.degraded === true ? 'badge--warn' : ''">
+                  {{ powerIndex?.degraded === true ? "部分口径降级" : "口径完整" }}
                 </span>
               </div>
-              <div v-for="item in world?.power_index.components ?? []" :key="item.id" class="cyc-power-row">
+              <div v-for="item in powerComponents" :key="item.id" class="cyc-power-row">
                 <span class="cyc-power-name">{{ item.name }}</span>
-                <span class="cyc-power-bar"><i :style="{ width: `${Math.max(2, Math.min(100, item.value))}%` }"></i></span>
+                <span class="cyc-power-bar"><i :style="{ width: `${item.value}%` }"></i></span>
                 <b class="mono">{{ fmtNumber(item.value, 0) }}</b>
-                <em class="mono">{{ fmtNumber(item.weight * 100, 0) }}%</em>
+                <em class="mono">{{ fmtNumber(item.weight, 0) }}%</em>
               </div>
               <p class="cyc-layer-meta">
-                储备货币：{{ world?.reserve_currency.code }} 份额 {{ fmtNumber(world?.reserve_currency.share, 1) }}%（{{
-                  world?.reserve_currency.asof
-                }}，{{ world?.reserve_currency.source }}）
+                储备货币：{{ reserveCurrency?.code ?? "—" }} 份额 {{ fmtNumber(reserveCurrency?.share, 1) }}%（{{
+                  reserveCurrency?.asof ?? "—"
+                }}，{{ reserveCurrency?.source ?? "—" }}）
               </p>
             </div>
             </template>
@@ -529,20 +559,22 @@
             </div>
           </div>
           <div class="card-body">
-            <SkeletonBlock v-if="!analogs" :rows="3" />
-            <template v-else>
-              <ul class="cyc-analog-list">
-                <li v-for="item in analogs.analogs.slice(0, 4)" :key="item.month" class="cyc-analog-line">
-                  <span class="cyc-analog-month mono">{{ item.month }}</span>
-                  <span class="cyc-analog-sim-bar"><i :style="{ width: `${Math.max(4, Math.round(item.similarity * 100))}%` }"></i></span>
-                  <b class="mono">{{ Math.round(item.similarity * 100) }}%</b>
-                  <span class="cyc-analog-state mono">
-                    增长 {{ fmtNumber(item.state.growth, 0) }} · 通胀 {{ fmtNumber(item.state.inflation, 0) }}
-                  </span>
-                </li>
-              </ul>
-              <p class="cyc-layer-meta">{{ analogs.caveats?.[0] ?? "" }}</p>
-            </template>
+            <ul v-if="analogList.length" class="cyc-analog-list">
+              <li v-for="item in analogList.slice(0, 4)" :key="item.month" class="cyc-analog-line">
+                <span class="cyc-analog-month mono">{{ item.month }}</span>
+                <span class="cyc-analog-sim-bar">
+                  <i :style="{ width: `${barWidth(item.similarity * 100, 4)}%` }"></i>
+                </span>
+                <b class="mono">{{ ratioText(item.similarity) }}</b>
+                <span class="cyc-analog-state mono">
+                  增长 {{ fmtNumber(item.state.growth, 0) }} · 通胀 {{ fmtNumber(item.state.inflation, 0) }}
+                </span>
+              </li>
+            </ul>
+            <EmptyState v-else text="暂无类比结果" hint="样本内近邻不足或未生成 analogs 段。" />
+            <p v-if="Array.isArray(analogs?.caveats) && analogs.caveats.length" class="cyc-layer-meta">
+              {{ analogs.caveats[0] ?? "" }}
+            </p>
           </div>
           <div class="card-foot">
             <span>类比是「样本内比较」，相似不保证同路径。</span>
@@ -550,27 +582,31 @@
         </section>
       </div>
 
-      <div v-if="payload?.degraded_reasons.length" class="cyc-degraded-box">
+      <div v-if="degradedReasons.length" class="cyc-degraded-box">
         <svg class="ic"><use href="#i-alert" /></svg>
         <div>
-          <b>本次运行有 {{ payload.degraded_reasons.length }} 项降级</b>
-          <div v-for="reason in payload.degraded_reasons.slice(0, 6)" :key="reason.code" class="cyc-degraded-reason">
-            {{ reason.message }}（{{ reason.code }}）
+          <b>本次运行有 {{ degradedReasons.length }} 项降级</b>
+          <div v-for="(reason, index) in degradedReasons.slice(0, 6)" :key="reason.code ?? index" class="cyc-degraded-reason">
+            {{ reason.message ?? "未提供降级说明" }}（{{ reason.code ?? "unknown" }}）
           </div>
         </div>
       </div>
 
       <div class="cyc-foot">
         <span class="mono">run {{ payload?.run_id ?? "—" }}</span>
-        <span class="mono">method {{ payload?.state.method_id ?? "—" }}</span>
+        <span class="mono">method {{ payload?.state?.method_id ?? "—" }}</span>
+        <span class="mono"> asof {{ asofLabel }} · 生成于 {{ generatedLabel }} </span>
         <span class="mono">
-          asof {{ fmtDate(payload?.asof) }} · generated {{ fmtDateTime(payload?.generated_at) }}
-        </span>
-        <span class="mono">
-          confidence {{ fmtNumber(payload?.state.confidence, 2) }} · {{ payload?.state.evidence_grade ?? "—" }}
+          confidence {{ longConfidencePct === null ? "—" : `${longConfidencePct}%` }} ·
+          {{ payload?.state?.evidence_grade ?? "—" }}
         </span>
       </div>
     </template>
+    <EmptyState
+      v-else
+      text="周期状态字段缺失"
+      hint="接口已返回运行记录，但缺少 state.value（旧版运行结果可能不完整）；请点击上方「立即重算」重新生成。"
+    />
   </div>
 </template>
 
@@ -597,47 +633,335 @@ import { getCycleConfig, getCycleReadings, getCycleState, runCycle } from "@/api
 import type {
   CycleAlert,
   CycleAnalog,
+  CycleAnalogs,
+  CycleHistory,
+  CycleInventory,
   CycleKey,
+  CycleLiquidity,
+  CycleLongCycle,
+  CyclePolitical,
   CycleReading,
   CycleReadingCard,
   CycleReadingsResponse,
+  CycleScenarioItem,
+  CycleShortCycle,
+  CycleStage,
   CycleStateResponse,
+  CycleSustainability,
   CycleWorld,
 } from "@/api/types";
 
-const { data, error, loading, lastUpdated, refresh } = usePolling<CycleStateResponse>(getCycleState, {
+const { data, error, loading, refresh } = usePolling<CycleStateResponse>(getCycleState, {
   interval: 60_000,
 });
 
 /** 关键读数走独立接口：失败时只降级 C 段，不影响其余区块。 */
-const readingsPoll = usePolling<CycleReadingsResponse>(getCycleReadings, { interval: 120_000 });
+const readingsPoll = usePolling<CycleReadingsResponse>(getCycleReadings, { interval: 60_000 });
 
 const running = ref(false);
+const recalcError = ref<string | null>(null);
 const payload = computed(() => data.value);
-const value = computed(() => payload.value?.state.value ?? null);
-const indicators = computed<CycleReading[]>(() => payload.value?.indicators ?? []);
-const long = computed(() => value.value!.long_cycle);
-const short = computed(() => value.value!.short_cycle);
-const liq = computed(() => value.value!.liquidity);
-const inventory = computed(() => value.value!.inventory);
-const political = computed(() => value.value!.political);
-const sustainability = computed(() => payload.value?.sustainability?.value);
-const scenarios = computed(() => payload.value?.scenarios?.value);
-const analogs = computed(() => payload.value?.analogs?.value);
-/** 世界秩序是顶层推导 payload（payload.world.value）；只有该 payload 真为 null 才判缺失。 */
-const world = computed<CycleWorld | null>(() => {
+const value = computed(() => payload.value?.state?.value ?? null);
+const indicators = computed<CycleReading[]>(() => {
+  const list = payload.value?.indicators;
+  if (!Array.isArray(list)) return [];
+  return list.filter((item): item is CycleReading => !!item && typeof item === "object");
+});
+
+// ── 防御式归一 ───────────────────────────────────────────
+// 旧运行记录可能缺 long_cycle.band / short_cycle.variables / world.power_index 等字段，
+// 统一在 computed 里补齐默认值；模板只读归一后的对象，任何缺失都不会触发下标崩溃。
+type RawOf<T> = Partial<T> | null | undefined;
+
+function asNumber(input: unknown): number | null {
+  if (typeof input !== "number" || !Number.isFinite(input)) return null;
+  return input;
+}
+
+/** 0–100 分量的安全取值；缺失按中性 50 处理 */
+function asScore(input: unknown): number | null {
+  const value = asNumber(input);
+  if (value === null) return null;
+  return Math.max(0, Math.min(100, value));
+}
+
+function asText(input: unknown, fallback = "—"): string {
+  if (typeof input !== "string") return fallback;
+  const text = input.trim();
+  return text || fallback;
+}
+
+interface SafeLongCycle {
+  phase: string;
+  phase_id: string;
+  score: number | null;
+  band: [number, number] | null;
+  bandText: string;
+  position: number | null;
+  positionPct: number | null;
+  meaning: string;
+  asset: string;
+  confidence: number | null;
+  next_phase: string | null;
+  exit_condition: string;
+  hysteresis_held: boolean;
+}
+
+const long = computed<SafeLongCycle>(() => {
+  const raw = value.value?.long_cycle as RawOf<CycleLongCycle>;
+  const band = Array.isArray(raw?.band) ? raw.band : null;
+  const bandStart = asNumber(band?.[0]);
+  const bandEnd = asNumber(band?.[1]);
+  const position = asNumber(raw?.position);
+  return {
+    phase: asText(raw?.phase, "未知阶段"),
+    phase_id: asText(raw?.phase_id, "unknown"),
+    score: asScore(raw?.score),
+    band: bandStart !== null && bandEnd !== null ? [bandStart, bandEnd] : null,
+    bandText: bandStart !== null && bandEnd !== null ? `${bandStart}–${bandEnd}` : "—",
+    position,
+    positionPct: position === null ? null : Math.max(0, Math.min(100, Math.round(position * 100))),
+    meaning: asText(raw?.meaning, "长债务周期阶段含义缺失（该运行记录未返回 meaning）。"),
+    asset: asText(raw?.asset, "—"),
+    confidence: asNumber(raw?.confidence),
+    next_phase: typeof raw?.next_phase === "string" ? raw.next_phase : null,
+    exit_condition: asText(raw?.exit_condition, "—"),
+    hysteresis_held: raw?.hysteresis_held === true,
+  };
+});
+
+interface SafeShortCycle {
+  state: string;
+  raw_state: string;
+  hysteresis_held: boolean;
+  variables: { growth: number | null; inflation: number | null; liq: number | null; d12: number | null };
+  meaning: string;
+  confidence: number | null;
+  growth_12m_change: number | null;
+}
+
+const short = computed<SafeShortCycle>(() => {
+  const raw = value.value?.short_cycle as RawOf<CycleShortCycle>;
+  const variables = (raw?.variables ?? {}) as Partial<CycleShortCycle["variables"]>;
+  return {
+    state: asText(raw?.state, "未知状态"),
+    raw_state: asText(raw?.raw_state, "—"),
+    hysteresis_held: raw?.hysteresis_held === true,
+    variables: {
+      growth: asNumber(variables.growth),
+      inflation: asNumber(variables.inflation),
+      liq: asNumber(variables.liq),
+      d12: asNumber(variables.d12),
+    },
+    meaning: asText(raw?.meaning, "短周期含义缺失（该运行记录未返回 meaning）。"),
+    confidence: asNumber(raw?.confidence),
+    growth_12m_change: asNumber(raw?.growth_12m_change),
+  };
+});
+
+interface SafeLiquidity {
+  available: boolean;
+  state: string;
+  score: number | null;
+  meaning: string;
+  confidence: number | null;
+  evidence: string;
+}
+
+const liq = computed<SafeLiquidity>(() => {
+  const raw = value.value?.liquidity as RawOf<CycleLiquidity>;
+  return {
+    available: raw?.available !== false,
+    state: asText(raw?.state, "未知"),
+    score: asScore(raw?.score),
+    meaning: asText(raw?.meaning, "流动性判定缺失（该运行记录未返回）。"),
+    confidence: asNumber(raw?.confidence),
+    evidence: asText(raw?.evidence, "—"),
+  };
+});
+
+interface SafeInventory {
+  state: string;
+  degraded: boolean;
+  degrade_reason: string | null;
+  meaning: string | null;
+  confidence: number | null;
+}
+
+const inventory = computed<SafeInventory>(() => {
+  const raw = value.value?.inventory as RawOf<CycleInventory>;
+  return {
+    state: asText(raw?.state, "未知"),
+    degraded: raw?.degraded === true,
+    degrade_reason: typeof raw?.degrade_reason === "string" ? raw.degrade_reason : null,
+    meaning: typeof raw?.meaning === "string" ? raw.meaning : null,
+    confidence: asNumber(raw?.confidence),
+  };
+});
+
+interface SafeNearestEvent {
+  name: string;
+  date: string;
+  note: string;
+}
+
+interface SafePolitical {
+  window: string;
+  nearest: SafeNearestEvent | null;
+  days_to_nearest: number | null;
+}
+
+const political = computed<SafePolitical>(() => {
+  const raw = value.value?.political as RawOf<CyclePolitical>;
+  const nearest = raw?.nearest as { name?: unknown; date?: unknown; note?: unknown } | null | undefined;
+  return {
+    window: asText(raw?.window, "窗口未知"),
+    nearest: nearest
+      ? {
+          name: asText(nearest.name, "临近事件"),
+          date: asText(nearest.date, "—"),
+          note: asText(nearest.note, "—"),
+        }
+      : null,
+    days_to_nearest: asNumber(raw?.days_to_nearest),
+  };
+});
+
+const sustainability = computed(() => payload.value?.sustainability?.value ?? null);
+/** thresholds 可能整段缺失，单独归一，模板不再直接点属性 */
+const sustainabilityThresholds = computed<Partial<CycleSustainability["thresholds"]>>(
+  () => (sustainability.value?.thresholds ?? {}) as Partial<CycleSustainability["thresholds"]>,
+);
+
+const scenarios = computed(() => payload.value?.scenarios?.value ?? null);
+/** 情景条目逐项归一：probability/name/desc/assets 任一缺失都不影响渲染 */
+const scenarioList = computed<CycleScenarioItem[]>(() => {
+  const list = scenarios.value?.scenarios;
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((item): item is CycleScenarioItem => !!item && typeof item === "object")
+    .map((item) => ({
+      id: asText(item.id, "—"),
+      name: asText(item.name, "未命名情景"),
+      probability: asNumber(item.probability) ?? 0,
+      base: asNumber(item.base) ?? 0,
+      adjustment: asNumber(item.adjustment) ?? 0,
+      desc: asText(item.desc, "—"),
+      assets: asText(item.assets, "—"),
+      triggers: Array.isArray(item.triggers) ? item.triggers : [],
+    }));
+});
+const analogs = computed<RawOf<CycleAnalogs>>(() => (payload.value?.analogs?.value as RawOf<CycleAnalogs>) ?? null);
+const analogList = computed<CycleAnalog[]>(() => {
+  const list = analogs.value?.analogs;
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((item): item is CycleAnalog => !!item && typeof item === "object")
+    .map((item) => {
+      const state = (item.state ?? {}) as Partial<CycleAnalog["state"]>;
+      return {
+        month: asText(item.month, "—"),
+        similarity: asNumber(item.similarity) ?? 0,
+        distance: asNumber(item.distance) ?? 0,
+        state: { growth: asNumber(state.growth), inflation: asNumber(state.inflation) },
+      };
+    });
+});
+
+/** 世界秩序是顶层推导 payload（payload.world.value）；缺失时兼容旧形态 local state.value.world。 */
+const world = computed<RawOf<CycleWorld>>(() => {
   const response = payload.value;
   if (!response) return null;
-  if (response.world?.value) return response.world.value;
+  const top = response.world?.value as RawOf<CycleWorld>;
+  if (top) return top;
   // 兼容旧后端把 world 挂在 state.value 下的形态
-  const legacy = (response.state.value as unknown as { world?: CycleWorld | null }).world;
-  return legacy ?? null;
+  const legacy = (response.state?.value as unknown as { world?: CycleWorld | null } | undefined)?.world;
+  return (legacy as RawOf<CycleWorld>) ?? null;
 });
-const history = computed(() => payload.value?.history?.value);
-const stages = computed(() => (world.value ? [world.value.us_internal, world.value.global_order] : []));
 
-const updatedLabel = computed(() => (lastUpdated.value ? fmtDateTime(lastUpdated.value.toISOString()).slice(5) : "—"));
-const asofLabel = computed(() => fmtDate(payload.value?.asof));
+type PowerComponent = Partial<CycleWorld["power_index"]["components"][number]>;
+const powerIndex = computed<RawOf<CycleWorld["power_index"]>>(() => world.value?.power_index ?? null);
+interface SafePowerComponent {
+  id: string;
+  name: string;
+  value: number;
+  weight: number;
+}
+/** 八项实力逐项归一：value 归一到 0–100 保证进度条可用，weight 转百分比 */
+const powerComponents = computed<SafePowerComponent[]>(() => {
+  const list = powerIndex.value?.components;
+  if (!Array.isArray(list)) return [];
+  return list.map((item) => ({
+    id: asText(item.id, "—"),
+    name: asText(item.name, "未命名分项"),
+    value: barWidth(asNumber(item.value) ?? 0),
+    weight: (asNumber(item.weight) ?? 0) * 100,
+  }));
+});
+const reserveCurrency = computed<RawOf<CycleWorld["reserve_currency"]>>(() => world.value?.reserve_currency ?? null);
+
+interface SafeStage {
+  id: string;
+  name: string;
+  stage: number | null;
+  stage_name: string;
+  confidence: number | null;
+  reason: string;
+  falsifier: string;
+}
+
+const stages = computed<SafeStage[]>(() => {
+  const list: Array<Partial<CycleStage> | null | undefined> = [
+    world.value?.us_internal,
+    world.value?.global_order,
+  ];
+  return list
+    .filter((stage): stage is Partial<CycleStage> => !!stage)
+    .map((stage) => ({
+      id: asText(stage.id, "—"),
+      name: asText(stage.name, "未命名秩序"),
+      stage: asNumber(stage.stage),
+      stage_name: asText(stage.stage_name, "—"),
+      confidence: asNumber(stage.confidence),
+      reason: asText(stage.reason, "—"),
+      falsifier: asText(stage.falsifier, "—"),
+    }));
+});
+
+const history = computed<RawOf<CycleHistory>>(() => (payload.value?.history?.value as RawOf<CycleHistory>) ?? null);
+const historyMonths = computed<string[]>(() => {
+  const months = history.value?.months;
+  return Array.isArray(months) ? months : [];
+});
+
+interface DegradedReason {
+  code?: string;
+  message?: string;
+}
+
+const degradedReasons = computed<DegradedReason[]>(() => {
+  const list = payload.value?.degraded_reasons;
+  return Array.isArray(list) ? list : [];
+});
+
+// ── 时间标签：只展示数据自身时点，不展示系统当前时间 ────────
+const generatedLabel = computed<string>(() => {
+  const raw = payload.value?.generated_at;
+  return raw ? fmtDateTime(raw) : "—";
+});
+const asofLabel = computed<string>(() => fmtDate(payload.value?.asof));
+
+/** 通用进度条宽度（0–100，缺失给最小宽度），避免任何 NaN 写入 style */
+function barWidth(value: number | null | undefined, min = 2): number {
+  if (value === null || value === undefined || !Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(100, Math.round(value)));
+}
+
+/** 比例 → 百分比文案（0.71 → 71%），缺失显示 — */
+function ratioText(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  return `${Math.round(value * 100)}%`;
+}
 
 /** 后端 /api/v2/cycle/meta 为新增端点：返回失败时静默回退到 config.version。 */
 interface CycleMeta {
@@ -735,9 +1059,18 @@ function directionArrow(score: number | null): string {
 const growthArrow = computed(() => directionArrow(compositeValue("GROWTH")));
 const inflationArrow = computed(() => directionArrow(compositeValue("INFLATION")));
 
+/** 综合置信度（百分比；兼容 0–1 与 0–100 两种存量口径） */
+const longConfidencePct = computed<number | null>(() => {
+  const raw = long.value.confidence;
+  if (raw === null || !Number.isFinite(raw)) return null;
+  const scaled = raw <= 1 ? raw * 100 : raw;
+  return Math.max(0, Math.min(100, Math.round(scaled)));
+});
+
 const heroSub = computed<string>(() => {
-  const confidence = Math.round((long.value.confidence ?? 0) * 100);
-  return `短周期：${short.value.state} · 综合置信度 ${confidence}% · 增长${growthArrow.value} 通胀${inflationArrow.value}`;
+  const confidence = longConfidencePct.value;
+  const confText = confidence === null ? "—" : `${confidence}%`;
+  return `短周期：${short.value.state} · 综合置信度 ${confText} · 增长${growthArrow.value} 通胀${inflationArrow.value}`;
 });
 
 interface HeroTag {
@@ -748,7 +1081,11 @@ interface HeroTag {
 }
 
 const alertsPayload = computed(() => payload.value?.alerts?.value ?? null);
-const alertList = computed<CycleAlert[]>(() => alertsPayload.value?.alerts ?? []);
+const alertList = computed<CycleAlert[]>(() => {
+  const list = alertsPayload.value?.alerts;
+  if (!Array.isArray(list)) return [];
+  return list.filter((alert): alert is CycleAlert => !!alert && typeof alert === "object");
+});
 const spreadAlert = computed(
   () => alertList.value.find((alert) => alert.metric === "cn_us_spread" || (alert.metric_name ?? "").includes("中美")) ?? null,
 );
@@ -816,8 +1153,21 @@ interface KpiView {
   tooltip: string;
 }
 
-const readingItems = computed<CycleReadingCard[]>(() => readingsPoll.data.value?.items ?? []);
+const readingItems = computed<CycleReadingCard[]>(() => {
+  const list = readingsPoll.data.value?.items;
+  if (!Array.isArray(list)) return [];
+  return list.filter((item): item is CycleReadingCard => !!item && typeof item === "object");
+});
 const missingReadings = computed<number>(() => readingItems.value.filter((item) => item.missing).length);
+/** 设计稿固定的 8 张卡顺序：接口返回顺序不同也按此排，其余读数追加在后。 */
+const KPI_ORDER = ["us10y", "us10y_real", "us10y_2y", "gold", "gold_silver", "lme_copper", "dxy", "cn_us_spread"];
+const orderedReadings = computed<CycleReadingCard[]>(() => {
+  const rank = (id: string): number => {
+    const index = KPI_ORDER.indexOf(id);
+    return index === -1 ? KPI_ORDER.length : index;
+  };
+  return readingItems.value.slice().sort((a, b) => rank(a.id) - rank(b.id));
+});
 const readingsUnavailable = computed<boolean>(
   () => !!readingsPoll.error.value && readingItems.value.length === 0,
 );
@@ -834,7 +1184,10 @@ const readingsAsof = computed<string>(() => {
 
 /** 30 点序列压进 120×24 折线；后端 spark 可能以小数或 ×100 基点存放，只做相对归一。 */
 function sparkPolyline(points: CycleReadingCard["spark"]): string {
-  const values = (points ?? []).map((point) => point.value).filter((value) => Number.isFinite(value));
+  const list = Array.isArray(points) ? points : [];
+  const values = list
+    .map((point) => (point && typeof point === "object" ? point.value : null))
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   if (values.length < 2) return "";
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -851,7 +1204,7 @@ function deltaTone(delta: number | null): "up" | "down" | "flat" {
 }
 
 const kpis = computed<KpiView[]>(() =>
-  readingItems.value.map((item) => {
+  orderedReadings.value.map((item) => {
     const digits = item.digits ?? 2;
     const unit = item.unit ?? "";
     const raw = item.value;
@@ -860,7 +1213,7 @@ const kpis = computed<KpiView[]>(() =>
     const z = item.z ?? null;
     return {
       id: item.id,
-      label: item.label,
+      label: item.label ?? "未命名读数",
       value: usable ? fmtNumber(raw, digits) : "—",
       unit,
       z,
@@ -901,7 +1254,9 @@ function alertValue(alert: CycleAlert): string {
 }
 
 function alertThreshold(alert: CycleAlert): string {
-  return `阈值 ${alert.op} ${fmtNumber(alert.threshold, 2)}${alert.unit ?? ""}`;
+  const op = alert.op ? String(alert.op) : "—";
+  const threshold = fmtNumber(alert.threshold, 2);
+  return `阈值 ${op} ${threshold}${alert.unit ?? ""}`;
 }
 
 function alertAsOf(alert: CycleAlert): string {
@@ -910,7 +1265,7 @@ function alertAsOf(alert: CycleAlert): string {
 }
 
 // ── E. 历史类比 Top3 ─────────────────────────────────────
-const topAnalogs = computed<CycleAnalog[]>(() => (analogs.value?.analogs ?? []).slice(0, 3));
+const topAnalogs = computed<CycleAnalog[]>(() => analogList.value.slice(0, 3));
 const analogSlots = computed<Array<CycleAnalog | null>>(() => {
   const slots: Array<CycleAnalog | null> = topAnalogs.value.slice(0, 3);
   while (slots.length < 3) slots.push(null);
@@ -1073,15 +1428,15 @@ function runText(status: string): string {
 }
 
 const historyRange = computed(() => {
-  const months = history.value?.months ?? [];
+  const months = historyMonths.value;
   if (!months.length) return "—";
   return `${months[0]} ~ ${months[months.length - 1]}`;
 });
 
 const chartHasData = computed(() => {
   const series = history.value?.series;
-  if (!series) return false;
-  return Object.values(series).some((points) => (points ?? []).some((point) => point !== null));
+  if (!series || typeof series !== "object") return false;
+  return Object.values(series).some((points) => (Array.isArray(points) ? points : []).some((point) => point !== null));
 });
 
 function cssVar(name: string, fallback: string): string {
@@ -1097,10 +1452,24 @@ const CHART_COLORS: Record<string, string> = {
   LIQUIDITY: "#2FBF71",
 };
 
+/** 序列语义色统一走 CSS 变量，保证深色 / 浅色主题下轨迹颜色一致可读。 */
+const CHART_COLOR_VARS: Record<string, string> = {
+  DMI: "--warn",
+  GROWTH: "--accent",
+  INFLATION: "--up",
+  LIQUIDITY: "--down",
+};
+
 const chartOption = computed<EChartsOption>(() => {
-  const months = history.value?.months ?? [];
-  const seriesData = history.value?.series ?? {};
-  const keys = ["DMI", "GROWTH", "INFLATION", "LIQUIDITY"].filter((key) => (seriesData[key] ?? []).some((point) => point !== null));
+  const months = historyMonths.value;
+  const seriesData = (history.value?.series ?? {}) as Record<string, unknown>;
+  const pointsOf = (key: string): Array<number | null> => {
+    const raw = seriesData[key];
+    return Array.isArray(raw) ? (raw as Array<number | null>) : [];
+  };
+  const keys = ["DMI", "GROWTH", "INFLATION", "LIQUIDITY"].filter((key) =>
+    pointsOf(key).some((point) => point !== null),
+  );
   return {
     grid: { left: 42, right: 16, top: 26, bottom: 28 },
     tooltip: {
@@ -1133,27 +1502,34 @@ const chartOption = computed<EChartsOption>(() => {
       splitLine: { lineStyle: { color: cssVar("--border", "rgba(148,163,184,.12)") } },
       axisLabel: { color: cssVar("--dim", "#64748B"), fontSize: 9 },
     },
-    series: keys.map((key) => ({
-      name: key,
-      type: "line" as const,
-      data: seriesData[key],
-      smooth: true,
-      connectNulls: false,
-      showSymbol: false,
-      lineStyle: { width: 1.6, color: CHART_COLORS[key] },
-      itemStyle: { color: CHART_COLORS[key] },
-    })),
+    series: keys.map((key) => {
+      const color = cssVar(CHART_COLOR_VARS[key] ?? "--accent", CHART_COLORS[key] ?? "#4CC2FF");
+      return {
+        name: key,
+        type: "line" as const,
+        data: pointsOf(key),
+        smooth: true,
+        connectNulls: false,
+        showSymbol: false,
+        lineStyle: { width: 1.6, color },
+        itemStyle: { color },
+      };
+    }),
   };
 });
 
 async function recalc(): Promise<void> {
   if (running.value) return;
   running.value = true;
+  recalcError.value = null;
   try {
     await runCycle();
     await refresh();
     void readingsPoll.refresh();
     void loadMeta();
+  } catch (err) {
+    // 重算失败只在行内提示，绝不整页消失
+    recalcError.value = err instanceof Error ? err.message : String(err);
   } finally {
     running.value = false;
   }
@@ -1164,6 +1540,36 @@ async function recalc(): Promise<void> {
 /* ── 页面骨架 ───────────────────────────────────────── */
 .cyc-root {
   overflow-x: hidden;
+}
+/* 数据自身生成时点：小字跟随标题，不展示系统当前时间 */
+.cyc-generated {
+  margin: -6px 2px 10px;
+  font-size: 9.5px;
+  color: var(--dim);
+  font-family: var(--mono);
+  letter-spacing: 0.2px;
+}
+/* 重算失败行内提示（不阻塞页面其余内容） */
+.cyc-inline-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 2px 10px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  font-size: 10.5px;
+  color: var(--warn);
+}
+.cyc-inline-error .ic {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+.cyc-inline-error span {
+  flex: 1;
+  min-width: 0;
 }
 .cyc-card-sub {
   font-size: 10px;
@@ -1198,6 +1604,20 @@ async function recalc(): Promise<void> {
   box-shadow: var(--shadow);
   overflow: hidden;
   margin-bottom: 10px;
+}
+/* 设计稿 hero 右下角装饰圆环（纯装饰，不参与交互） */
+.cyc-hero::after {
+  content: "";
+  position: absolute;
+  right: -42px;
+  bottom: -96px;
+  width: 250px;
+  height: 250px;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 24px transparent,
+    0 0 0 25px var(--border);
+  pointer-events: none;
 }
 .cyc-hero-main {
   min-width: 0;
@@ -1500,7 +1920,7 @@ async function recalc(): Promise<void> {
   color: var(--warn);
 }
 .cyc-sev--low {
-  color: #d8b24a;
+  color: color-mix(in srgb, var(--warn) 78%, var(--text) 22%);
 }
 .cyc-sev--unknown {
   color: var(--dim);

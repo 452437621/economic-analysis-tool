@@ -5,6 +5,7 @@
         <div class="page-eyebrow">研究分析 · 世界长河</div>
         <h1 class="page-h1">世界长河 · 帝国与储备货币的更替</h1>
         <p class="hst-sub">1500–2100 · 四条帝国泳道 × 五类历史图层 · 点击任意年份或事件查看影响</p>
+        <span class="gen-at">（生成于 {{ generatedLabel }}）</span>
       </div>
       <div class="page-actions hst-head-actions">
         <span class="badge badge--sm">示意数据</span>
@@ -19,10 +20,10 @@
     </div>
 
     <SkeletonBlock v-if="!payload && loading" :rows="7" :cells="3" :height="16" />
-    <ErrorState v-else-if="!payload && error" :error="error" @retry="refresh" />
+    <template v-else>
+      <ErrorState v-if="!payload && error" :error="error" @retry="refresh" />
 
-    <template v-else-if="payload">
-      <div class="kpi-grid">
+      <div v-if="payload" class="kpi-grid">
         <article class="card kpi">
           <div class="kpi-top">
             <span class="kpi-icon"><svg class="ic"><use href="#i-branch" /></svg></span>
@@ -65,32 +66,44 @@
         </article>
       </div>
 
-      <div class="hst-grid">
-        <HistoryTimeline
-          :eras="eras"
-          :events="events"
-          :reserve="reservePoints"
-          :selected-id="selected?.id ?? null"
-          @select="openEvent"
-          @select-year="openYear"
-        />
+      <HistoryTimelineChart :events="events" :eras="eras" :reserve="reservePoints" @select="openEvent">
         <HistoryEventDetail
           :event="selected"
-          :context-year="contextYear"
-          :nearby="nearbyEvents"
           :related="relatedEvents"
           @close="clearSelection"
           @select="openEvent"
+          @expand="detailOpen = true"
         />
-      </div>
+      </HistoryTimelineChart>
+
+      <template v-if="payload">
+      <Drawer
+        :open="detailOpen"
+        title="事件详情"
+        :sub="detailDrawerSub"
+        @close="detailOpen = false"
+      >
+        <HistoryEventDetail
+          :event="selected"
+          :related="relatedEvents"
+          :embedded="true"
+          @close="detailOpen = false"
+          @select="openEvent"
+        />
+      </Drawer>
 
       <section class="card">
         <div class="card-head">
           <span class="card-title">周期对照表</span>
-          <span class="card-sub">每轮霸权的崛起 / 黄金期 / 转折 / 衰落与当前阶段 · 黄金期、转折、当前阶段由 timeline 数据集提供，未返回时显示「—」</span>
+          <span class="card-sub">每轮霸权的崛起 / 黄金期 / 转折 / 衰落与当前阶段 · 黄金期、转折、当前阶段由 timeline 数据集提供，未返回时显示「—」；短句为示意，不构成精确分期</span>
         </div>
         <div class="card-body">
-          <div class="table-wrap hst-table-wrap">
+          <EmptyState
+            v-if="!eras.length"
+            text="还没有霸权分期数据"
+            hint="分期来自 timeline 数据集（eras 表）；执行「重新入库」抽取后出现。分期本身是叙事判断（C 级），不会由价格数据自动生成。"
+          />
+          <div v-else class="table-wrap hst-table-wrap">
             <table class="data-table hst-era-table">
               <thead>
                 <tr>
@@ -104,11 +117,12 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="era in eras" :key="era.id">
+                <tr v-for="era in eras" :key="era.id" :class="{ 'hst-era-now': era.id === currentEra?.id }">
                   <td>
                     <div class="hst-era-name">
                       <i :style="{ background: eraColor(era, eras.indexOf(era)) }" />
                       {{ era.name }}
+                      <span v-if="era.id === currentEra?.id" class="badge badge--sm badge--accent">当前</span>
                     </div>
                     <div class="hst-era-range mono">{{ era.rise }}–{{ era.decline }}</div>
                   </td>
@@ -136,7 +150,12 @@
           </div>
           <div class="card-body">
             <div class="hst-table-wrap">
-              <div class="hst-dim-table">
+              <EmptyState
+                v-if="!dimensions.length"
+                text="还没有当下坐标"
+                hint="六维对照来自 timeline 推导（position.value.dimensions）；需先跑「重新入库」让 timeline run 读取 cycle 结果，两者都有数据后才会生成。"
+              />
+              <div v-else class="hst-dim-table">
                 <div class="hst-dim-head">
                   <span>维度</span>
                   <span>历史锚点</span>
@@ -167,7 +186,12 @@
             <span class="card-sub">相似度来自公开叙事对照，非量化匹配</span>
           </div>
           <div class="card-body">
-            <div class="hst-analog-grid">
+            <EmptyState
+              v-if="!analogs.length"
+              text="暂无历史类比"
+              hint="类比由 timeline 推导给出（position.value.analogs），依赖周期引擎的历史阶段读数；周期数据缺失时这里留空，不用占位叙事填空。"
+            />
+            <div v-else class="hst-analog-grid">
               <article v-for="analog in analogs" :key="analog.id" class="hst-analog">
                 <div class="hst-analog-head">
                   <span class="hst-analog-name">{{ analog.name }}</span>
@@ -194,7 +218,12 @@
           <span class="card-sub">每条都必须可观测、可证伪；「可计算」列说明如何落到本系统指标</span>
         </div>
         <div class="card-body">
-          <div class="hst-law-grid">
+          <EmptyState
+            v-if="!lessons.length"
+            text="还没有历史规律"
+            hint="十条规律写在 timeline 数据集里（lesson 表），「重新入库」会随事件一起抽取；它们是对史料的归纳，不是模型训练产物。"
+          />
+          <div v-else class="hst-law-grid">
             <article v-for="lesson in lessons" :key="lesson.id" class="hst-law">
               <div class="hst-law-head">
                 <span class="hst-law-num mono">{{ lesson.id }}</span>
@@ -207,41 +236,15 @@
         </div>
       </section>
 
-      <div class="hst-grid-2">
-        <section class="card">
-          <div class="card-head">
-            <span class="card-title">实力份额 · GDP 占比</span>
-            <span class="card-sub">Maddison Project 2023；1500–1870 为粗略估计（B/C 级）</span>
-          </div>
-          <div class="card-body">
-            <EChart :option="gdpOption" :height="260" />
-            <div class="hst-chart-note">
-              实力领先储备货币 30–50 年：经济份额先转移，货币与金融中心随后。图中早期数据为学界估计，不宜过度解读小数点。
-            </div>
-          </div>
-        </section>
-        <section class="card">
-          <div class="card-head">
-            <span class="card-title">储备货币份额</span>
-            <span class="card-sub">IMF COFER；1913 年前数据为研究者估计（B/C 级）</span>
-          </div>
-          <div class="card-body">
-            <EChart :option="reserveOption" :height="260" />
-            <div class="hst-chart-note">
-              储备货币更替先慢后快：英镑 1913 年仍占约 64%，美元到 1944 年才被制度确认。单季份额波动不构成「崩塌」。
-            </div>
-          </div>
-        </section>
-      </div>
-
       <p v-if="payload.degraded && payload.degraded_reasons.length" class="hst-degraded">
         <b>降级说明</b>
         {{ payload.degraded_reasons.slice(0, 4).map((item) => item.message).join("；") }}
       </p>
       <p class="hst-foot">
         口径声明：年表为 1500–2026 精选事件（非全集），A 级事件附公开来源；霸权分期与历史类同为叙事判断（C/D 级），用于辅助定位而非预测。
-        运行 {{ payload.run_id ? payload.run_id.slice(0, 8) : "—" }} · 生成于 {{ payload.generated_at.slice(0, 16).replace("T", " ") }}
+        运行 {{ payload.run_id ? payload.run_id.slice(0, 8) : "—" }}
       </p>
+      </template>
     </template>
   </div>
 </template>
@@ -249,14 +252,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import type { EChartsOption } from "echarts";
-import EChart from "@/components/charts/EChart.vue";
+import EmptyState from "@/components/ui/EmptyState.vue";
+import Drawer from "@/components/ui/Drawer.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import SkeletonBlock from "@/components/ui/SkeletonBlock.vue";
-import HistoryTimeline from "@/components/history/HistoryTimeline.vue";
+import HistoryTimelineChart from "@/components/history/HistoryTimelineChart.vue";
 import HistoryEventDetail from "@/components/history/HistoryEventDetail.vue";
 import { usePolling } from "@/composables/usePolling";
-import { fmtDate, fmtInt, fmtNumber } from "@/composables/useFormat";
+import { fmtDate, fmtDateTime, fmtInt, fmtNumber } from "@/composables/useFormat";
 import { getTimelineOverview, runTimeline } from "@/api/endpoints";
 import type {
   TimelineAnalog,
@@ -301,11 +304,22 @@ const usdShare = computed(() => {
   return rows.length ? rows[rows.length - 1] : null;
 });
 
-/* ── 事件选中 / 年度切片 / ?event= 深链 ─────────────────────────────── */
+/* ── 事件选中 / ?event= 深链 ─────────────────────────────────────────── */
 
 const running = ref(false);
 const selected = ref<TimelineEventItem | null>(null);
-const contextYear = ref<number | null>(null);
+const detailOpen = ref(false);
+
+/** timeline 接口生成时间；不做浏览器时间回退。 */
+const generatedLabel = computed(() => {
+  const iso = payload.value?.generated_at;
+  return iso ? fmtDateTime(iso) : "—";
+});
+
+const detailDrawerSub = computed(() => {
+  if (selected.value) return `${selected.value.year} 年 · ${selected.value.title}`;
+  return "未选中事件";
+});
 
 const syncQuery = (id: string | null) => {
   const current = typeof route.query.event === "string" ? route.query.event : null;
@@ -318,19 +332,11 @@ const syncQuery = (id: string | null) => {
 
 const openEvent = (item: TimelineEventItem) => {
   selected.value = item;
-  contextYear.value = null;
   syncQuery(item.id);
-};
-
-const openYear = (year: number) => {
-  selected.value = null;
-  contextYear.value = year;
-  syncQuery(null);
 };
 
 const clearSelection = () => {
   selected.value = null;
-  contextYear.value = null;
   syncQuery(null);
 };
 
@@ -339,27 +345,13 @@ watch(
   ([list, eventId]) => {
     if (typeof eventId === "string" && eventId) {
       const hit = list.find((item) => item.id === eventId);
-      if (hit) {
-        selected.value = hit;
-        contextYear.value = null;
-      }
+      if (hit) selected.value = hit;
       return;
     }
     if (selected.value) selected.value = null;
   },
   { immediate: true },
 );
-
-const nearbyEvents = computed<TimelineEventItem[]>(() => {
-  if (contextYear.value === null) return [];
-  const year = contextYear.value;
-  return events.value
-    .map((item) => ({ item, distance: Math.abs(item.year - year) }))
-    .filter((row) => row.distance <= 30)
-    .sort((a, b) => a.distance - b.distance || a.item.year - b.item.year)
-    .slice(0, 8)
-    .map((row) => row.item);
-});
 
 const relatedEvents = computed<TimelineEventItem[]>(() => {
   if (!selected.value) return [];
@@ -428,77 +420,7 @@ const recalc = async () => {
   }
 };
 
-/* ── 图表：GDP 份额与储备份额 ─────────────────────────────────────────── */
-
-const GDP_POWERS = ["china", "india", "usa", "uk", "netherlands"] as const;
-const GDP_COLORS: Record<string, string> = {
-  china: "#F0544F",
-  india: "#F5A524",
-  usa: "#4CC2FF",
-  uk: "#2FBF71",
-  netherlands: "#A78BFA",
-};
-
-const reservePowers = computed(() => {
-  const rows = payload.value?.powers.reserve ?? [];
-  return Array.from(new Set(rows.map((item) => item.power)));
-});
-const RESERVE_COLORS: Record<string, string> = {
-  usd: "#4CC2FF",
-  gbp: "#F0544F",
-  eur: "#2FBF71",
-  cny: "#F5A524",
-};
-
-const lineOption = (
-  points: Array<{ power: string; power_label: string; year: number; value: number }>,
-  powers: readonly string[],
-  colors: Record<string, string>,
-  unit: string,
-): EChartsOption => {
-  const years = Array.from(new Set(points.map((item) => item.year))).sort((a, b) => a - b);
-  const labelOf = (power: string) => points.find((item) => item.power === power)?.power_label ?? power;
-  return {
-    grid: { left: 44, right: 16, top: 28, bottom: 30 },
-    tooltip: { trigger: "axis", valueFormatter: (value) => `${value}${unit}` },
-    legend: { top: 0, right: 0, textStyle: { color: "#93A4B8", fontSize: 10 }, itemWidth: 10, itemHeight: 8 },
-    xAxis: {
-      type: "category",
-      data: years,
-      axisLine: { lineStyle: { color: "rgba(148,163,184,.25)" } },
-      axisLabel: { color: "#64748B", fontSize: 10 },
-    },
-    yAxis: {
-      type: "value",
-      axisLabel: { color: "#64748B", fontSize: 10, formatter: `{value}${unit}` },
-      splitLine: { lineStyle: { color: "rgba(148,163,184,.10)" } },
-    },
-    series: powers.map((power, index) => ({
-      name: labelOf(power),
-      type: "line" as const,
-      smooth: true,
-      symbol: "circle",
-      symbolSize: 4,
-      connectNulls: false,
-      lineStyle: { width: index === 0 ? 2.2 : 1.6, color: colors[power] ?? "#93A4B8" },
-      itemStyle: { color: colors[power] ?? "#93A4B8" },
-      data: years.map((year) => points.find((item) => item.power === power && item.year === year)?.value ?? null),
-    })),
-  };
-};
-
-const gdpOption = computed<EChartsOption>(() =>
-  lineOption(
-    (payload.value?.powers.gdp ?? []).filter((item) => (GDP_POWERS as readonly string[]).includes(item.power)),
-    GDP_POWERS,
-    GDP_COLORS,
-    "%",
-  ),
-);
-
-const reserveOption = computed<EChartsOption>(() =>
-  lineOption(reservePoints.value, reservePowers.value, RESERVE_COLORS, "%"),
-);
+/* ── 图表：GDP 份额与储备份额已并入世界长河时间轴（HistoryTimelineChart） ── */
 </script>
 
 <style scoped>
@@ -516,13 +438,6 @@ const reserveOption = computed<EChartsOption>(() =>
 .hst-head-actions {
   flex-wrap: wrap;
   justify-content: flex-end;
-}
-.hst-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 292px;
-  align-items: start;
-  gap: 10px;
-  margin-top: 10px;
 }
 .hst-grid-2 {
   display: grid;
@@ -548,10 +463,17 @@ const reserveOption = computed<EChartsOption>(() =>
   line-height: 1.5;
   font-size: 11px;
 }
+.hst-era-table tbody tr.hst-era-now td {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+.hst-era-table tbody tr.hst-era-now td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
 .hst-era-name {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
   font-size: 11.5px;
   font-weight: 600;
   color: var(--text);
@@ -751,12 +673,6 @@ const reserveOption = computed<EChartsOption>(() =>
   font-size: 8.5px;
   color: var(--muted);
 }
-.hst-chart-note {
-  margin-top: 6px;
-  font-size: 9.5px;
-  line-height: 1.6;
-  color: var(--dim);
-}
 .hst-degraded {
   margin-top: 10px;
   padding: 8px 10px;
@@ -787,9 +703,6 @@ const reserveOption = computed<EChartsOption>(() =>
 }
 
 @media (max-width: 1240px) {
-  .hst-grid {
-    grid-template-columns: minmax(0, 1fr) 260px;
-  }
   .hst-grid-2 {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -802,9 +715,6 @@ const reserveOption = computed<EChartsOption>(() =>
 }
 
 @media (max-width: 1024px) {
-  .hst-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .hst-grid-2 {
     grid-template-columns: minmax(0, 1fr);
   }

@@ -10,17 +10,20 @@
     <nav class="nav">
       <div v-for="group in NAV_GROUPS" :key="group.label" class="nav-group">
         <div class="nav-label">{{ group.label }}</div>
-        <RouterLink
-          v-for="item in group.items"
-          :key="item.to"
-          :to="item.to"
-          class="nav-item"
-          :class="{ active: isActive(item.to) }"
-        >
-          <svg class="ic"><use :href="item.icon" /></svg>
-          <span>{{ item.label }}</span>
-          <span v-if="badgeFor(item.to)" class="nav-badge">{{ badgeFor(item.to) }}</span>
-        </RouterLink>
+        <template v-for="section in sectionsOf(group)" :key="section.label">
+          <div v-if="group.sections" class="nav-sub">{{ section.label }}</div>
+          <RouterLink
+            v-for="item in section.items"
+            :key="item.to"
+            :to="item.to"
+            class="nav-item"
+            :class="{ active: isActive(item.to) }"
+          >
+            <svg class="ic"><use :href="item.icon" /></svg>
+            <span>{{ item.label }}</span>
+            <span v-if="badgeFor(item.to)" class="nav-badge">{{ badgeFor(item.to) }}</span>
+          </RouterLink>
+        </template>
       </div>
     </nav>
     <div class="sidebar-foot">
@@ -39,8 +42,7 @@
         <div class="sf-row"><span>调度器</span><b>{{ health.schedulerRunning ? "运行中" : "已停止" }}</b></div>
       </div>
       <div class="sf-version">
-        EPIC v{{ health.health?.version ?? "—" }} · 本地实例<br />
-        {{ clockText }}
+        EPIC v{{ health.health?.version ?? "—" }} · 本地实例
       </div>
     </div>
   </aside>
@@ -50,7 +52,6 @@
 import { computed } from "vue";
 import { useRoute } from "vue-router";
 import { useHealthStore } from "@/stores/health";
-import { useClockText } from "@/composables/useClock";
 import { getSystemCoverage } from "@/api/endpoints";
 import type { CoverageResponse } from "@/api/types";
 import { usePolling } from "@/composables/usePolling";
@@ -62,12 +63,24 @@ interface NavItem {
   icon: string;
 }
 
-const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
+interface NavSection {
+  label: string;
+  items: NavItem[];
+}
+
+interface NavGroup {
+  label: string;
+  items?: NavItem[];
+  sections?: NavSection[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
   {
     label: "今日",
     items: [
       { to: "/", label: "总览", icon: "#i-grid" },
-      { to: "/briefs", label: "简报与日志", icon: "#i-file" },
+      { to: "/briefs", label: "简报", icon: "#i-file" },
+      { to: "/trades", label: "交易", icon: "#i-book" },
     ],
   },
   {
@@ -79,32 +92,53 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   },
   {
     label: "研判",
-    items: [
-      { to: "/cycle", label: "周期罗盘", icon: "#i-target" },
-      { to: "/history", label: "世界长河", icon: "#i-book" },
-      { to: "/pipeline", label: "透明管线", icon: "#i-layers" },
-      { to: "/alerts", label: "预警台", icon: "#i-bell" },
-      { to: "/analysis", label: "分析引擎", icon: "#i-cpu" },
-      { to: "/ledger", label: "预测台账", icon: "#i-tasks" },
-      { to: "/principles", label: "原则库", icon: "#i-shield-check" },
-      { to: "/gold", label: "黄金研判", icon: "#i-flame" },
-      { to: "/signals", label: "交易信号", icon: "#i-activity" },
-      { to: "/theses", label: "论点与证据", icon: "#i-branch" },
+    sections: [
+      {
+        label: "周期与位置",
+        items: [
+          { to: "/cycle", label: "周期罗盘", icon: "#i-target" },
+          { to: "/history", label: "世界长河", icon: "#i-branch" },
+        ],
+      },
+      {
+        label: "透明与证据",
+        items: [
+          { to: "/pipeline", label: "透明管线", icon: "#i-layers" },
+          { to: "/analysis", label: "分析引擎", icon: "#i-cpu" },
+        ],
+      },
+      {
+        label: "预警与台账",
+        items: [
+          { to: "/alerts", label: "预警台", icon: "#i-bell" },
+          { to: "/ledger", label: "预测台账", icon: "#i-tasks" },
+          { to: "/principles", label: "原则库", icon: "#i-shield-check" },
+        ],
+      },
+      {
+        label: "专题",
+        items: [
+          { to: "/gold", label: "黄金研判", icon: "#i-flame" },
+          { to: "/signals", label: "交易信号", icon: "#i-activity" },
+          { to: "/theses", label: "论点与证据", icon: "#i-book" },
+        ],
+      },
     ],
   },
   {
     label: "系统",
-    items: [
-      { to: "/system", label: "系统状态", icon: "#i-db" },
-      { to: "/tokens", label: "设计规范", icon: "#i-palette" },
-    ],
+    items: [{ to: "/system", label: "系统状态", icon: "#i-db" }],
   },
 ];
+
+function sectionsOf(group: NavGroup): NavSection[] {
+  if (group.sections) return group.sections;
+  return [{ label: group.label, items: group.items ?? [] }];
+}
 
 const route = useRoute();
 const health = useHealthStore();
 const counts = computed(() => health.counts);
-const { text: clockText } = useClockText();
 const apiHost = computed(() => location.host);
 
 const { data: coverage } = usePolling<CoverageResponse>(
@@ -133,6 +167,18 @@ function badgeFor(to: string): string | number {
 </script>
 
 <style scoped>
+.nav-sub {
+  margin: 8px 0 2px;
+  padding: 0 10px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+}
+
+.nav-sub + .nav-item {
+  margin-top: 0;
+}
+
 .nav-item {
   text-decoration: none;
 }

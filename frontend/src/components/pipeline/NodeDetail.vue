@@ -1,18 +1,11 @@
 <template>
-  <section class="card pipe-node-detail">
-    <header class="card-head">
-      <span class="card-title">
-        节点详情 · {{ name }}
-        <span class="badge badge--sm" :class="statusBadge">{{ statusText }}</span>
-      </span>
-      <div class="card-actions pipe-node-actions">
-        <span class="pipe-node-meta mono">{{ steps.length }} 步 · {{ fmtDuration(durationMs) }}</span>
-        <button class="btn btn--ghost btn--sm btn--icon" type="button" title="关闭" @click="emit('close')">
-          <svg class="ic"><use href="#i-close" /></svg>
-        </button>
-      </div>
-    </header>
-    <div class="card-body pipe-node-body">
+  <Drawer
+    :open="true"
+    :title="`节点详情 · ${name}`"
+    :sub="`${statusText} · ${steps.length} 步 · ${fmtDuration(durationMs)}`"
+    @close="emit('close')"
+  >
+    <div class="pipe-node-body">
       <div class="pipe-node-facts">
         <div class="pipe-fact"><span>步骤数</span><b class="mono num">{{ steps.length }}</b></div>
         <div class="pipe-fact"><span>总耗时</span><b class="mono num">{{ fmtDuration(durationMs) }}</b></div>
@@ -23,7 +16,7 @@
       <EmptyState
         v-if="!steps.length"
         text="该节点在本次运行中未记录步骤"
-        hint="不同分析任务使用的步骤不同；切换上方运行可查看其他任务。"
+        hint="不同分析任务使用的步骤不同：采集类任务只有 load_*，周期类任务才有 composite_scores 之后的步骤；切换上方运行可查看其他任务。"
       />
 
       <div v-else class="pipe-node-steps">
@@ -56,12 +49,18 @@
         </details>
       </div>
     </div>
-  </section>
+    <template #footer>
+      <span class="pipe-node-foot-note">
+        inputs / outputs / params 为本次运行的原始步骤记录；未记录的字段显示「未记录」，不做补写。
+      </span>
+    </template>
+  </Drawer>
 </template>
 
 <script setup lang="ts">
 import { computed } from "vue";
 import type { V2Step } from "@/api/types";
+import Drawer from "@/components/ui/Drawer.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 
 type NodeStatus = "ok" | "degraded" | "failed" | "pending";
@@ -81,16 +80,10 @@ const STATUS_TEXT: Record<NodeStatus, string> = {
   ok: "成功",
   degraded: "降级",
   failed: "失败",
-  pending: "待运行",
+  pending: "跳过",
 };
 
 const statusText = computed(() => STATUS_TEXT[props.status]);
-const statusBadge = computed(() => {
-  if (props.status === "failed") return "badge--warn";
-  if (props.status === "degraded") return "badge--accent";
-  if (props.status === "pending") return "";
-  return "badge--live";
-});
 
 function fmtDuration(ms: number | null): string {
   if (ms === null || !Number.isFinite(ms)) return "—";
@@ -115,23 +108,10 @@ function pretty(value: Record<string, unknown> | null): string {
 </script>
 
 <style scoped>
-.pipe-node-detail {
-  margin-top: 12px;
-}
-.pipe-node-actions {
-  align-items: center;
-}
-.pipe-node-meta {
-  font-size: 9.5px;
-  color: var(--dim);
-  white-space: nowrap;
-}
 .pipe-node-body {
   display: flex;
   flex-direction: column;
   gap: 9px;
-  max-height: 460px;
-  overflow: auto;
 }
 .pipe-node-facts {
   display: grid;
@@ -255,6 +235,11 @@ function pretty(value: Record<string, unknown> | null): string {
   font-size: 9.5px;
   line-height: 1.55;
   white-space: pre;
+}
+.pipe-node-foot-note {
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--dim);
 }
 @media (max-width: 1024px) {
   .pipe-node-facts {

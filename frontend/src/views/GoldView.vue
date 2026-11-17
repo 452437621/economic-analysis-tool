@@ -7,13 +7,13 @@
           黄金研判
           <span class="page-sub">央行购金 · 全球 ETF · 租赁/掉期 · 库存 · 做市商持仓</span>
         </h1>
+        <span class="gen-at">（生成于 {{ updatedLabel }}）</span>
       </div>
       <div class="page-actions">
         <span v-if="error && overview" class="badge badge--warn badge--sm">
           <svg class="ic" style="width: 11px; height: 11px"><use href="#i-alert" /></svg>刷新失败
         </span>
-        <span class="badge badge--sm"><span class="dot"></span>更新于 {{ updatedLabel }}</span>
-        <button class="btn btn--sm" type="button" :disabled="collecting" @click="triggerRefresh()">
+                <button class="btn btn--sm" type="button" :disabled="collecting" @click="triggerRefresh()">
           <svg class="ic" :class="{ spin: collecting }"><use href="#i-refresh" /></svg>
           {{ collecting ? "采集中" : "刷新数据" }}
         </button>

@@ -9,7 +9,7 @@
         <span class="pipe-dag-stat"><span class="pipe-dot pipe-dot--ok"></span>成功 {{ counts.ok }}</span>
         <span class="pipe-dag-stat"><span class="pipe-dot pipe-dot--degraded"></span>降级 {{ counts.degraded }}</span>
         <span class="pipe-dag-stat"><span class="pipe-dot pipe-dot--failed"></span>失败 {{ counts.failed }}</span>
-        <span class="pipe-dag-stat"><span class="pipe-dot pipe-dot--pending"></span>待运行 {{ counts.pending }}</span>
+        <span class="pipe-dag-stat"><span class="pipe-dot pipe-dot--pending"></span>跳过 {{ counts.pending }}</span>
       </div>
     </header>
 
@@ -46,7 +46,10 @@
     </div>
 
     <div class="pipe-dag-hint">
-      提示：点击任一节点，下方展示该节点的步骤、输入 / 输出 / 参数（JSON 可折叠）、耗时与错误。
+      提示：点击任一节点，右侧抽屉展示该节点的步骤、输入 / 输出 / 参数（JSON 可折叠）、耗时与错误。
+      <span v-if="props.unmappedCount" class="pipe-dag-unmapped">
+        另有 {{ props.unmappedCount }} 个契约外步骤按步骤类型归并到相邻节点。
+      </span>
     </div>
   </section>
 </template>
@@ -72,6 +75,7 @@ interface PipeNode {
 const props = defineProps<{
   nodes: PipeNode[];
   selected: string | null;
+  unmappedCount?: number;
 }>();
 
 const emit = defineEmits<{ select: [id: string] }>();
@@ -86,7 +90,7 @@ const STATUS_TEXT: Record<NodeStatus, string> = {
   ok: "成功",
   degraded: "降级",
   failed: "失败",
-  pending: "待运行",
+  pending: "跳过",
 };
 
 function statusText(status: NodeStatus): string {
@@ -286,6 +290,9 @@ function firstTime(steps: V2Step[]): string {
   font-size: 9.5px;
   color: var(--dim);
   line-height: 1.5;
+}
+.pipe-dag-unmapped {
+  color: var(--warn);
 }
 
 @media (max-width: 1240px) {

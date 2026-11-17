@@ -14,12 +14,20 @@
     </button>
     <div class="top-actions">
       <span
-        class="pill"
-        :title="health.error ?? `后端 ${apiHost} · 版本 ${health.health?.version ?? '—'} · 数据时点为最近一次成功采集，刷新于 ${syncTime}`"
+        class="pill pill-data"
+        :title="health.error ?? `后端 ${apiHost} · 版本 ${health.health?.version ?? '—'} · 数据采集时间为最近一次成功采集，刷新于 ${syncTime}`"
       >
         <span class="dot" :class="health.healthy ? 'dot--live' : 'dot--warn'"></span>
-        数据时点 <b>{{ asOfLabel }}</b>
-        <template v-if="coverage"> · 健康 <b>{{ coverage.data_quality_pct.toFixed(1) }}%</b></template>
+        <span class="pill-label">数据采集</span>
+        <b>{{ asOfLabel }}</b>
+        <template v-if="coverage">
+          <span class="pill-sep">·</span>
+          <span class="pill-label">健康</span>
+          <b>{{ coverage.data_quality_pct.toFixed(1) }}%</b>
+        </template>
+      </span>
+      <span class="pill pill-clock" title="本机系统当前时间">
+        <b>{{ nowFullLabel }}</b>
       </span>
       <button
         class="icon-btn"
@@ -50,7 +58,6 @@ import { useHealthStore } from "@/stores/health";
 import { useAlertsStore } from "@/stores/alerts";
 import { usePrefsStore } from "@/stores/prefs";
 import { useClock } from "@/composables/useClock";
-import { getJson } from "@/api/client";
 import { getSystemCoverage } from "@/api/endpoints";
 import type { CoverageResponse } from "@/api/types";
 
@@ -87,16 +94,27 @@ onBeforeUnmount(() => {
   if (timer) window.clearInterval(timer);
 });
 
+function pad(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+/** 数据采集时间：最近一次成功采集的时点（yyyy-MM-dd HH:mm） */
 const asOfLabel = computed(() => {
   const raw = coverage.value?.as_of;
   if (raw) {
     const date = new Date(raw);
     if (!Number.isNaN(date.getTime())) {
-      return date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
     }
     return raw;
   }
   return syncTime.value;
+});
+
+/** 系统当前时间：固定 yyyy-MM-dd HH:mm:ss，独立 pill 显示 */
+const nowFullLabel = computed(() => {
+  const d = now.value;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 });
 
 const title = computed(() => String(route.meta.title ?? "总览"));
@@ -104,10 +122,20 @@ const group = computed(() => String(route.meta.group ?? "今日"));
 const apiHost = computed(() => location.host);
 const syncTime = computed(() => {
   const date = health.lastUpdated ?? now.value;
-  return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 });
 
 function toggleTheme(): void {
   prefs.setThemeMode(prefs.resolvedTheme === "dark" ? "light" : "dark");
 }
 </script>
+
+<style scoped>
+.pill-data { gap: 5px; }
+.pill-label { font-size: 10px; color: var(--dim); }
+.pill-clock { padding: 0 11px; }
+.pill-clock b {
+  letter-spacing: -.2px;
+  font-variant-numeric: tabular-nums;
+}
+</style>

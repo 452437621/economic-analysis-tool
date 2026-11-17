@@ -7,13 +7,13 @@
           分析引擎
           <span class="page-sub">市场风向 · 周期 · 相关性 · 归因 · 类比 · 日历</span>
         </h1>
+        <span class="gen-at">（生成于 {{ updatedLabel }}）</span>
       </div>
       <div class="page-actions">
         <span v-if="error && overview" class="badge badge--warn badge--sm">
           <svg class="ic" style="width: 11px; height: 11px"><use href="#i-alert" /></svg>刷新失败
         </span>
-        <span class="badge badge--sm"><span class="dot"></span>更新于 {{ updatedLabel }}</span>
-        <button class="btn btn--sm" type="button" :disabled="loading" @click="refreshAll()">
+                <button class="btn btn--sm" type="button" :disabled="loading" @click="refreshAll()">
           <svg class="ic" :class="{ spin: loading }"><use href="#i-refresh" /></svg>刷新
         </button>
       </div>
