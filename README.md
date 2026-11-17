@@ -2,7 +2,7 @@
 
 > **Economic Positioning, Intelligence & Cycles** —— 本地运行、以证据为中心的个人宏观—市场—交易决策工作台。
 >
-> 状态：**V1.3.0 — 黄金监控与综合研判（2026-11-14；2026-11-15 补全 5 项原手动指标数据源）**。数据快照（2026-11-15）：**35 标的**、约 **6.5 万根日线**、约 **2.2 万条宏观观测**、**2,500+ 财经日历**、**13 品种会员持仓（Top20 多空明细）**、约 **270 篇官方新闻 / 3,700+ 条断言**；**9 个路由页面**（总览 / 市场行情 / 利率与流动性 / 分析引擎 / 交易信号 / 黄金研判 / 论点与证据 / 简报与日志 / 系统状态）；**黄金监控 22 指标**（20 项自动采集 + 2 项手动录入，17 项参与评分，coverage 100%）；旧版看板保留在 `/legacy`；LLM 待 Key。
+> 状态：**V1.3.0 — 黄金监控与综合研判（2026-11-14；2026-11-15 补全 5 项原手动指标数据源）**。数据快照（2026-11-15）：**35 标的**、约 **6.5 万根日线**、约 **2.2 万条宏观观测**、**2,500+ 财经日历**、**13 品种会员持仓（Top20 多空明细）**、约 **270 篇官方新闻 / 3,700+ 条断言**；**8 个路由页面**（总览 / 市场行情 / 利率与流动性 / 分析引擎 / 交易信号 / 黄金研判 / 论点与证据 / 简报与日志 / 系统状态）；**黄金监控 22 指标**（20 项自动采集 + 2 项手动录入，17 项参与评分，coverage 100%）；LLM 待 Key。
 
 ![V1.1 总览](docs/assets/vue/vue-overview.png)
 
@@ -32,7 +32,6 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
 ```
 
 - 前端：**http://127.0.0.1:8765**
-- 旧版零构建看板：**http://127.0.0.1:8765/legacy**
 - FastAPI 交互式 API 文档：**http://127.0.0.1:8765/docs**
 
 首次安装约 2–5 分钟（取决于网络）。已在运行时再次 `start` 只提示、不会起第二个实例；端口被其他程序占用时**拒绝启动**并打印占用进程。
@@ -96,7 +95,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 
 | 操作 | 命令 | 说明 |
 |---|---|---|
-| 构建前端 | `.\scripts\build.ps1` | `vue-tsc` + `vite build` → `web/`（FastAPI 直接托管）；首次会自动 `npm install` |
+| 构建前端 | `.\scripts\build.ps1` | `vue-tsc` + `vite build` → `web/`（FastAPI 直接托管）；**`web/` 是构建产物、不入版本库**，克隆后需先构建一次；首次会自动 `npm install` |
 | 前端开发模式 | `.\scripts\dev.ps1` | 后端未跑会先拉起；Vite `:5173`，`/api`、`/healthz` 代理到 8765 |
 | 类型检查 | `cd frontend; npm.cmd run typecheck` | vue-tsc |
 | 依赖安装 | `cd frontend; npm.cmd install` | registry 已固定为 npmmirror（`frontend/.npmrc`） |
@@ -157,7 +156,6 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 | `/theses` | 论点与证据 | 新闻/事件/日历筛选、原文快照、断言高亮、事件→证据跳转、论点与情景管理 |
 | `/briefs` | 简报与日志 | 日报/周报/月报、历史期次（上一期/下一期）、Markdown 导出、打印/PDF、交易日志 |
 | `/system` | 系统状态 | 健康、数据量、数据源、数据质检、任务、验收自检（14 项 DoD） |
-| `/legacy` | 旧版看板 | 零构建看板（过渡期保留，删除计划见 [15 前端改造方案](docs/15-前端改造方案.md)） |
 
 交互与体验：深色终端风默认 + 浅色/护眼/跟随系统；红涨绿跌可切换；Ctrl+K 命令面板；证据抽屉（原文 + 断言高亮）；ECharts 历史走势（区间切换/缩放）；自选分组、拖拽排序与内联编辑；打印样式；深链兼容 `?doc=`、`?history=`、`?brief=`、`?theme=`、`?updown=`、`?palette=1`、`?settings=1`、`?alerts=1`、`?watch=1`。
 
@@ -228,7 +226,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 
 ```
 浏览器（Vue 3 SPA，web/ 构建产物）
-   │ HTTP 127.0.0.1:8765（SPA 回退 + /api + /legacy + /docs）
+   │ HTTP 127.0.0.1:8765（SPA 回退 + /api + /docs）
 FastAPI（12 组路由 / 63 个端点：api / 导出 / 打印）
    │
 ├─ 采集适配层  sina / eastmoney / treasury / jgb(mof) / ecb / nyfed / frankfurter / czce / shfe / rss（限速、重试、快照、健康）
@@ -255,7 +253,7 @@ FastAPI（12 组路由 / 63 个端点：api / 导出 / 打印）
 | M4 | 信号、情景、交易计划、风控、回测、预测账本 | ✅ 完成（v0.2：合约/手数/保证金、成本回测、预测对账、论点/情景管理） |
 | M5 | 告警、导出、系统页、性能、文档、安全 | ✅ 完成（v0.2：通知渠道、打印/PDF、LLM 接入、复核 API、验收文档） |
 | M6 | 两周试运行与校准 | 🟡 支持工具就绪（日志/周报/月报/验收/自检），待真实使用 |
-| V1.1 | Vue 3 前端重构（8 页路由 / 设计系统 / 证据抽屉 / ECharts / 命令面板）+ 工作区整理 | ✅ 完成（2026-11-14；V1.3 起 9 页，旧版保留 `/legacy`） |
+| V1.1 | Vue 3 前端重构（8 页路由 / 设计系统 / 证据抽屉 / ECharts / 命令面板）+ 工作区整理 | ✅ 完成（2026-11-14；V1.3 起 9 页） |
 | V1.2 | 后端接口补齐 + 前端联调（overview 聚合、行情单位落库、简报历史期次、事件/新闻/日历筛选、positions/products、自选 PATCH） | ✅ 完成（2026-11-14；115 tests；见 [16](docs/16-接口对齐与补齐.md)） |
 | V1.3 | 黄金监控与综合研判（22 指标 / 17 项计分、10 个 provider、gold API、`/gold` 页面、分析页评分卡） | ✅ 完成（2026-11-14 首发；2026-11-15 补全 5 项数据源后 coverage 100%；127 tests；见 [17](docs/17-黄金监控与综合研判.md)） |
 | V1.4 | LLM 全链路实跑、港股/A 股扩展、组合级风控、PDF 服务端渲染、大商所持仓/LME 日线、黄金 BIS 掉期/存储解析与权重回测 | 🟡 计划中（见 CHANGELOG `Unreleased`） |
@@ -268,8 +266,7 @@ FastAPI（12 组路由 / 63 个端点：api / 导出 / 打印）
 ```
 backend/app/        FastAPI 应用（api / ingest / jobs / platform / models / analytics / decision / knowledge / llm / gold / narrative）
 frontend/           Vue 3 + TS + Vite 源码（src/{api,components,composables,layouts,router,stores,styles,utils,views}）
-web/                前端构建产物（index.html + assets/*，由 FastAPI 托管）
-web-legacy/         旧版零构建看板（/legacy 过渡期保留，删除计划见 docs/15）
+web/                前端构建产物（index.html + assets/*，由 FastAPI 托管；不入版本库，需先构建）
 config/             默认配置（关注清单、品种、LLM、数据延迟；宏观序列/新闻源实际以 backend/app/ingest/pipeline.py 为准）
 docs/               设计与进度文档（含 Vue 版截图 docs/assets/vue/）
 prompts/            LLM 提示词模板（断言抽取 / 简报编辑）

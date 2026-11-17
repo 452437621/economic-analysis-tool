@@ -26,6 +26,8 @@ frontend/node_modules/
 frontend/.tmp/
 .vite/
 *.tsbuildinfo
+# 前端构建产物：由 scripts/build.ps1 / npm run build 生成，不入版本库
+web/
 
 # Logs
 *.log

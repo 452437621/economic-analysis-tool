@@ -2,8 +2,7 @@ import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 
-// 产物直接输出到仓库根 web/，由 FastAPI（backend/app/main.py）托管。
-// 旧版入口保留在 web-legacy/index.html，通过 /legacy 访问。
+// 产物直接输出到仓库根 web/，由 FastAPI（backend/app/main.py）托管；web/ 是构建产物，不入版本库。
 export default defineConfig({
   plugins: [vue()],
   resolve: {

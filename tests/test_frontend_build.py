@@ -1,7 +1,7 @@
-"""Vue 前端（V1.1）源码与构建产物检查。
+"""Vue 前端源码与构建产物检查。
 
-旧版零构建看板已迁移到 web-legacy/（过渡期回退入口），
-web/ 现在是 Vite 构建产物（index.html + assets/*）。
+web/ 是 Vite 构建产物（index.html + assets/*），不入版本库（由 scripts/build.ps1 生成）；
+过渡期旧看板 web-legacy/ 已在 V1.3 收尾时删除。
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
 WEB_INDEX = ROOT / "web" / "index.html"
 ASSETS = ROOT / "web" / "assets"
-LEGACY = ROOT / "web-legacy" / "index.html"
 
 
 def test_frontend_project_present():
@@ -47,8 +46,8 @@ def test_vite_builds_into_web():
 def test_spa_fallback_routes_present():
     main = (ROOT / "backend" / "app" / "main.py").read_text(encoding="utf-8")
     assert "spa_fallback" in main
-    assert '"/legacy"' in main
     assert "full_path:path" in main
+    assert "/legacy" not in main, "过渡期 /legacy 路由已删除"
 
 
 def test_built_frontend_if_present():
@@ -62,10 +61,3 @@ def test_built_frontend_if_present():
     css = "".join(path.read_text(encoding="utf-8") for path in ASSETS.glob("*.css"))
     assert "--up-color" in css and "--down-color" in css, "构建 CSS 缺少涨跌色 token"
     assert "--bg:" in css, "构建 CSS 缺少设计 token"
-
-
-def test_legacy_fallback_present():
-    assert LEGACY.exists(), "web-legacy/index.html 缺失（过渡期回退入口）"
-    html = LEGACY.read_text(encoding="utf-8")
-    assert 'id="watchlist"' in html
-    assert "initSectionNav" in html

@@ -30,7 +30,6 @@ from app.platform.scheduler import start_scheduler, stop_scheduler
 
 logger = logging.getLogger(__name__)
 WEB_DIR = ROOT_DIR / "web"
-LEGACY_DIR = ROOT_DIR / "web-legacy"
 
 
 @asynccontextmanager
@@ -81,15 +80,6 @@ if WEB_DIR.exists():
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
     return _web_index()
-
-
-@app.get("/legacy", include_in_schema=False)
-def legacy_index() -> FileResponse:
-    """过渡期保留旧版零构建看板（web-legacy/index.html），V1.1 验收后删除。"""
-    legacy = LEGACY_DIR / "index.html"
-    if not legacy.exists():
-        raise HTTPException(status_code=404, detail="legacy frontend not found")
-    return FileResponse(legacy)
 
 
 @app.get("/favicon.ico", include_in_schema=False)

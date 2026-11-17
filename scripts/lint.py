@@ -166,9 +166,6 @@ def check_frontend() -> None:
     else:
         warn("frontend: web/index.html 尚未构建（运行 scripts\\build.ps1）")
 
-    if not (ROOT / "web-legacy" / "index.html").exists():
-        warn("frontend: web-legacy/index.html 缺失（过渡期回退入口）")
-
 
 def check_docs_links() -> None:
     for path in [ROOT / "README.md", *sorted((ROOT / "docs").glob("*.md"))]:

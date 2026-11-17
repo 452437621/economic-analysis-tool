@@ -6,6 +6,17 @@
 
 ## [Unreleased]
 
+### 维护（构建产物不入库、删除过渡期旧看板、利率卡 as_of 布局修正，2026-11-17）
+
+诉求：全面复查前序改动是否仍在、功能是否正常，并做三项收尾——构建产物不进仓库、清理历史版本里没用的文件、把编译生成的 `web/` 从版本库摘出去。
+
+- **历史改动逐项核验（未丢失）**：`backend/app` 关键机制计数——`DAILY_BAR_LIMIT` 8 处、`_guard_tail_bar` 2、`TENCENT_SINGLE_BAR` 6、`KNOWN_GAPS` 11、`clean_holiday_stubs` 4、`fill_bar_gaps` 4、`TENCENT_QUOTE_PREFERRED` 5、`continuity.silences` 1、`CONSENSUS_SHARE` 3、`write_lock` 9；新增测试 8 个文件（continuity / bars_quality / backfill / pipeline_guard / eastmoney_yield / macro_freq / writelock / quote_preferred）全部在位。
+- **功能验证**：`pytest tests -q` → **210 passed**（删除旧看板用例后少 1 条）；`scripts/lint.py` → PASSED（0 error / 0 warning）；全部无路径参数 GET 端点冒烟 **47/47 → 200**（TestClient + OpenAPI 自动补必填 query）；本地服务 `http://127.0.0.1:8765` 用 headless Chrome 实截 `/`、`/market`、`/rates`、`/gold`、`/system` 五页，均正常渲染，`/gold` 因子行按各自 `as_of` 显示新鲜度。
+- **构建产物不再入库**：`git rm -r --cached web`，`.gitignore` 增补 `web/`（附注释「由 scripts/build.ps1 / npm run build 生成，不入版本库」）；README、[02 系统架构](docs/02-系统架构设计.md)、[15 前端改造方案](docs/15-前端改造方案.md) 同步注明「克隆后需先构建一次」。`web/` 工作区文件保留，运行不受影响。
+- **删除过渡期旧看板（历史无用文件清理）**：删除 `web-legacy/index.html`；`backend/app/main.py` 移除 `LEGACY_DIR` 与 `/legacy` 路由；`tests/test_frontend_build.py` 去掉旧看板断言与 `LEGACY` 常量（`test_spa_fallback_routes_present` 改为断言源码中不再出现 `/legacy`）；`scripts/lint.py` 去掉 web-legacy 缺失告警；`vite.config.ts` 注释更新。现在访问 `/legacy` 由 SPA 回退承接，路由层统一 redirect 到 `/`。
+- **修复（前端重建引入的布局回归）**：利率卡原把 `as_of` 拼在 `.mi-code` 内，撑宽右侧导致序列标题被省略号截断（`中国国债2年` → `中国国债...`）。改为 `.mi-code` 只放代码，新增 `.mi-value-row` 包住数值与 `.mi-asof`（右对齐、等宽 8.5px、超期标黄 `.mi-asof--stale`），标题恢复完整、`as_of` 显示在数值右侧。
+- 验证：`npm run build`（vue-tsc + vite）成功；重建后重截 `/rates` 与基线（`git archive 28bca2e web`）逐张对照，标题、数值、涨跌、`as_of` 均正常。
+
 ### 文档（V2.0 改造方案设计交付：透明化 / 周期引擎 / 历史图谱 / 原则库 / 交互原型，2026-11-17）
 
 诉求：参考 TradingEconomics 的产品范式，把 EPIC 从「数据看板」升级为「可审计的宏观研判台」；同时把达利欧《原则》《债务危机》的框架落成可计算、可证伪的市场分析工具，给出 1500–2026 的历史周期轨迹与当下定位。本轮只交付方案与原型，**未改业务代码**（工作区既有未提交改动不纳入本次提交）。
