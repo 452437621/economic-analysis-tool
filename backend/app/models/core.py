@@ -514,6 +514,11 @@ class EconomicEvent(Base):
     country: Mapped[str | None] = mapped_column(String(40))
     importance: Mapped[int] = mapped_column(Integer, default=2)
     source_code: Mapped[str | None] = mapped_column(String(40))
+    # UI alignment (A7): consensus vs. print values, null when the source omits them.
+    forecast: Mapped[float | None] = mapped_column(Float)
+    previous: Mapped[float | None] = mapped_column(Float)
+    actual: Mapped[float | None] = mapped_column(Float)
+    unit: Mapped[str | None] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

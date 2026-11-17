@@ -183,6 +183,7 @@ body.is-compact .overview-row .card-body { padding: 8px 11px; }
 }
 .crumb { display: flex; align-items: baseline; gap: 7px; white-space: nowrap; }
 .crumb-root { font-size: 10.5px; color: var(--dim); letter-spacing: .4px; }
+.crumb-group { font-size: 10.5px; color: var(--muted); letter-spacing: .4px; }
 .crumb-sep { color: var(--dim); font-size: 10px; }
 .crumb-page { font-size: 14px; font-weight: 650; letter-spacing: .3px; }
 .search-trigger {

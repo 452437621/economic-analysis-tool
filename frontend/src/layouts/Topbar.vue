@@ -1,7 +1,9 @@
 <template>
   <header class="topbar">
     <div class="crumb">
-      <span class="crumb-root">{{ group }}</span>
+      <span class="crumb-root">EPIC V2</span>
+      <span class="crumb-sep">/</span>
+      <span class="crumb-group">{{ group }}</span>
       <span class="crumb-sep">/</span>
       <span class="crumb-page">{{ title }}</span>
     </div>
@@ -11,9 +13,13 @@
       <span class="kbd">Ctrl K</span>
     </button>
     <div class="top-actions">
-      <span class="pill" :title="health.error ?? `后端 ${apiHost} · 版本 ${health.health?.version ?? '—'} · 时间为本页最近一次成功刷新`">
+      <span
+        class="pill"
+        :title="health.error ?? `后端 ${apiHost} · 版本 ${health.health?.version ?? '—'} · 数据时点为最近一次成功采集，刷新于 ${syncTime}`"
+      >
         <span class="dot" :class="health.healthy ? 'dot--live' : 'dot--warn'"></span>
-        刷新于 <b>{{ syncTime }}</b>
+        数据时点 <b>{{ asOfLabel }}</b>
+        <template v-if="coverage"> · 健康 <b>{{ coverage.data_quality_pct.toFixed(1) }}%</b></template>
       </span>
       <button
         class="icon-btn"
@@ -38,12 +44,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { useHealthStore } from "@/stores/health";
 import { useAlertsStore } from "@/stores/alerts";
 import { usePrefsStore } from "@/stores/prefs";
 import { useClock } from "@/composables/useClock";
+import { getJson } from "@/api/client";
+import { getSystemCoverage } from "@/api/endpoints";
+import type { CoverageResponse } from "@/api/types";
 
 const emit = defineEmits<{
   openPalette: [];
@@ -57,8 +66,41 @@ const alerts = useAlertsStore();
 const prefs = usePrefsStore();
 const { now } = useClock();
 
+const coverage = ref<CoverageResponse | null>(null);
+let timer: number | undefined;
+
+async function loadCoverage(): Promise<void> {
+  try {
+    const payload = await getSystemCoverage();
+    coverage.value = payload;
+  } catch {
+    coverage.value = null;
+  }
+}
+
+onMounted(() => {
+  void loadCoverage();
+  timer = window.setInterval(() => void loadCoverage(), 60000);
+});
+
+onBeforeUnmount(() => {
+  if (timer) window.clearInterval(timer);
+});
+
+const asOfLabel = computed(() => {
+  const raw = coverage.value?.as_of;
+  if (raw) {
+    const date = new Date(raw);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+    }
+    return raw;
+  }
+  return syncTime.value;
+});
+
 const title = computed(() => String(route.meta.title ?? "总览"));
-const group = computed(() => String(route.meta.group ?? "工作台"));
+const group = computed(() => String(route.meta.group ?? "今日"));
 const apiHost = computed(() => location.host);
 const syncTime = computed(() => {
   const date = health.lastUpdated ?? now.value;

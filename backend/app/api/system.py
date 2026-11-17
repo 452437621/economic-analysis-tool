@@ -30,6 +30,13 @@ from app.models.core import (
     TradePlan,
 )
 from app.platform.config import settings
+from app.platform.coverage import (
+    QUALITY_METHOD,
+    data_quality_pct,
+    job_health,
+    latest_sync,
+    series_coverage,
+)
 from app.platform.db import get_session
 from app.platform.scheduler import scheduler_snapshot
 
@@ -172,6 +179,23 @@ def data_quality(session: Session = Depends(get_session)) -> dict:
             "passed": sum(1 for check in latest_by_dataset.values() if check.passed),
             "failed": sum(1 for check in latest_by_dataset.values() if not check.passed),
         },
+    }
+
+
+@router.get("/coverage")
+def coverage(session: Session = Depends(get_session)) -> dict:
+    """Data coverage headline for the V2.0 UI (never fails on an empty database)."""
+    series_covered, series_total = series_coverage(session)
+    jobs_ok, jobs_total = job_health(session)
+    return {
+        "data_quality_pct": data_quality_pct(series_covered, series_total, jobs_ok, jobs_total),
+        "series_covered": series_covered,
+        "series_total": series_total,
+        "last_sync": latest_sync(session),
+        "jobs_ok": jobs_ok,
+        "jobs_total": jobs_total,
+        "as_of": utcnow().isoformat(),
+        "method": QUALITY_METHOD,
     }
 
 

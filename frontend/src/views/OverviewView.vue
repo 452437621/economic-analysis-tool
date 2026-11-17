@@ -22,6 +22,9 @@
           <span class="hero-date">{{ brief?.trade_date ?? "—" }} {{ weekdayLabel }}</span>
           <span class="badge badge--sm">{{ briefKindLabel }}</span>
           <span class="hero-top-right">
+            <RouterLink v-if="brief" class="badge badge--sm badge--accent" :to="`/theses?tab=events`">
+              查看证据 E-{{ String(brief.id).slice(-2) }}
+            </RouterLink>
             <svg class="ic" style="width: 11px; height: 11px"><use href="#i-check" /></svg>
             {{ brief ? "简报已生成" : "暂无简报" }}
           </span>
@@ -107,7 +110,7 @@
         <div class="kpi-value">{{ healthOnline }}<small>{{ healthy ? "在线" : "" }}</small></div>
         <div class="kpi-sub">后端 · 数据库 · 调度器 · {{ healthInfo?.env ?? "local" }}</div>
         <div class="kpi-meter">
-          <i :class="healthy ? 'ok' : 'warn'" :style="{ width: healthy ? '100%' : '30%' }"></i>
+          <i :class="healthy ? 'ok' : 'warn'" :style="{ width: `${systemMeterPct}%` }"></i>
           <i class="track"></i>
         </div>
       </article>
@@ -137,8 +140,7 @@
         <div class="kpi-value">{{ fmtInt(counts?.market_bars) }}<small>根日线</small></div>
         <div class="kpi-sub">快照 {{ fmtInt(counts?.quotes) }} · 利率 {{ fmtInt(counts?.macro_observations) }} · 新闻 {{ fmtInt(counts?.documents) }}</div>
         <div class="kpi-meter">
-          <i class="ok" style="width: 46%"></i>
-          <i class="warn" style="width: 18%"></i>
+          <i class="ok" :style="{ width: `${barsMeterPct}%` }"></i>
           <i class="track"></i>
         </div>
       </article>
@@ -155,7 +157,7 @@
         <div class="kpi-value">{{ jobsInfo.total }}<small>个任务</small></div>
         <div class="kpi-sub">{{ jobsInfo.next_run ? `下一任务 ${fmtTime(jobsInfo.next_run, true)}` : "等待调度" }}</div>
         <div class="kpi-meter">
-          <i class="ok" :style="{ width: jobsInfo.total ? '88%' : '10%' }"></i>
+          <i class="ok" :style="{ width: `${jobsMeterPct}%` }"></i>
           <i class="track"></i>
         </div>
       </article>
@@ -292,7 +294,7 @@
           <span class="card-title">财经日历 · 事件</span>
           <span class="card-sub">未来 14 天</span>
           <div class="card-actions">
-            <RouterLink class="link-btn" to="/theses">完整日历</RouterLink>
+            <RouterLink class="link-btn" to="/theses?tab=calendar">完整日历</RouterLink>
           </div>
         </div>
         <div class="cal-body">
@@ -303,6 +305,14 @@
             <span class="cal-imp">{{ stars(event.importance) }}</span>
           </div>
           <EmptyState v-if="!calendar.length" text="暂无日历数据" />
+          <template v-if="politicalEvents.length">
+            <div class="cal-sep">近期事件</div>
+            <div v-for="item in politicalEvents" :key="item.date + item.name" class="tl-row">
+              <span class="tl-date">{{ item.date.slice(5) }}</span>
+              <span class="tl-name">{{ item.name }}</span>
+              <span class="tl-note">{{ item.note }}</span>
+            </div>
+          </template>
         </div>
       </section>
     </div>
@@ -321,8 +331,8 @@ import WatchlistManager from "@/components/domain/WatchlistManager.vue";
 import { usePolling } from "@/composables/usePolling";
 import { fmtInt, fmtMacro, fmtPct, fmtPrice, fmtSigned, fmtTime, stars, trendClass } from "@/composables/useFormat";
 import { SNAPSHOT_CATEGORIES } from "@/utils/market";
-import { briefPrintUrl, getCycleState, getOverview } from "@/api/endpoints";
-import type { Brief, CycleStateResponse, SnapshotItem, WatchlistItem } from "@/api/types";
+import { briefPrintUrl, getCycleConfig, getCycleState, getOverview, getSystemCoverage } from "@/api/endpoints";
+import type { Brief, CoverageResponse, CycleConfigResponse, CycleStateResponse, SnapshotItem, WatchlistItem } from "@/api/types";
 import { usePrefsStore } from "@/stores/prefs";
 import { useHealthStore } from "@/stores/health";
 import { useAlertsStore } from "@/stores/alerts";
@@ -365,6 +375,35 @@ const healthy = computed(() => healthInfo.value?.status === "ok");
 /* ---------- V2.0 周期定位条：长债务 / 短债务 / 预警计数 ---------- */
 const { data: cycleState } = usePolling<CycleStateResponse>(getCycleState, { interval: 120000 });
 
+const { data: coverage } = usePolling<CoverageResponse>(getSystemCoverage, { interval: 120000 });
+const { data: cycleConfig } = usePolling<CycleConfigResponse>(getCycleConfig, { interval: 600000 });
+
+const systemMeterPct = computed(() =>
+  Math.max(0, Math.min(100, coverage.value?.data_quality_pct ?? (healthy.value ? 100 : 30))),
+);
+const jobsMeterPct = computed(() => {
+  const total = coverage.value?.jobs_total ?? 0;
+  if (!total) return jobsInfo.value.total ? 88 : 10;
+  return Math.round(((coverage.value?.jobs_ok ?? 0) / total) * 100);
+});
+const barsMeterPct = computed(() => {
+  const total = snapshotMeta.value.count ?? 0;
+  const bars = counts.value?.market_bars ?? 0;
+  if (!total || !bars) return 0;
+  return Math.max(0, Math.min(100, Math.round((bars / (total * 3000)) * 100)));
+});
+const politicalEvents = computed(() => {
+  const events = cycleConfig.value?.political_calendar ?? [];
+  const now = Date.now();
+  return events
+    .map((item) => {
+      const days = Math.round((new Date(item.date + "T00:00:00").getTime() - now) / 86400000);
+      const note =
+        days > 0 ? `${days} 天后 · ${item.note ?? ""}`.trim() : days === 0 ? `今天 · ${item.note ?? ""}`.trim() : `已过 ${-days} 天`;
+      return { date: item.date, name: item.name, note };
+    })
+    .filter((item) => !item.note.startsWith("已过 3"));
+});
 const cycleSummary = computed(() => {
   const payload = cycleState.value;
   if (!payload) return null;
@@ -666,6 +705,27 @@ onMounted(() => {
   margin: 0 0 8px;
 }
 
+.cal-sep {
+  margin: 10px 0 4px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.tl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: 10.5px;
+}
+.tl-row:last-child { border-bottom: 0; }
+.tl-date { width: 46px; flex: none; font-family: var(--mono); font-size: 9.5px; color: var(--dim); }
+.tl-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-note { margin-left: auto; color: var(--muted); font-size: 9.5px; }
 .hero-cycle {
   display: flex;
   align-items: center;

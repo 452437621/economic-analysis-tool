@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -20,6 +21,49 @@ def _iso(value: datetime | None) -> str | None:
     if value is None:
         return None
     return value.isoformat()
+
+
+# A10: the brief body links news items as `[D:<document_id>]`; those documents
+# carry the claims/spans that back the brief.
+_BRIEF_DOC_REF = re.compile(r"\[D:([^\]\s`]+)\]")
+_MAIN_THESIS_LINE = re.compile(r"一句话主线[：:]\s*\**\s*(.+)")
+_MAIN_THESIS_SUFFIX = re.compile(r"\s*（自动摘要[^）]*）\s*$")
+
+
+def _brief_evidence_ids(brief: Brief, session: Session) -> list[str]:
+    """Claim (then document-span) ids behind the documents this brief cites."""
+    refs = list(dict.fromkeys(_BRIEF_DOC_REF.findall(brief.markdown or "")))
+    if not refs:
+        return []
+    ids: list[str] = list(
+        session.scalars(
+            select(Claim.id).where(Claim.document_id.in_(refs)).order_by(Claim.id).limit(20)
+        ).all()
+    )
+    if len(ids) < 20:
+        ids.extend(
+            session.scalars(
+                select(DocumentSpan.id)
+                .where(DocumentSpan.document_id.in_(refs))
+                .order_by(DocumentSpan.id)
+                .limit(20 - len(ids))
+            ).all()
+        )
+    return ids[:20]
+
+
+def _brief_main_thesis(brief: Brief) -> str | None:
+    """Hero one-liner from persisted meta, else parsed from the rendered markdown."""
+    meta = brief.meta or {}
+    for key in ("main_thesis", "hero_summary", "hero"):
+        value = meta.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    match = _MAIN_THESIS_LINE.search(brief.markdown or "")
+    if not match:
+        return None
+    text = _MAIN_THESIS_SUFFIX.sub("", match.group(1).strip())
+    return text or None
 
 
 @router.get("/documents/{document_id}")
@@ -205,7 +249,10 @@ def get_brief(brief_id: str, session: Session = Depends(get_session)) -> dict:
     brief = session.get(Brief, brief_id)
     if brief is None:
         raise HTTPException(status_code=404, detail="brief not found")
-    return brief_payload(brief)
+    payload = brief_payload(brief)
+    payload["evidence_ids"] = _brief_evidence_ids(brief, session)
+    payload["main_thesis"] = _brief_main_thesis(brief)
+    return payload
 
 
 @router.get("/briefs/{brief_id}/print", response_class=HTMLResponse)

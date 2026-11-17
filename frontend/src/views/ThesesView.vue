@@ -437,7 +437,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { RouterLink } from "vue-router";
+import { RouterLink, useRoute } from "vue-router";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import SkeletonBlock from "@/components/ui/SkeletonBlock.vue";
@@ -461,7 +461,11 @@ type TabKey = "theses" | "events" | "news" | "calendar";
 const evidence = useEvidenceStore();
 const toast = useToast();
 
-const tab = ref<TabKey>("theses");
+const VALID_TABS: TabKey[] = ["theses", "events", "news", "calendar"];
+const route = useRoute();
+const tab = ref<TabKey>(
+  VALID_TABS.includes(String(route.query.tab ?? "") as TabKey) ? (String(route.query.tab) as TabKey) : "theses",
+);
 const statusFilter = ref<string>("all");
 
 /* ---------- 新闻 / 事件 / 日历筛选状态 ---------- */

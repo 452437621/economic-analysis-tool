@@ -1189,6 +1189,35 @@ export interface CycleCalendarEntry {
   note: string;
 }
 
+export interface CycleReadingSparkPoint {
+  date: string;
+  value: number;
+}
+
+export interface CycleReadingCard {
+  id: string;
+  label: string;
+  missing: boolean;
+  value?: number | null;
+  unit?: string;
+  digits?: number;
+  z?: number | null;
+  delta_1d?: number | null;
+  asof?: string;
+  spark?: CycleReadingSparkPoint[];
+  source?: string;
+  evidence?: string;
+  reason?: string | null;
+}
+
+export interface CycleReadingsResponse {
+  items: CycleReadingCard[];
+  total: number;
+  missing: number;
+  generated_at: string;
+  method: string;
+}
+
 export interface CycleConfigResponse {
   version: string;
   normalization: Record<string, unknown>;
@@ -1449,4 +1478,15 @@ export interface LedgerForecastInput {
   point?: number | null;
   baseline_value?: number | null;
   notes?: string | null;
+}
+
+export interface CoverageResponse {
+  data_quality_pct: number;
+  series_covered: number;
+  series_total: number;
+  last_sync: string | null;
+  jobs_ok: number;
+  jobs_total: number;
+  as_of: string | null;
+  method: string;
 }

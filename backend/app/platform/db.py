@@ -92,9 +92,27 @@ def _migrate_enable_legacy_jobs(conn) -> None:
     )
 
 
+def _migrate_calendar_event_values(conn) -> None:
+    """Add nullable consensus/actual columns to the economic calendar (UI alignment A7)."""
+    columns = {row[1] for row in conn.execute(text("PRAGMA table_info(economic_events)"))}
+    if not columns:
+        return
+    additions = (
+        ("forecast", "FLOAT"),
+        ("previous", "FLOAT"),
+        ("actual", "FLOAT"),
+        ("unit", "VARCHAR(20)"),
+    )
+    for name, sql_type in additions:
+        if name in columns:
+            continue
+        conn.execute(text(f"ALTER TABLE economic_events ADD COLUMN {name} {sql_type}"))
+
+
 MIGRATIONS = (
     ("watchlist.sort_order", _migrate_watchlist_sort_order),
     ("jobs.enable_legacy_scheduler_jobs", _migrate_enable_legacy_jobs),
+    ("economic_events.forecast_values", _migrate_calendar_event_values),
 )
 
 

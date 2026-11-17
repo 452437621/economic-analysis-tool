@@ -1,5 +1,5 @@
 <template>
-  <div class="view active">
+  <div class="view active cyc-root">
     <div class="page-head">
       <div>
         <div class="page-eyebrow">研究分析 · 周期定位 · EPIC-C 2.0</div>
@@ -23,74 +23,263 @@
 
     <SkeletonBlock v-if="!payload && loading" :rows="6" :cells="3" :height="16" />
     <ErrorState v-else-if="!payload && error" :error="error" @retry="refresh" />
+    <EmptyState v-else-if="!payload" text="暂无周期状态" hint="请先运行一次周期引擎，再查看周期罗盘。" />
 
     <template v-else-if="value">
-      <div class="kpi-grid">
-        <article class="card kpi">
-          <div class="kpi-top">
-            <span class="kpi-icon"><svg class="ic"><use href="#i-target" /></svg></span>
-            <span class="kpi-label">长债务周期</span>
-            <span class="kpi-flag badge badge--sm" :class="toneClass(longTone)">{{ long.phase }}</span>
+      <!-- A. Hero：长债务周期定位 -->
+      <section class="cyc-hero">
+        <div class="cyc-hero-main">
+          <div class="cyc-hero-eyebrow">周期定位 · 美国 / 全球长周期</div>
+          <h1 class="cyc-hero-h1">{{ heroTitle }}</h1>
+          <p class="cyc-hero-sub">{{ heroSub }}</p>
+          <div class="cyc-hero-tags">
+            <span v-for="tag in heroTags" :key="tag.key" class="cyc-tag">
+              <i class="cyc-tag-dot"></i>
+              <span>{{ tag.label }}</span>
+              <b>{{ tag.value }}</b>
+              <span v-if="tag.z !== null" class="cyc-tag-z">z {{ fmtSigned(tag.z, 1) }}</span>
+            </span>
           </div>
-          <div class="kpi-value">{{ fmtNumber(long.score, 1) }}<small>DMI</small></div>
-          <div class="kpi-sub">
+        </div>
+        <div class="cyc-hero-badges">
+          <div class="cyc-meta-badge">
+            <span>数据覆盖</span>
+            <b>{{ coverageText }}</b>
+          </div>
+          <div class="cyc-meta-badge">
+            <span>规则版本</span>
+            <b>{{ ruleVersion }}</b>
+          </div>
+          <div class="cyc-meta-badge">
+            <span>下次校准</span>
+            <b>{{ nextCalibration }}</b>
+          </div>
+        </div>
+      </section>
+
+      <!-- B. 周期罗盘 + 五力仪表 -->
+      <div class="cyc-row2">
+        <CycleCompass :growth="compassGrowth" :inflation="compassInflation" :status-label="short.state" />
+        <CycleForces :forces="forces" :stress-count="stressCount" />
+      </div>
+
+      <!-- C. 关键读数：直连 /api/v2/cycle/readings（缺失 showReason，不填占位值） -->
+      <div class="cyc-section-label">
+        <span class="cyc-sl-title">关键读数</span>
+        <span>
+          均为北京时间 {{ readingsAsof || asofLabel }} · z = 相对 5 年 z-score ·
+          {{ readingItems.length ? `${readingItems.length - missingReadings} / ${readingItems.length} 项可用` : "读数待加载" }}
+        </span>
+      </div>
+      <div v-if="readingsUnavailable" class="card cyc-readings-fallback">
+        <span class="badge badge--sm badge--warn">读数接口不可用</span>
+        <span class="cyc-readings-fallback-text">
+          {{ readingsErrorText }}；其余区块照常展示。
+        </span>
+        <button class="btn btn--ghost btn--sm" type="button" @click="readingsPoll.refresh()">重试</button>
+      </div>
+      <SkeletonBlock v-else-if="!readingItems.length && readingsPoll.loading.value" :rows="2" :cells="4" :height="80" />
+      <EmptyState
+        v-else-if="!readingItems.length"
+        text="暂无关键读数"
+        hint="/api/v2/cycle/readings 未返回任何读数。"
+      />
+      <div v-else class="cyc-kpi-grid">
+        <div
+          v-for="kpi in kpis"
+          :key="kpi.id"
+          class="cyc-kpi-card"
+          :title="kpi.tooltip"
+        >
+          <div class="cyc-kpi-top">
+            <span class="cyc-kpi-label">{{ kpi.label }}</span>
+            <span class="cyc-kpi-z" :class="kpi.zClass">
+              {{ kpi.z === null ? "z —" : `z ${fmtSigned(kpi.z, 1)}` }}
+            </span>
+          </div>
+          <div class="cyc-kpi-val">
+            <b>{{ kpi.value }}</b>
+            <span v-if="kpi.unit && !kpi.missing" class="cyc-kpi-unit">{{ kpi.unit }}</span>
+            <span v-if="kpi.missing" class="cyc-kpi-miss">数据缺失</span>
+            <span v-if="kpi.deltaText" class="cyc-kpi-chg" :class="`cyc-kpi-chg--${kpi.deltaClass}`">
+              {{ kpi.deltaText }}
+            </span>
+          </div>
+          <div class="cyc-kpi-foot">
+            <svg
+              v-if="kpi.spark"
+              class="cyc-spark"
+              viewBox="0 0 120 24"
+              preserveAspectRatio="none"
+              role="img"
+              :aria-label="`${kpi.label} 近 30 个观测走势`"
+            >
+              <polyline
+                :points="kpi.spark"
+                fill="none"
+                :stroke="kpi.sparkColor"
+                stroke-width="1.4"
+                stroke-linejoin="round"
+                stroke-linecap="round"
+              />
+            </svg>
+            <span v-else class="cyc-kpi-note">{{ kpi.missing ? (kpi.reason ?? "数据缺失") : kpi.source ?? "—" }}</span>
+            <RouterLink
+              class="cyc-kpi-ev"
+              :to="{ path: '/pipeline', query: { code: 'cycle.state.world' } }"
+              :title="kpi.tooltip"
+            >
+              {{ kpi.evidence }} 证据
+            </RouterLink>
+          </div>
+        </div>
+      </div>
+
+      <!-- D. 今日预警 -->
+      <section class="card cyc-alerts">
+        <div class="card-head">
+          <span class="card-title">
+            今日预警
+            <span class="badge badge--up badge--sm">{{ alertCount }} 条</span>
+          </span>
+          <span class="cyc-card-sub">更新于 {{ updatedLabel }}</span>
+          <div class="card-actions">
+            <RouterLink class="btn btn--ghost btn--sm" to="/alerts">全部 ›</RouterLink>
+          </div>
+        </div>
+        <div v-if="topAlerts.length" class="cyc-alert-list">
+          <div v-for="alert in topAlerts" :key="alert.id" class="cyc-alert-row">
+            <span class="cyc-sev" :class="`cyc-sev--${sevClass(alert.severity)}`">
+              <i></i>{{ sevLabel(alert.severity) }}
+            </span>
+            <div class="cyc-alert-main">
+              <div class="cyc-alert-title">{{ alert.name }}</div>
+              <div class="cyc-alert-cond" :title="alert.why ?? ''">{{ alert.why ?? "—" }}</div>
+            </div>
+            <div class="cyc-alert-val">
+              <b>{{ alertValue(alert) }}</b>
+              <span>{{ alertThreshold(alert) }}</span>
+            </div>
+            <div class="cyc-alert-meta">{{ alertAsOf(alert) }}</div>
+            <RouterLink
+              class="btn btn--ghost btn--sm cyc-alert-src"
+              :to="{ path: '/pipeline', query: { code: 'cycle.alerts' } }"
+            >
+              溯源
+            </RouterLink>
+          </div>
+        </div>
+        <EmptyState v-else text="今日无触发预警" hint="规则均未达到阈值；全部预警可在预警中心查看。" />
+      </section>
+
+      <!-- E. 历史类比 Top3 -->
+      <div class="cyc-section-label">
+        <span class="cyc-sl-title">历史类比 Top3</span>
+        <span>
+          {{ analogs ? `${analogs.n ?? 0} 个样本内近邻 · 剔除最近 ${analogs.min_gap_months} 个月` : "样本内近邻" }}
+        </span>
+      </div>
+      <div v-if="topAnalogs.length" class="cyc-analogy-row">
+        <template v-for="(item, index) in analogSlots" :key="item?.month ?? `empty-${index}`">
+          <RouterLink
+            v-if="item"
+            class="cyc-analogy"
+            :to="{ path: '/pipeline', query: { code: 'cycle.analogs' } }"
+          >
+            <div>
+              <div class="cyc-analogy-name">{{ item.month }}</div>
+              <div class="cyc-analogy-sub">
+                增长 {{ fmtNumber(item.state.growth, 0) }} · 通胀 {{ fmtNumber(item.state.inflation, 0) }}
+              </div>
+            </div>
+            <div class="cyc-analogy-sim">
+              <b>{{ Math.round(item.similarity * 100) }}%</b>
+              <span>相似度</span>
+            </div>
+          </RouterLink>
+          <div v-else class="cyc-analogy cyc-analogy--empty">
+            <div>
+              <div class="cyc-analogy-name">暂无更多类比</div>
+              <div class="cyc-analogy-sub">样本内近邻不足 3 条</div>
+            </div>
+            <div class="cyc-analogy-sim"><b>—</b><span>相似度</span></div>
+          </div>
+        </template>
+      </div>
+      <EmptyState v-else text="暂无历史类比" hint="样本不足 24 个月时不会生成类比。" />
+      <p v-if="analogs?.caveats?.length" class="cyc-caveat">{{ analogs.caveats[0] }}</p>
+
+      <!-- F. 设计区块之后：保留全部原有功能 -->
+      <div class="cyc-section-label cyc-section-label--retain">
+        <span class="cyc-sl-title">周期定位概览</span>
+        <span>原有定位指标 · 与上方设计区块并存的完整口径</span>
+      </div>
+      <div class="cyc-ov-grid">
+        <article class="card cyc-ov-card">
+          <div class="cyc-ov-top">
+            <span class="cyc-ov-icon"><svg class="ic"><use href="#i-target" /></svg></span>
+            <span class="cyc-ov-label">长债务周期</span>
+            <span class="badge badge--sm" :class="toneClass(longTone)">{{ long.phase }}</span>
+          </div>
+          <div class="cyc-ov-value">{{ fmtNumber(long.score, 1) }}<small>DMI</small></div>
+          <div class="cyc-ov-sub">
             区间 {{ long.band[0] }}–{{ long.band[1] }} · 位置上沿 {{ Math.round(long.position * 100) }}% · 置信
             {{ fmtNumber(long.confidence, 2) }}
           </div>
         </article>
-        <article class="card kpi">
-          <div class="kpi-top">
-            <span class="kpi-icon"><svg class="ic"><use href="#i-activity" /></svg></span>
-            <span class="kpi-label">短债务周期</span>
-            <span class="kpi-flag badge badge--sm" :class="toneClass(shortTone)">{{ short.state }}</span>
+        <article class="card cyc-ov-card">
+          <div class="cyc-ov-top">
+            <span class="cyc-ov-icon"><svg class="ic"><use href="#i-activity" /></svg></span>
+            <span class="cyc-ov-label">短债务周期</span>
+            <span class="badge badge--sm" :class="toneClass(shortTone)">{{ short.state }}</span>
           </div>
-          <div class="kpi-value">
+          <div class="cyc-ov-value">
             增长 {{ fmtNumber(short.variables.growth, 0) }}<small>通胀 {{ fmtNumber(short.variables.inflation, 0) }}</small>
           </div>
-          <div class="kpi-sub">
+          <div class="cyc-ov-sub">
             流动性 {{ fmtNumber(short.variables.liq, 0) }} · 12 月增长变化
             {{ fmtSigned(short.variables.d12, 1) }}<template v-if="short.hysteresis_held"> · 滞回保持</template>
           </div>
         </article>
-        <article class="card kpi">
-          <div class="kpi-top">
-            <span class="kpi-icon"><svg class="ic"><use href="#i-rates" /></svg></span>
-            <span class="kpi-label">债务可持续性</span>
-            <span class="kpi-flag badge badge--sm badge--warn">{{ sustainability?.mode ?? "—" }}</span>
+        <article class="card cyc-ov-card">
+          <div class="cyc-ov-top">
+            <span class="cyc-ov-icon"><svg class="ic"><use href="#i-rates" /></svg></span>
+            <span class="cyc-ov-label">债务可持续性</span>
+            <span class="badge badge--sm badge--warn">{{ sustainability?.mode ?? "—" }}</span>
           </div>
-          <div class="kpi-value">{{ fmtNumber(sustainability?.interest_to_revenue, 1) }}<small>利息 / 收入 %</small></div>
-          <div class="kpi-sub">
+          <div class="cyc-ov-value">{{ fmtNumber(sustainability?.interest_to_revenue, 1) }}<small>利息 / 收入 %</small></div>
+          <div class="cyc-ov-sub">
             r−g {{ fmtSigned(sustainability?.r_minus_g, 1) }}pp · 赤字
             {{ fmtNumber(sustainability?.deficit_to_gdp, 1) }}% GDP
           </div>
         </article>
-        <article class="card kpi">
-          <div class="kpi-top">
-            <span class="kpi-icon"><svg class="ic"><use href="#i-layers" /></svg></span>
-            <span class="kpi-label">历史类比（样本内）</span>
-            <span class="kpi-flag badge badge--sm">{{ analogs?.n ?? 0 }} 个</span>
+        <article class="card cyc-ov-card">
+          <div class="cyc-ov-top">
+            <span class="cyc-ov-icon"><svg class="ic"><use href="#i-layers" /></svg></span>
+            <span class="cyc-ov-label">历史类比（样本内）</span>
+            <span class="badge badge--sm">{{ analogs?.n ?? 0 }} 个</span>
           </div>
-          <div class="kpi-value">
+          <div class="cyc-ov-value">
             {{ analogs?.analogs?.[0] ? Math.round(analogs.analogs[0].similarity * 100) : "—" }}<small>% 最相似</small>
           </div>
-          <div class="kpi-sub">
+          <div class="cyc-ov-sub">
             {{ analogs?.analogs?.[0]?.month ?? "—" }} · 相似≠相同，需人工核对时代背景
           </div>
         </article>
       </div>
 
-      <div class="cycle-main">
+      <div class="cyc-retain-grid">
         <section class="card">
           <div class="card-head">
             <span class="card-title">六分量罗盘</span>
-            <span class="card-sub">0–100 归一：越高代表压力/强度越大</span>
+            <span class="cyc-card-sub">0–100 归一：越高代表压力/强度越大</span>
             <div class="card-actions">
-              <span class="card-sub">{{ fmtInt(indicators.length) }} 个指标参与</span>
+              <span class="cyc-card-sub">{{ fmtInt(indicators.length) }} 个指标参与</span>
             </div>
           </div>
-          <div class="card-body compass-body">
-            <svg class="compass" viewBox="0 0 260 260" role="img" aria-label="六分量罗盘">
-              <circle v-for="ring in rings" :key="ring" cx="130" cy="130" :r="ring" class="ring" />
+          <div class="card-body cyc-six-body">
+            <svg class="cyc-six-svg" viewBox="0 0 260 260" role="img" aria-label="六分量罗盘">
+              <circle v-for="ring in rings" :key="ring" cx="130" cy="130" :r="ring" class="cyc-six-ring" />
               <line
                 v-for="axis in axes"
                 :key="axis.key"
@@ -98,16 +287,16 @@
                 y1="130"
                 :x2="axis.tipX"
                 :y2="axis.tipY"
-                class="axis-line"
+                class="cyc-six-axis"
               />
-              <polygon :points="polygon" class="compass-shape" />
+              <polygon :points="polygon" class="cyc-six-shape" />
               <circle
                 v-for="axis in axes"
                 :key="`dot-${axis.key}`"
                 :cx="axis.pointX"
                 :cy="axis.pointY"
                 r="2.6"
-                class="compass-dot"
+                class="cyc-six-dot"
               />
               <text
                 v-for="axis in axes"
@@ -115,23 +304,17 @@
                 :x="axis.labelX"
                 :y="axis.labelY"
                 :text-anchor="axis.anchor"
-                class="compass-label"
+                class="cyc-six-label"
               >
                 {{ axis.label }}
               </text>
-              <text x="130" y="126" text-anchor="middle" class="compass-center">
-                {{ long.phase }}
-              </text>
-              <text x="130" y="142" text-anchor="middle" class="compass-center-sub">
-                DMI {{ fmtNumber(long.score, 1) }}
-              </text>
+              <text x="130" y="126" text-anchor="middle" class="cyc-six-center">{{ long.phase }}</text>
+              <text x="130" y="142" text-anchor="middle" class="cyc-six-center-sub">DMI {{ fmtNumber(long.score, 1) }}</text>
             </svg>
-            <ul class="compass-legend">
-              <li v-for="axis in axes" :key="`legend-${axis.key}`" class="legend-row">
-                <span class="legend-name">{{ axis.label }}</span>
-                <span class="legend-bar">
-                  <i :style="{ width: `${Math.max(2, Math.min(100, axis.value))}%` }"></i>
-                </span>
+            <ul class="cyc-six-legend">
+              <li v-for="axis in axes" :key="`legend-${axis.key}`" class="cyc-six-legend-row">
+                <span class="cyc-six-legend-name">{{ axis.label }}</span>
+                <span class="cyc-six-legend-bar"><i :style="{ width: `${Math.max(2, Math.min(100, axis.value))}%` }"></i></span>
                 <b class="mono">{{ fmtNumber(axis.value, 1) }}</b>
                 <em class="mono">{{ fmtNumber(axis.confidence, 2) }}</em>
               </li>
@@ -146,70 +329,77 @@
         <section class="card">
           <div class="card-head">
             <span class="card-title">五层周期</span>
-            <span class="card-sub">嵌套定位 · 每层给出当前状态与含义</span>
+            <span class="cyc-card-sub">嵌套定位 · 每层给出当前状态与含义</span>
           </div>
-          <div class="card-body layer-list">
-            <div class="layer-row">
-              <div class="layer-head">
-                <span class="layer-name">长债务周期</span>
+          <div class="card-body cyc-layer-list">
+            <div class="cyc-layer-row">
+              <div class="cyc-layer-head">
+                <span class="cyc-layer-name">长债务周期</span>
                 <span class="badge badge--sm" :class="toneClass(longTone)">{{ long.phase }}</span>
-                <span class="layer-val mono">{{ fmtNumber(long.score, 1) }}</span>
+                <span class="cyc-layer-val mono">{{ fmtNumber(long.score, 1) }}</span>
               </div>
-              <div class="position-bar"><i :style="{ width: `${Math.round(long.position * 100)}%` }"></i></div>
-              <p class="layer-meaning">{{ long.meaning }}</p>
-              <p class="layer-meta">下一阶段：{{ long.next_phase ?? "—" }} · {{ long.exit_condition }}</p>
+              <div class="cyc-bar"><i :style="{ width: `${Math.round(long.position * 100)}%` }"></i></div>
+              <p class="cyc-layer-meaning">{{ long.meaning }}</p>
+              <p class="cyc-layer-meta">下一阶段：{{ long.next_phase ?? "—" }} · {{ long.exit_condition }}</p>
             </div>
-            <div class="layer-row">
-              <div class="layer-head">
-                <span class="layer-name">短债务周期</span>
+            <div class="cyc-layer-row">
+              <div class="cyc-layer-head">
+                <span class="cyc-layer-name">短债务周期</span>
                 <span class="badge badge--sm" :class="toneClass(shortTone)">{{ short.state }}</span>
                 <span v-if="short.hysteresis_held" class="badge badge--sm badge--warn">二次确认中</span>
-                <span class="layer-val mono">{{ fmtNumber(short.confidence, 2) }}</span>
+                <span class="cyc-layer-val mono">{{ fmtNumber(short.confidence, 2) }}</span>
               </div>
-              <p class="layer-meaning">{{ short.meaning }}</p>
-              <p class="layer-meta">原始命中：{{ short.raw_state }} · 增长 {{ fmtNumber(short.variables.growth, 1) }} / 通胀 {{ fmtNumber(short.variables.inflation, 1) }}</p>
+              <p class="cyc-layer-meaning">{{ short.meaning }}</p>
+              <p class="cyc-layer-meta">
+                原始命中：{{ short.raw_state }} · 增长 {{ fmtNumber(short.variables.growth, 1) }} / 通胀
+                {{ fmtNumber(short.variables.inflation, 1) }}
+              </p>
             </div>
-            <div class="layer-row">
-              <div class="layer-head">
-                <span class="layer-name">库存周期</span>
+            <div class="cyc-layer-row">
+              <div class="cyc-layer-head">
+                <span class="cyc-layer-name">库存周期</span>
                 <span class="badge badge--sm">{{ inventory.state }}</span>
                 <span v-if="inventory.degraded" class="badge badge--sm badge--warn">代理口径</span>
-                <span class="layer-val mono">{{ fmtNumber(inventory.confidence, 2) }}</span>
+                <span class="cyc-layer-val mono">{{ fmtNumber(inventory.confidence, 2) }}</span>
               </div>
-              <p class="layer-meaning">{{ inventory.meaning ?? "—" }}</p>
-              <p class="layer-meta">{{ inventory.degrade_reason ?? "使用库存与价格动量的合成口径。" }}</p>
+              <p class="cyc-layer-meaning">{{ inventory.meaning ?? "—" }}</p>
+              <p class="cyc-layer-meta">{{ inventory.degrade_reason ?? "使用库存与价格动量的合成口径。" }}</p>
             </div>
-            <div class="layer-row">
-              <div class="layer-head">
-                <span class="layer-name">信用 / 流动性</span>
+            <div class="cyc-layer-row">
+              <div class="cyc-layer-head">
+                <span class="cyc-layer-name">信用 / 流动性</span>
                 <span class="badge badge--sm" :class="toneClass(liquidityTone)">{{ liq.state }}</span>
-                <span class="layer-val mono">{{ fmtNumber(liq.score, 1) }}</span>
+                <span class="cyc-layer-val mono">{{ fmtNumber(liq.score, 1) }}</span>
               </div>
-              <p class="layer-meaning">{{ liq.meaning }}</p>
-              <p class="layer-meta">证据 {{ liq.evidence }} · 置信 {{ fmtNumber(liq.confidence, 2) }}</p>
+              <p class="cyc-layer-meaning">{{ liq.meaning }}</p>
+              <p class="cyc-layer-meta">证据 {{ liq.evidence }} · 置信 {{ fmtNumber(liq.confidence, 2) }}</p>
             </div>
-            <div class="layer-row">
-              <div class="layer-head">
-                <span class="layer-name">政治 / 事件窗口</span>
+            <div class="cyc-layer-row">
+              <div class="cyc-layer-head">
+                <span class="cyc-layer-name">政治 / 事件窗口</span>
                 <span class="badge badge--sm" :class="political.window === '高不确定性窗口' ? 'badge--warn' : ''">
                   {{ political.window }}
                 </span>
-                <span class="layer-val mono">{{ political.days_to_nearest ?? "—" }}<small>天</small></span>
+                <span class="cyc-layer-val mono">{{ political.days_to_nearest ?? "—" }}<small>天</small></span>
               </div>
-              <p class="layer-meaning">{{ political.nearest?.name ?? "无临近事件" }}</p>
-              <p class="layer-meta">
-                {{ political.nearest ? `${political.nearest.date} · ${political.nearest.note}` : "政治日历为空，请检查 config/cycle.yaml。" }}
+              <p class="cyc-layer-meaning">{{ political.nearest?.name ?? "无临近事件" }}</p>
+              <p class="cyc-layer-meta">
+                {{
+                  political.nearest
+                    ? `${political.nearest.date} · ${political.nearest.note}`
+                    : "政治日历为空，请检查 config/cycle.yaml。"
+                }}
               </p>
             </div>
           </div>
         </section>
       </div>
 
-      <section class="card history-card">
+      <section class="card cyc-history-card">
         <div class="card-head">
           <span class="card-title">分量历史轨迹</span>
-          <span class="card-sub">{{ history?.months.length ?? 0 }} 个月 · 月度末值 · 覆盖不足的分量留空</span>
-          <div class="card-actions"><span class="card-sub mono">{{ historyRange }}</span></div>
+          <span class="cyc-card-sub">{{ history?.months.length ?? 0 }} 个月 · 月度末值 · 覆盖不足的分量留空</span>
+          <div class="card-actions"><span class="cyc-card-sub mono">{{ historyRange }}</span></div>
         </div>
         <EChart v-if="chartHasData" :option="chartOption" :height="240" />
         <EmptyState v-else text="暂无历史轨迹" hint="至少有 24 个月数据后才会生成月度序列。" />
@@ -219,24 +409,25 @@
         </div>
       </section>
 
-      <div class="cycle-bottom">
+      <div class="cyc-bottom">
         <section class="card">
           <div class="card-head">
             <span class="card-title">未来情景</span>
-            <span class="card-sub">{{ scenarios?.horizon ?? "未来 6–36 个月" }} · 概率为规则化先验，未经校准</span>
-            <div class="card-actions"><span class="card-sub mono">Σ {{ fmtNumber(scenarios?.sum, 2) }}</span></div>
+            <span class="cyc-card-sub">{{ scenarios?.horizon ?? "未来 6–36 个月" }} · 概率为规则化先验，未经校准</span>
+            <div class="card-actions"><span class="cyc-card-sub mono">Σ {{ fmtNumber(scenarios?.sum, 2) }}</span></div>
           </div>
-          <div class="card-body scenario-list">
-            <div v-for="item in scenarios?.scenarios ?? []" :key="item.id" class="scenario-row">
-              <div class="scenario-head">
-                <span class="scenario-id mono">{{ item.id }}</span>
-                <span class="scenario-name">{{ item.name }}</span>
-                <b class="scenario-prob mono">{{ Math.round(item.probability * 100) }}%</b>
+          <div class="card-body cyc-scenario-list">
+            <div v-for="item in scenarios?.scenarios ?? []" :key="item.id" class="cyc-scenario-row">
+              <div class="cyc-scenario-head">
+                <span class="cyc-scenario-id mono">{{ item.id }}</span>
+                <span class="cyc-scenario-name">{{ item.name }}</span>
+                <b class="cyc-scenario-prob mono">{{ Math.round(item.probability * 100) }}%</b>
               </div>
-              <div class="position-bar"><i :style="{ width: `${Math.round(item.probability * 100)}%` }"></i></div>
-              <p class="scenario-desc">{{ item.desc }}</p>
-              <p class="scenario-assets">资产含义：{{ item.assets }}</p>
+              <div class="cyc-bar"><i :style="{ width: `${Math.round(item.probability * 100)}%` }"></i></div>
+              <p class="cyc-scenario-desc">{{ item.desc }}</p>
+              <p class="cyc-scenario-assets">资产含义：{{ item.assets }}</p>
             </div>
+            <EmptyState v-if="!scenarios?.scenarios?.length" text="暂无情景" hint="情景由规则化先验生成。" />
           </div>
           <div class="card-foot">
             <span>{{ scenarios?.formula ?? "" }}</span>
@@ -245,10 +436,94 @@
 
         <section class="card">
           <div class="card-head">
-            <span class="card-title">历史类比</span>
-            <span class="card-sub">20 维状态向量近邻 · 剔除最近 12 个月</span>
+            <span class="card-title">债务可持续性</span>
+            <span class="cyc-card-sub">r−g / 利息负担 / 赤字三模式判别 · 证据 {{ sustainability?.evidence ?? "—" }}</span>
+          </div>
+          <div class="card-body">
+            <div class="cyc-sustain-head">
+              <span class="badge badge--sm badge--warn">{{ sustainability?.mode ?? "—" }}</span>
+              <span class="mono cyc-sustain-risk">{{ sustainability?.risk ?? "" }}</span>
+            </div>
+            <p class="cyc-layer-meaning">{{ sustainability?.explanation ?? "" }}</p>
+            <div class="cyc-metric-grid">
+              <div class="cyc-metric">
+                <span class="cyc-metric-label">r−g</span>
+                <b class="mono">{{ fmtSigned(sustainability?.r_minus_g, 1) }}<small>pp</small></b>
+              </div>
+              <div class="cyc-metric">
+                <span class="cyc-metric-label">利息 / 财政收入</span>
+                <b class="mono">{{ fmtNumber(sustainability?.interest_to_revenue, 1) }}<small>%</small></b>
+              </div>
+              <div class="cyc-metric">
+                <span class="cyc-metric-label">赤字 / GDP</span>
+                <b class="mono">{{ fmtNumber(sustainability?.deficit_to_gdp, 1) }}<small>%</small></b>
+              </div>
+              <div class="cyc-metric">
+                <span class="cyc-metric-label">债务 / GDP</span>
+                <b class="mono">{{ fmtNumber(sustainability?.debt_to_gdp, 0) }}<small>%</small></b>
+              </div>
+            </div>
+            <p class="cyc-layer-meta">
+              关注阈值：利息/收入 ≥{{ sustainability?.thresholds.interest_watch }}%（警戒）、≥{{
+                sustainability?.thresholds.interest_alarm
+              }}%（警报）；赤字/GDP ≥{{ sustainability?.thresholds.deficit_watch }}%。
+            </p>
+          </div>
+        </section>
+      </div>
+
+      <div class="cyc-bottom">
+        <section class="card">
+          <div class="card-head">
+            <span class="card-title">世界秩序位置</span>
+            <span class="cyc-card-sub">内部秩序与国际秩序分开判定 · E4 叙事级</span>
+          </div>
+          <div class="card-body">
+            <EmptyState
+              v-if="!world"
+              text="世界秩序读数缺失"
+              hint="本次 cycle.state 未返回 world 段；内部/国际秩序阶段与八项实力暂不可用。"
+            />
+            <template v-else>
+              <div v-for="stage in stages" :key="stage.id" class="cyc-stage-row">
+              <div class="cyc-stage-head">
+                <span class="cyc-stage-name">{{ stage.name }}</span>
+                <span class="badge badge--sm badge--warn">第 {{ stage.stage }} 阶段 · {{ stage.stage_name }}</span>
+                <span class="mono cyc-stage-conf">置信 {{ fmtNumber(stage.confidence, 2) }}</span>
+              </div>
+              <p class="cyc-layer-meaning">{{ stage.reason }}</p>
+              <p class="cyc-layer-meta">失效条件：{{ stage.falsifier }}</p>
+            </div>
+            <div class="cyc-power-block">
+              <div class="cyc-power-head">
+                <span class="cyc-layer-name">八项实力指数</span>
+                <b class="mono">{{ fmtNumber(world?.power_index.value, 1) }}</b>
+                <span class="badge badge--sm" :class="world?.power_index.degraded ? 'badge--warn' : ''">
+                  {{ world?.power_index.degraded ? "部分口径降级" : "口径完整" }}
+                </span>
+              </div>
+              <div v-for="item in world?.power_index.components ?? []" :key="item.id" class="cyc-power-row">
+                <span class="cyc-power-name">{{ item.name }}</span>
+                <span class="cyc-power-bar"><i :style="{ width: `${Math.max(2, Math.min(100, item.value))}%` }"></i></span>
+                <b class="mono">{{ fmtNumber(item.value, 0) }}</b>
+                <em class="mono">{{ fmtNumber(item.weight * 100, 0) }}%</em>
+              </div>
+              <p class="cyc-layer-meta">
+                储备货币：{{ world?.reserve_currency.code }} 份额 {{ fmtNumber(world?.reserve_currency.share, 1) }}%（{{
+                  world?.reserve_currency.asof
+                }}，{{ world?.reserve_currency.source }}）
+              </p>
+            </div>
+            </template>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <span class="card-title">历史类比明细</span>
+            <span class="cyc-card-sub">20 维状态向量近邻 · 剔除最近 {{ analogs?.min_gap_months ?? 12 }} 个月</span>
             <div class="card-actions">
-              <RouterLink class="card-sub link" :to="{ path: '/pipeline', query: { code: 'cycle.analogs' } }">
+              <RouterLink class="cyc-card-sub cyc-inline-link" :to="{ path: '/pipeline', query: { code: 'cycle.analogs' } }">
                 为什么 →
               </RouterLink>
             </div>
@@ -256,19 +531,17 @@
           <div class="card-body">
             <SkeletonBlock v-if="!analogs" :rows="3" />
             <template v-else>
-              <ul class="analog-list">
-                <li v-for="item in analogs.analogs.slice(0, 4)" :key="item.month" class="analog-row">
-                  <span class="analog-month mono">{{ item.month }}</span>
-                  <span class="analog-sim">
-                    <i :style="{ width: `${Math.max(4, Math.round(item.similarity * 100))}%` }"></i>
-                  </span>
+              <ul class="cyc-analog-list">
+                <li v-for="item in analogs.analogs.slice(0, 4)" :key="item.month" class="cyc-analog-line">
+                  <span class="cyc-analog-month mono">{{ item.month }}</span>
+                  <span class="cyc-analog-sim-bar"><i :style="{ width: `${Math.max(4, Math.round(item.similarity * 100))}%` }"></i></span>
                   <b class="mono">{{ Math.round(item.similarity * 100) }}%</b>
-                  <span class="analog-state mono">
+                  <span class="cyc-analog-state mono">
                     增长 {{ fmtNumber(item.state.growth, 0) }} · 通胀 {{ fmtNumber(item.state.inflation, 0) }}
                   </span>
                 </li>
               </ul>
-              <p class="layer-meta">{{ analogs.caveats[0] ?? "" }}</p>
+              <p class="cyc-layer-meta">{{ analogs.caveats?.[0] ?? "" }}</p>
             </template>
           </div>
           <div class="card-foot">
@@ -277,111 +550,67 @@
         </section>
       </div>
 
-      <div class="cycle-bottom">
-        <section class="card">
-          <div class="card-head">
-            <span class="card-title">债务可持续性</span>
-            <span class="card-sub">r−g / 利息负担 / 赤字三模式判别 · 证据 {{ sustainability?.evidence ?? "—" }}</span>
-          </div>
-          <div class="card-body">
-            <div class="sustain-head">
-              <span class="badge badge--sm badge--warn">{{ sustainability?.mode ?? "—" }}</span>
-              <span class="mono sustain-risk">{{ sustainability?.risk ?? "" }}</span>
-            </div>
-            <p class="layer-meaning">{{ sustainability?.explanation ?? "" }}</p>
-            <div class="metric-grid">
-              <div class="metric">
-                <span class="metric-label">r−g</span>
-                <b class="mono">{{ fmtSigned(sustainability?.r_minus_g, 1) }}<small>pp</small></b>
-              </div>
-              <div class="metric">
-                <span class="metric-label">利息 / 财政收入</span>
-                <b class="mono">{{ fmtNumber(sustainability?.interest_to_revenue, 1) }}<small>%</small></b>
-              </div>
-              <div class="metric">
-                <span class="metric-label">赤字 / GDP</span>
-                <b class="mono">{{ fmtNumber(sustainability?.deficit_to_gdp, 1) }}<small>%</small></b>
-              </div>
-              <div class="metric">
-                <span class="metric-label">债务 / GDP</span>
-                <b class="mono">{{ fmtNumber(sustainability?.debt_to_gdp, 0) }}<small>%</small></b>
-              </div>
-            </div>
-            <p class="layer-meta">
-              关注阈值：利息/收入 ≥{{ sustainability?.thresholds.interest_watch }}%（警戒）、≥{{
-                sustainability?.thresholds.interest_alarm
-              }}%（警报）；赤字/GDP ≥{{ sustainability?.thresholds.deficit_watch }}%。
-            </p>
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="card-head">
-            <span class="card-title">世界秩序位置</span>
-            <span class="card-sub">内部秩序与国际秩序分开判定 · E4 叙事级</span>
-          </div>
-          <div class="card-body">
-            <div v-for="stage in stages" :key="stage.id" class="stage-row">
-              <div class="stage-head">
-                <span class="stage-name">{{ stage.name }}</span>
-                <span class="badge badge--sm badge--warn">第 {{ stage.stage }} 阶段 · {{ stage.stage_name }}</span>
-                <span class="mono stage-conf">置信 {{ fmtNumber(stage.confidence, 2) }}</span>
-              </div>
-              <p class="layer-meaning">{{ stage.reason }}</p>
-              <p class="layer-meta">失效条件：{{ stage.falsifier }}</p>
-            </div>
-            <div class="power-block">
-              <div class="power-head">
-                <span class="layer-name">八项实力指数</span>
-                <b class="mono">{{ fmtNumber(world?.power_index.value, 1) }}</b>
-                <span class="badge badge--sm" :class="world?.power_index.degraded ? 'badge--warn' : ''">
-                  {{ world?.power_index.degraded ? "部分口径降级" : "口径完整" }}
-                </span>
-              </div>
-              <div v-for="item in world?.power_index.components ?? []" :key="item.id" class="power-row">
-                <span class="power-name">{{ item.name }}</span>
-                <span class="power-bar"><i :style="{ width: `${Math.max(2, Math.min(100, item.value))}%` }"></i></span>
-                <b class="mono">{{ fmtNumber(item.value, 0) }}</b>
-                <em class="mono">{{ fmtNumber(item.weight * 100, 0) }}%</em>
-              </div>
-              <p class="layer-meta">
-                储备货币：{{ world?.reserve_currency.code }} 份额 {{ fmtNumber(world?.reserve_currency.share, 1) }}%（{{
-                  world?.reserve_currency.asof
-                }}，{{ world?.reserve_currency.source }}）
-              </p>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div v-if="payload?.degraded_reasons.length" class="degraded-box">
+      <div v-if="payload?.degraded_reasons.length" class="cyc-degraded-box">
         <svg class="ic"><use href="#i-alert" /></svg>
         <div>
           <b>本次运行有 {{ payload.degraded_reasons.length }} 项降级</b>
-          <div v-for="reason in payload.degraded_reasons.slice(0, 6)" :key="reason.code" class="degraded-reason">
+          <div v-for="reason in payload.degraded_reasons.slice(0, 6)" :key="reason.code" class="cyc-degraded-reason">
             {{ reason.message }}（{{ reason.code }}）
           </div>
         </div>
+      </div>
+
+      <div class="cyc-foot">
+        <span class="mono">run {{ payload?.run_id ?? "—" }}</span>
+        <span class="mono">method {{ payload?.state.method_id ?? "—" }}</span>
+        <span class="mono">
+          asof {{ fmtDate(payload?.asof) }} · generated {{ fmtDateTime(payload?.generated_at) }}
+        </span>
+        <span class="mono">
+          confidence {{ fmtNumber(payload?.state.confidence, 2) }} · {{ payload?.state.evidence_grade ?? "—" }}
+        </span>
       </div>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import type { EChartsOption } from "echarts";
 import EChart from "@/components/charts/EChart.vue";
+import CycleCompass from "@/components/cycle/CycleCompass.vue";
+import CycleForces from "@/components/cycle/CycleForces.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import SkeletonBlock from "@/components/ui/SkeletonBlock.vue";
 import { usePolling } from "@/composables/usePolling";
-import { fmtDate, fmtDateTime, fmtInt, fmtNumber, fmtSigned } from "@/composables/useFormat";
-import { getCycleState, runCycle } from "@/api/endpoints";
-import type { CycleKey, CycleReading, CycleStateResponse } from "@/api/types";
+import {
+  fmtDate,
+  fmtDateTime,
+  fmtInt,
+  fmtNumber,
+  fmtSigned,
+  fmtTime,
+} from "@/composables/useFormat";
+import { getJson } from "@/api/client";
+import { getCycleConfig, getCycleReadings, getCycleState, runCycle } from "@/api/endpoints";
+import type {
+  CycleAlert,
+  CycleAnalog,
+  CycleKey,
+  CycleReading,
+  CycleReadingCard,
+  CycleReadingsResponse,
+  CycleStateResponse,
+  CycleWorld,
+} from "@/api/types";
 
 const { data, error, loading, lastUpdated, refresh } = usePolling<CycleStateResponse>(getCycleState, {
   interval: 60_000,
 });
+
+/** 关键读数走独立接口：失败时只降级 C 段，不影响其余区块。 */
+const readingsPoll = usePolling<CycleReadingsResponse>(getCycleReadings, { interval: 120_000 });
 
 const running = ref(false);
 const payload = computed(() => data.value);
@@ -395,12 +624,378 @@ const political = computed(() => value.value!.political);
 const sustainability = computed(() => payload.value?.sustainability?.value);
 const scenarios = computed(() => payload.value?.scenarios?.value);
 const analogs = computed(() => payload.value?.analogs?.value);
-const world = computed(() => payload.value?.world?.value);
+/** 世界秩序是顶层推导 payload（payload.world.value）；只有该 payload 真为 null 才判缺失。 */
+const world = computed<CycleWorld | null>(() => {
+  const response = payload.value;
+  if (!response) return null;
+  if (response.world?.value) return response.world.value;
+  // 兼容旧后端把 world 挂在 state.value 下的形态
+  const legacy = (response.state.value as unknown as { world?: CycleWorld | null }).world;
+  return legacy ?? null;
+});
 const history = computed(() => payload.value?.history?.value);
 const stages = computed(() => (world.value ? [world.value.us_internal, world.value.global_order] : []));
 
 const updatedLabel = computed(() => (lastUpdated.value ? fmtDateTime(lastUpdated.value.toISOString()).slice(5) : "—"));
+const asofLabel = computed(() => fmtDate(payload.value?.asof));
 
+/** 后端 /api/v2/cycle/meta 为新增端点：返回失败时静默回退到 config.version。 */
+interface CycleMeta {
+  rule_version?: string | null;
+  next_calibration?: string | null;
+  brier?: number | null;
+  calibration_n?: number | null;
+  coverage?: { series_covered?: number | null; series_total?: number | null } | null;
+}
+
+const meta = ref<CycleMeta | null>(null);
+const configVersion = ref<string | null>(null);
+
+async function loadMeta(): Promise<void> {
+  try {
+    meta.value = await getJson<CycleMeta>("/api/v2/cycle/meta");
+  } catch {
+    meta.value = null;
+  }
+}
+
+async function loadConfigVersion(): Promise<void> {
+  try {
+    const config = await getCycleConfig();
+    configVersion.value = config.version ?? null;
+  } catch {
+    configVersion.value = null;
+  }
+}
+
+onMounted(() => {
+  void loadMeta();
+  void loadConfigVersion();
+});
+
+const ruleVersion = computed<string>(() => meta.value?.rule_version || configVersion.value || "—");
+const nextCalibration = computed<string>(() => meta.value?.next_calibration || "—");
+
+const coverageText = computed<string>(() => {
+  const coverage = meta.value?.coverage;
+  const covered = coverage?.series_covered ?? null;
+  const total = coverage?.series_total ?? null;
+  if (covered !== null && total !== null && total > 0) return `${covered}/${total}`;
+  const list = indicators.value;
+  if (!list.length) return "—";
+  return `${list.filter((reading) => reading.value !== null).length}/${list.length}`;
+});
+
+// ── 通用读数查找 ─────────────────────────────────────────
+function findReading(ids: string[]): CycleReading | null {
+  const list = indicators.value;
+  for (const wanted of ids) {
+    const hit = list.find((reading) => reading.id.toLowerCase() === wanted.toLowerCase());
+    if (hit && hit.value !== null) return hit;
+  }
+  for (const wanted of ids) {
+    const hit = list.find((reading) => reading.id.toLowerCase().includes(wanted.toLowerCase()));
+    if (hit && hit.value !== null) return hit;
+  }
+  return null;
+}
+
+function compositeValue(key: CycleKey): number | null {
+  const raw = value.value?.composites?.[key]?.value;
+  if (raw === null || raw === undefined || !Number.isFinite(raw)) return null;
+  return Math.max(0, Math.min(100, raw));
+}
+
+function readingsForScore(key: CycleKey): number {
+  return indicators.value.filter((reading) => {
+    const raw = (reading as unknown as { score?: string | number | null }).score;
+    return raw === key && reading.score_value !== null;
+  }).length;
+}
+
+// ── A. Hero ──────────────────────────────────────────────
+const heroTitle = computed<string>(() => {
+  const meaning = (long.value.meaning ?? "").replace(/\s+/g, " ").trim();
+  const shortMeaning = meaning ? meaning.slice(0, 18) : "阶段定位";
+  return `美国 · 长债务周期${long.value.phase}：${shortMeaning}`;
+});
+
+const compassGrowth = computed<number | null>(
+  () => compositeValue("GROWTH") ?? short.value.variables.growth ?? null,
+);
+const compassInflation = computed<number | null>(
+  () => compositeValue("INFLATION") ?? short.value.variables.inflation ?? null,
+);
+
+function directionArrow(score: number | null): string {
+  if (score === null) return "—";
+  return score >= 50 ? "↑" : "↓";
+}
+
+const growthArrow = computed(() => directionArrow(compositeValue("GROWTH")));
+const inflationArrow = computed(() => directionArrow(compositeValue("INFLATION")));
+
+const heroSub = computed<string>(() => {
+  const confidence = Math.round((long.value.confidence ?? 0) * 100);
+  return `短周期：${short.value.state} · 综合置信度 ${confidence}% · 增长${growthArrow.value} 通胀${inflationArrow.value}`;
+});
+
+interface HeroTag {
+  key: string;
+  label: string;
+  value: string;
+  z: number | null;
+}
+
+const alertsPayload = computed(() => payload.value?.alerts?.value ?? null);
+const alertList = computed<CycleAlert[]>(() => alertsPayload.value?.alerts ?? []);
+const spreadAlert = computed(
+  () => alertList.value.find((alert) => alert.metric === "cn_us_spread" || (alert.metric_name ?? "").includes("中美")) ?? null,
+);
+
+const heroTags = computed<HeroTag[]>(() => {
+  const tags: Array<HeroTag | null> = [];
+  const real = findReading(["us_real10y", "US10Y_REAL"]);
+  if (real && real.value !== null) {
+    tags.push({
+      key: "real10y",
+      label: "10Y 实际利率",
+      value: `${fmtNumber(real.value, 2)}${real.unit ? ` ${real.unit}` : ""}`,
+      z: real.z,
+    });
+  }
+  const curve = findReading(["us_curve_slope"]);
+  if (curve && curve.value !== null) {
+    tags.push({ key: "curve", label: "10Y–2Y 利差", value: `${fmtSigned(curve.value * 100, 0)} bp`, z: curve.z });
+  }
+  if (spreadAlert.value && spreadAlert.value.value !== null) {
+    tags.push({
+      key: "cnus",
+      label: "中美 10Y 利差",
+      value: `${fmtSigned(spreadAlert.value.value, 0)} ${spreadAlert.value.unit ?? "bp"}`,
+      z: null,
+    });
+  }
+  const us10y = findReading(["us_10y"]);
+  if (us10y && us10y.value !== null) {
+    tags.push({
+      key: "us10y",
+      label: "美债 10Y",
+      value: `${fmtNumber(us10y.value, 2)}${us10y.unit ? ` ${us10y.unit}` : ""}`,
+      z: us10y.z,
+    });
+  }
+  const breakeven = findReading(["us_breakeven"]);
+  if (breakeven && breakeven.value !== null) {
+    tags.push({
+      key: "breakeven",
+      label: "10Y 盈亏平衡",
+      value: `${fmtNumber(breakeven.value, 2)}${breakeven.unit ? ` ${breakeven.unit}` : ""}`,
+      z: breakeven.z,
+    });
+  }
+  return tags.filter((tag): tag is HeroTag => tag !== null).slice(0, 3);
+});
+
+// ── C. 关键读数（直连 /api/v2/cycle/readings，缺失只显示原因） ─────────
+interface KpiView {
+  id: string;
+  label: string;
+  value: string;
+  unit: string;
+  z: number | null;
+  zClass: string;
+  missing: boolean;
+  reason: string | null;
+  source: string | null;
+  evidence: string;
+  deltaText: string;
+  deltaClass: "up" | "down" | "flat";
+  spark: string;
+  sparkColor: string;
+  tooltip: string;
+}
+
+const readingItems = computed<CycleReadingCard[]>(() => readingsPoll.data.value?.items ?? []);
+const missingReadings = computed<number>(() => readingItems.value.filter((item) => item.missing).length);
+const readingsUnavailable = computed<boolean>(
+  () => !!readingsPoll.error.value && readingItems.value.length === 0,
+);
+const readingsErrorText = computed<string>(() => readingsPoll.error.value?.message ?? "请求失败");
+
+/** 卡片右上角日期：取全部读数里最新的 asof。 */
+const readingsAsof = computed<string>(() => {
+  const dates = readingItems.value
+    .map((item) => item.asof)
+    .filter((value): value is string => !!value);
+  if (!dates.length) return "";
+  return fmtDate(dates.reduce((a, b) => (a > b ? a : b)));
+});
+
+/** 30 点序列压进 120×24 折线；后端 spark 可能以小数或 ×100 基点存放，只做相对归一。 */
+function sparkPolyline(points: CycleReadingCard["spark"]): string {
+  const values = (points ?? []).map((point) => point.value).filter((value) => Number.isFinite(value));
+  if (values.length < 2) return "";
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const step = 120 / (values.length - 1);
+  return values
+    .map((value, index) => `${(index * step).toFixed(1)},${(22 - ((value - min) / span) * 20).toFixed(1)}`)
+    .join(" ");
+}
+
+function deltaTone(delta: number | null): "up" | "down" | "flat" {
+  if (delta === null || !Number.isFinite(delta) || delta === 0) return "flat";
+  return delta > 0 ? "up" : "down";
+}
+
+const kpis = computed<KpiView[]>(() =>
+  readingItems.value.map((item) => {
+    const digits = item.digits ?? 2;
+    const unit = item.unit ?? "";
+    const raw = item.value;
+    const usable = !item.missing && raw !== null && raw !== undefined && Number.isFinite(raw);
+    const delta = item.delta_1d === undefined || item.delta_1d === null ? null : item.delta_1d;
+    const z = item.z ?? null;
+    return {
+      id: item.id,
+      label: item.label,
+      value: usable ? fmtNumber(raw, digits) : "—",
+      unit,
+      z,
+      zClass: z === null ? "" : z > 0 ? "cyc-kpi-z--pos" : z < 0 ? "cyc-kpi-z--neg" : "",
+      missing: !usable,
+      reason: item.reason ?? null,
+      source: item.source ?? null,
+      evidence: item.evidence ?? "E2",
+      deltaText: usable && delta !== null ? `${fmtSigned(delta, digits)}${unit}` : "",
+      deltaClass: deltaTone(delta),
+      spark: usable ? sparkPolyline(item.spark) : "",
+      sparkColor: z !== null && z > 0 ? "var(--up)" : z !== null && z < 0 ? "var(--down)" : "var(--accent)",
+      tooltip: [item.source ?? "", item.asof ? `asof ${item.asof}` : "", item.reason ?? ""]
+        .filter(Boolean)
+        .join(" · "),
+    };
+  }),
+);
+
+// ── D. 今日预警 ──────────────────────────────────────────
+const triggeredAlerts = computed(() =>
+  alertList.value.filter((alert) => alert.triggered === true || alert.status === "triggered"),
+);
+const alertCount = computed<number>(() => alertsPayload.value?.triggered ?? triggeredAlerts.value.length);
+const topAlerts = computed<CycleAlert[]>(() => triggeredAlerts.value.slice(0, 3));
+
+function sevClass(severity: CycleAlert["severity"]): string {
+  return severity === "high" ? "high" : severity === "medium" ? "mid" : severity === "low" ? "low" : "unknown";
+}
+
+function sevLabel(severity: CycleAlert["severity"]): string {
+  return severity === "high" ? "高" : severity === "medium" ? "中" : severity === "low" ? "低" : "未知";
+}
+
+function alertValue(alert: CycleAlert): string {
+  if (alert.value === null || !Number.isFinite(alert.value)) return "—";
+  return `${fmtNumber(alert.value, 2)}${alert.unit ?? ""}`;
+}
+
+function alertThreshold(alert: CycleAlert): string {
+  return `阈值 ${alert.op} ${fmtNumber(alert.threshold, 2)}${alert.unit ?? ""}`;
+}
+
+function alertAsOf(alert: CycleAlert): string {
+  if (!alert.asof) return "—";
+  return alert.asof.length <= 10 ? fmtDate(alert.asof) : fmtTime(alert.asof, true);
+}
+
+// ── E. 历史类比 Top3 ─────────────────────────────────────
+const topAnalogs = computed<CycleAnalog[]>(() => (analogs.value?.analogs ?? []).slice(0, 3));
+const analogSlots = computed<Array<CycleAnalog | null>>(() => {
+  const slots: Array<CycleAnalog | null> = topAnalogs.value.slice(0, 3);
+  while (slots.length < 3) slots.push(null);
+  return slots;
+});
+
+// ── B. 五力仪表 ──────────────────────────────────────────
+interface ForceRow {
+  key: string;
+  name: string;
+  score: number | null;
+  basis: number;
+  proxy: string | null;
+  missing: boolean;
+}
+
+const oilReading = computed<CycleReading | null>(() => {
+  const direct = findReading(["oil_mom"]);
+  if (direct) return direct;
+  return (
+    indicators.value.find(
+      (reading) => reading.value !== null && (/oil/i.test(reading.id) || /原油|油价/.test(reading.name)),
+    ) ?? null
+  );
+});
+
+/** cycle.yaml 的 pct 类读数以小数存放（0.0085 = 0.85%），展示与换算时统一放大。 */
+function pctReading(reading: CycleReading | null): number | null {
+  if (!reading || reading.value === null || !Number.isFinite(reading.value)) return null;
+  const unit = (reading.unit ?? "").toLowerCase();
+  if (unit === "pct" && Math.abs(reading.value) <= 1) return reading.value * 100;
+  return reading.value;
+}
+
+const naturalShock = computed<{ score: number | null; basis: number; proxy: string | null }>(() => {
+  const oil = oilReading.value;
+  const pct = pctReading(oil);
+  if (pct === null) {
+    return { score: null, basis: 0, proxy: "代理口径 E1 · 原油价格读数缺失" };
+  }
+  const momentum = Math.max(-25, Math.min(25, pct));
+  const score = Math.round(Math.max(0, Math.min(100, 50 + momentum * 2)));
+  return { score, basis: 1, proxy: "代理口径 E1 · 50+2×原油60日动量（当前 " + `${fmtSigned(momentum, 1)}%）` };
+});
+
+const techRevolution = computed<{ score: number | null; basis: number; proxy: string | null }>(() => {
+  const ndx = indicators.value.find(
+    (reading) => reading.value !== null && /ndx|nasdaq|纳斯达克/i.test(`${reading.id} ${reading.name}`),
+  );
+  if (!ndx || ndx.value === null) {
+    return { score: null, basis: 0, proxy: "代理口径 E1 · NDX/SPX 相对动量读数缺失" };
+  }
+  return { score: null, basis: 1, proxy: "代理口径 E1 · NDX 相对 SPX 60 日动量" };
+});
+
+const forces = computed<ForceRow[]>(() => {
+  const dmi = compositeValue("DMI");
+  const ici = compositeValue("ICI");
+  const eci = compositeValue("ECI");
+  return [
+    { key: "DMI", name: "债务 / 货币", score: dmi, basis: readingsForScore("DMI"), proxy: null, missing: dmi === null },
+    { key: "ICI", name: "内部冲突", score: ici, basis: readingsForScore("ICI"), proxy: null, missing: ici === null },
+    { key: "ECI", name: "外部冲突", score: eci, basis: readingsForScore("ECI"), proxy: null, missing: eci === null },
+    {
+      key: "NAT",
+      name: "自然冲击",
+      score: naturalShock.value.score,
+      basis: naturalShock.value.basis,
+      proxy: naturalShock.value.proxy,
+      missing: naturalShock.value.score === null,
+    },
+    {
+      key: "TECH",
+      name: "技术革命",
+      score: techRevolution.value.score,
+      basis: techRevolution.value.basis,
+      proxy: techRevolution.value.proxy,
+      missing: true,
+    },
+  ];
+});
+
+const stressCount = computed<number>(() => forces.value.filter((force) => force.score !== null && force.score >= 75).length);
+
+// ── F. 保留：六分量罗盘（原功能）──────────────────────────
 const COMPASS: Array<{ key: CycleKey; label: string }> = [
   { key: "DMI", label: "债务货币" },
   { key: "ICI", label: "内部秩序" },
@@ -491,8 +1086,8 @@ const chartHasData = computed(() => {
 
 function cssVar(name: string, fallback: string): string {
   if (typeof window === "undefined") return fallback;
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return value || fallback;
+  const chosen = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return chosen || fallback;
 }
 
 const CHART_COLORS: Record<string, string> = {
@@ -505,13 +1100,39 @@ const CHART_COLORS: Record<string, string> = {
 const chartOption = computed<EChartsOption>(() => {
   const months = history.value?.months ?? [];
   const seriesData = history.value?.series ?? {};
-  const keys = ["DMI", "GROWTH", "INFLATION", "LIQUIDITY"].filter((key) => (seriesData[key] ?? []).some((v) => v !== null));
+  const keys = ["DMI", "GROWTH", "INFLATION", "LIQUIDITY"].filter((key) => (seriesData[key] ?? []).some((point) => point !== null));
   return {
     grid: { left: 42, right: 16, top: 26, bottom: 28 },
-    tooltip: { trigger: "axis", backgroundColor: cssVar("--surface-2", "#172030"), borderColor: cssVar("--border-strong", "#223047"), textStyle: { color: cssVar("--text", "#E6EDF5"), fontSize: 11 } },
-    legend: { top: 2, left: 8, itemWidth: 10, itemHeight: 2, textStyle: { color: cssVar("--muted", "#93A4B8"), fontSize: 10 } },
-    xAxis: { type: "category", data: months, axisLine: { lineStyle: { color: cssVar("--border", "rgba(148,163,184,.2)") } }, axisLabel: { color: cssVar("--dim", "#64748B"), fontSize: 9, interval: Math.max(0, Math.floor(months.length / 6) - 1) } },
-    yAxis: { type: "value", min: 0, max: 100, splitLine: { lineStyle: { color: cssVar("--border", "rgba(148,163,184,.12)") } }, axisLabel: { color: cssVar("--dim", "#64748B"), fontSize: 9 } },
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: cssVar("--surface-2", "#172030"),
+      borderColor: cssVar("--border-strong", "#223047"),
+      textStyle: { color: cssVar("--text", "#E6EDF5"), fontSize: 11 },
+    },
+    legend: {
+      top: 2,
+      left: 8,
+      itemWidth: 10,
+      itemHeight: 2,
+      textStyle: { color: cssVar("--muted", "#93A4B8"), fontSize: 10 },
+    },
+    xAxis: {
+      type: "category",
+      data: months,
+      axisLine: { lineStyle: { color: cssVar("--border", "rgba(148,163,184,.2)") } },
+      axisLabel: {
+        color: cssVar("--dim", "#64748B"),
+        fontSize: 9,
+        interval: Math.max(0, Math.floor(months.length / 6) - 1),
+      },
+    },
+    yAxis: {
+      type: "value",
+      min: 0,
+      max: 100,
+      splitLine: { lineStyle: { color: cssVar("--border", "rgba(148,163,184,.12)") } },
+      axisLabel: { color: cssVar("--dim", "#64748B"), fontSize: 9 },
+    },
     series: keys.map((key) => ({
       name: key,
       type: "line" as const,
@@ -531,6 +1152,8 @@ async function recalc(): Promise<void> {
   try {
     await runCycle();
     await refresh();
+    void readingsPoll.refresh();
+    void loadMeta();
   } finally {
     running.value = false;
   }
@@ -538,386 +1161,973 @@ async function recalc(): Promise<void> {
 </script>
 
 <style scoped>
-.cycle-main {
+/* ── 页面骨架 ───────────────────────────────────────── */
+.cyc-root {
+  overflow-x: hidden;
+}
+.cyc-card-sub {
+  font-size: 10px;
+  color: var(--dim);
+  font-weight: 500;
+}
+.cyc-inline-link {
+  text-decoration: none;
+  color: var(--accent);
+  font-weight: 500;
+}
+.cyc-caveat {
+  margin: 6px 2px 0;
+  font-size: 9.5px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+
+/* ── A. Hero ────────────────────────────────────────── */
+.cyc-hero {
+  position: relative;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 13px 16px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background:
+    radial-gradient(680px 200px at 92% -40%, var(--accent-weak), transparent 70%),
+    linear-gradient(115deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 52%),
+    var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.cyc-hero-main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.cyc-hero-eyebrow {
+  font-size: 9.5px;
+  letter-spacing: 1.4px;
+  color: var(--dim);
+  margin-bottom: 2px;
+}
+.cyc-hero-h1 {
+  margin: 0;
+  font-size: 21px;
+  line-height: 1.28;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--text);
+}
+.cyc-hero-sub {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.cyc-hero-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.cyc-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 23px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 10.5px;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.cyc-tag b {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--text);
+}
+.cyc-tag-z {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--dim);
+}
+.cyc-tag-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--warn);
+  flex: none;
+}
+.cyc-hero-badges {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: none;
+  width: 176px;
+  padding-top: 3px;
+}
+.cyc-meta-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: 25px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+  font-size: 9.5px;
+  color: var(--dim);
+}
+.cyc-meta-badge b {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ── B. row-2 ───────────────────────────────────────── */
+.cyc-row2 {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.25fr);
+  grid-template-columns: minmax(0, 560px) minmax(0, 1fr);
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+/* ── C. 关键读数 ────────────────────────────────────── */
+.cyc-section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 10px 2px 6px;
+  font-size: 10px;
+  color: var(--dim);
+}
+.cyc-section-label--retain {
+  margin-top: 16px;
+}
+.cyc-sl-title {
+  font-size: 10.5px;
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.cyc-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.cyc-kpi-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 80px;
+  padding: 7px 10px 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow);
+}
+.cyc-kpi-card:hover {
+  border-color: var(--border-strong);
+}
+.cyc-kpi-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.cyc-kpi-label {
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cyc-kpi-z {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+.cyc-kpi-z--pos {
+  color: var(--up);
+  border-color: color-mix(in srgb, var(--up) 32%, transparent);
+}
+.cyc-kpi-z--neg {
+  color: var(--down);
+  border-color: color-mix(in srgb, var(--down) 32%, transparent);
+}
+.cyc-kpi-val {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  margin: 1px 0 2px;
+  min-height: 26px;
+}
+.cyc-kpi-val b {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+  line-height: 1.1;
+}
+.cyc-kpi-unit {
+  font-size: 10px;
+  color: var(--muted);
+}
+.cyc-kpi-miss {
+  margin-left: 4px;
+  font-size: 8.5px;
+  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 34%, transparent);
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 14px;
+}
+.cyc-kpi-chg {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+.cyc-kpi-chg--up {
+  color: var(--up);
+}
+.cyc-kpi-chg--down {
+  color: var(--down);
+}
+.cyc-kpi-chg--flat {
+  color: var(--dim);
+}
+.cyc-kpi-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 22px;
+}
+.cyc-spark {
+  flex: none;
+  width: 116px;
+  height: 22px;
+  overflow: visible;
+}
+.cyc-kpi-note {
+  font-size: 8.5px;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cyc-readings-fallback {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.cyc-readings-fallback-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.cyc-kpi-ev {
+  flex: none;
+  height: 15px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--dim);
+  font-size: 8px;
+  line-height: 13px;
+  letter-spacing: 0.2px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.cyc-kpi-ev:hover {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+
+/* ── D. 今日预警 ────────────────────────────────────── */
+.cyc-alerts {
+  margin-top: 10px;
+}
+.cyc-alert-list {
+  display: flex;
+  flex-direction: column;
+}
+.cyc-alert-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 112px 72px 58px;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 12px;
+  border-top: 1px dashed var(--border);
+  min-height: 49px;
+}
+.cyc-alert-row:first-child {
+  border-top: 0;
+}
+.cyc-sev {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cyc-sev i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.cyc-sev--high {
+  color: var(--up);
+}
+.cyc-sev--mid {
+  color: var(--warn);
+}
+.cyc-sev--low {
+  color: #d8b24a;
+}
+.cyc-sev--unknown {
+  color: var(--dim);
+}
+.cyc-alert-main {
+  min-width: 0;
+}
+.cyc-alert-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.cyc-alert-cond {
+  font-size: 9.8px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cyc-alert-val {
+  text-align: right;
+  min-width: 0;
+}
+.cyc-alert-val b {
+  display: block;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cyc-alert-val span {
+  display: block;
+  font-family: var(--mono);
+  font-size: 8.8px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cyc-alert-meta {
+  text-align: right;
+  font-size: 9px;
+  color: var(--dim);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.cyc-alert-src {
+  justify-self: end;
+  text-decoration: none;
+}
+
+/* ── E. 历史类比 ────────────────────────────────────── */
+.cyc-analogy-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.cyc-analogy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: 62px;
+  padding: 8px 12px;
+  text-align: left;
+  text-decoration: none;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow);
+  transition: border-color 0.12s, background 0.12s, transform 0.12s;
+}
+.cyc-analogy:hover {
+  border-color: var(--accent-line);
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+  transform: translateY(-1px);
+}
+.cyc-analogy--empty {
+  cursor: default;
+  border-style: dashed;
+  opacity: 0.72;
+}
+.cyc-analogy--empty:hover {
+  border-color: var(--border);
+  background: var(--surface);
+  transform: none;
+}
+.cyc-analogy-name {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.cyc-analogy-sub {
+  font-size: 9.5px;
+  color: var(--dim);
+  margin-top: 2px;
+}
+.cyc-analogy-sim {
+  text-align: right;
+  flex: none;
+}
+.cyc-analogy-sim b {
+  display: block;
+  font-family: var(--mono);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--accent);
+  line-height: 1.1;
+}
+.cyc-analogy-sim span {
+  font-size: 8.5px;
+  color: var(--dim);
+}
+
+/* ── F. 保留区块 ────────────────────────────────────── */
+.cyc-ov-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.cyc-ov-card {
+  padding: 9px 11px 8px;
+  min-height: 84px;
+}
+.cyc-ov-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cyc-ov-icon {
+  display: inline-flex;
+  color: var(--dim);
+  flex: none;
+}
+.cyc-ov-icon svg {
+  width: 14px;
+  height: 14px;
+}
+.cyc-ov-label {
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 auto;
+}
+.cyc-ov-value {
+  margin-top: 5px;
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  line-height: 1.1;
+}
+.cyc-ov-value small {
+  margin-left: 4px;
+  font-family: var(--sans);
+  font-size: 9.5px;
+  color: var(--dim);
+  font-weight: 500;
+}
+.cyc-ov-sub {
+  margin-top: 4px;
+  font-size: 9px;
+  color: var(--dim);
+  line-height: 1.45;
+}
+.cyc-retain-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
   margin-top: 10px;
 }
-.compass-body {
+.cyc-six-body {
   display: grid;
-  grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
   gap: 12px;
   align-items: center;
 }
-.compass {
+.cyc-six-svg {
   width: 100%;
-  max-height: 250px;
+  max-height: 240px;
 }
-.ring {
+.cyc-six-ring {
   fill: none;
   stroke: color-mix(in srgb, var(--muted) 18%, transparent);
   stroke-dasharray: 2 3;
 }
-.axis-line {
-  stroke: color-mix(in srgb, var(--muted) 16%, transparent);
+.cyc-six-axis {
+  stroke: color-mix(in srgb, var(--muted) 22%, transparent);
 }
-.compass-shape {
-  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+.cyc-six-shape {
+  fill: color-mix(in srgb, var(--accent) 20%, transparent);
   stroke: var(--accent);
   stroke-width: 1.4;
 }
-.compass-dot {
+.cyc-six-dot {
   fill: var(--accent);
 }
-.compass-label {
+.cyc-six-label {
+  font-size: 8.5px;
   fill: var(--muted);
-  font-size: 9.5px;
+  font-family: var(--sans);
 }
-.compass-center {
+.cyc-six-center {
+  font-size: 11px;
   fill: var(--text);
-  font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
 }
-.compass-center-sub {
+.cyc-six-center-sub {
+  font-size: 8.5px;
   fill: var(--dim);
-  font-size: 9.5px;
   font-family: var(--mono);
 }
-.compass-legend {
-  display: grid;
-  gap: 6px;
+.cyc-six-legend {
+  list-style: none;
   margin: 0;
   padding: 0;
-  list-style: none;
-}
-.legend-row {
-  display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) 34px 30px;
-  gap: 7px;
-  align-items: center;
-  font-size: 10.5px;
-  color: var(--muted);
-}
-.legend-name {
-  white-space: nowrap;
-}
-.legend-bar {
-  height: 5px;
-  border-radius: 999px;
-  background: var(--surface-3);
-  overflow: hidden;
-}
-.legend-bar i {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, transparent), var(--accent));
-}
-.legend-row b {
-  text-align: right;
-  color: var(--text);
-  font-size: 11px;
-}
-.legend-row em {
-  text-align: right;
-  color: var(--dim);
-  font-size: 9px;
-  font-style: normal;
-}
-.layer-list {
-  display: grid;
-  gap: 10px;
-}
-.layer-row {
-  border-bottom: 1px dashed var(--border);
-  padding-bottom: 8px;
-}
-.layer-row:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
-}
-.layer-head {
   display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.cyc-six-legend-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 34px 32px;
+  gap: 6px;
   align-items: center;
-  gap: 7px;
-}
-.layer-name {
-  font-size: 11.5px;
-  font-weight: 650;
-  color: var(--text);
-  white-space: nowrap;
-}
-.layer-val {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--muted);
-}
-.layer-val small {
-  margin-left: 2px;
   font-size: 9px;
-  color: var(--dim);
+  color: var(--muted);
 }
-.position-bar {
-  height: 4px;
-  margin: 5px 0 4px;
-  border-radius: 999px;
-  background: var(--surface-3);
+.cyc-six-legend-name {
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
-.position-bar i {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--warn) 45%, transparent), var(--warn));
-}
-.layer-meaning {
-  margin: 2px 0 0;
-  font-size: 10.5px;
-  color: var(--muted);
-  line-height: 1.5;
-}
-.layer-meta {
-  margin: 2px 0 0;
-  font-size: 9.5px;
-  color: var(--dim);
-  line-height: 1.45;
-}
-.history-card {
-  margin-top: 10px;
-}
-.cycle-bottom {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 10px;
-}
-.scenario-list {
-  display: grid;
-  gap: 8px;
-}
-.scenario-row {
-  border-bottom: 1px dashed var(--border);
-  padding-bottom: 7px;
-}
-.scenario-row:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
-}
-.scenario-head {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-.scenario-id {
-  font-size: 9.5px;
-  color: var(--accent);
-}
-.scenario-name {
-  font-size: 11px;
-  color: var(--text);
-}
-.scenario-prob {
-  margin-left: auto;
-  font-size: 12.5px;
-  color: var(--text);
-}
-.scenario-desc,
-.scenario-assets {
-  margin: 2px 0 0;
-  font-size: 10px;
-  color: var(--muted);
-  line-height: 1.45;
-}
-.scenario-assets {
-  color: var(--dim);
-}
-.analog-list {
-  display: grid;
-  gap: 6px;
-  margin: 0 0 6px;
-  padding: 0;
-  list-style: none;
-}
-.analog-row {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) 36px auto;
-  gap: 8px;
-  align-items: center;
-  font-size: 10.5px;
-}
-.analog-month {
-  color: var(--accent);
-  font-size: 10px;
-}
-.analog-sim {
+.cyc-six-legend-bar {
   height: 5px;
-  border-radius: 999px;
+  border-radius: 99px;
   background: var(--surface-3);
   overflow: hidden;
 }
-.analog-sim i {
+.cyc-six-legend-bar i {
   display: block;
   height: 100%;
-  border-radius: 999px;
+  border-radius: inherit;
   background: var(--accent);
 }
-.analog-row b {
+.cyc-six-legend-row b {
+  font-size: 9px;
   text-align: right;
   color: var(--text);
-  font-size: 11px;
 }
-.analog-state {
+.cyc-six-legend-row em {
+  font-size: 8px;
   color: var(--dim);
-  font-size: 9.5px;
-  white-space: nowrap;
+  font-style: normal;
+  text-align: right;
 }
-.sustain-head {
+.cyc-layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cyc-layer-row {
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--border);
+}
+.cyc-layer-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.cyc-layer-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.cyc-layer-name {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.cyc-layer-val {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+.cyc-layer-val small {
+  margin-left: 2px;
+  font-size: 8.5px;
+  color: var(--dim);
+}
+.cyc-layer-meaning {
+  margin: 5px 0 0;
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.cyc-layer-meta {
+  margin: 3px 0 0;
+  font-size: 9px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+.cyc-bar {
+  margin-top: 6px;
+  height: 5px;
+  border-radius: 99px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.cyc-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 40%, var(--warn)));
+}
+.cyc-history-card {
+  margin-top: 10px;
+}
+.cyc-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+}
+.cyc-scenario-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cyc-scenario-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.cyc-scenario-id {
+  font-size: 9px;
+  color: var(--dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.cyc-scenario-name {
+  font-size: 11px;
+  font-weight: 600;
+}
+.cyc-scenario-prob {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--accent);
+}
+.cyc-scenario-desc {
+  margin: 5px 0 0;
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.cyc-scenario-assets {
+  margin: 3px 0 0;
+  font-size: 9px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+.cyc-sustain-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 4px;
+  flex-wrap: wrap;
 }
-.sustain-risk {
-  font-size: 10px;
-  color: var(--warn);
+.cyc-sustain-risk {
+  font-size: 9.5px;
+  color: var(--muted);
 }
-.metric-grid {
+.cyc-metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
-  margin: 8px 0 6px;
+  margin-top: 8px;
 }
-.metric {
-  padding: 6px 8px;
+.cyc-metric {
+  padding: 7px 9px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
 }
-.metric-label {
+.cyc-metric-label {
   display: block;
-  font-size: 9.5px;
+  font-size: 9px;
   color: var(--dim);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.metric b {
+.cyc-metric b {
+  display: block;
+  margin-top: 3px;
   font-size: 14px;
   color: var(--text);
 }
-.metric b small {
+.cyc-metric b small {
   margin-left: 2px;
+  font-size: 8.5px;
+  color: var(--dim);
+}
+.cyc-stage-row {
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px dashed var(--border);
+}
+.cyc-stage-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.cyc-stage-name {
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.cyc-stage-conf {
+  margin-left: auto;
   font-size: 9px;
   color: var(--dim);
 }
-.stage-row {
-  border-bottom: 1px dashed var(--border);
-  padding-bottom: 7px;
-  margin-bottom: 7px;
+.cyc-power-block {
+  margin-top: 4px;
 }
-.stage-head {
+.cyc-power-head {
   display: flex;
   align-items: center;
   gap: 7px;
+  flex-wrap: wrap;
 }
-.stage-name {
-  font-size: 11px;
-  font-weight: 650;
-  color: var(--text);
-}
-.stage-conf {
-  margin-left: auto;
-  font-size: 9.5px;
-  color: var(--dim);
-}
-.power-block {
-  margin-top: 2px;
-}
-.power-head {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  margin-bottom: 5px;
-}
-.power-head b {
+.cyc-power-head b {
   font-size: 13px;
-  color: var(--text);
 }
-.power-row {
+.cyc-power-row {
   display: grid;
-  grid-template-columns: 62px minmax(0, 1fr) 30px 30px;
-  gap: 7px;
+  grid-template-columns: 76px minmax(0, 1fr) 34px 32px;
+  gap: 6px;
   align-items: center;
-  font-size: 10px;
+  margin-top: 5px;
+  font-size: 9px;
   color: var(--muted);
-  padding: 2px 0;
 }
-.power-bar {
-  height: 4px;
-  border-radius: 999px;
+.cyc-power-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cyc-power-bar {
+  height: 5px;
+  border-radius: 99px;
   background: var(--surface-3);
   overflow: hidden;
 }
-.power-bar i {
+.cyc-power-bar i {
   display: block;
   height: 100%;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 70%, transparent);
+  border-radius: inherit;
+  background: var(--warn);
 }
-.power-row b {
+.cyc-power-row b {
+  font-size: 9px;
   text-align: right;
+  color: var(--text);
+}
+.cyc-power-row em {
+  font-size: 8px;
+  color: var(--dim);
+  font-style: normal;
+  text-align: right;
+}
+.cyc-analog-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.cyc-analog-line {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 34px minmax(0, 1.15fr);
+  gap: 7px;
+  align-items: center;
+  font-size: 9px;
+  color: var(--muted);
+}
+.cyc-analog-month {
+  font-size: 9px;
+}
+.cyc-analog-sim-bar {
+  height: 5px;
+  border-radius: 99px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.cyc-analog-sim-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.cyc-analog-line b {
+  font-size: 9.5px;
+  text-align: right;
+  color: var(--text);
+}
+.cyc-analog-state {
+  font-size: 8.5px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cyc-degraded-box {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--warn) 8%, var(--surface));
+  font-size: 10px;
+  color: var(--muted);
+}
+.cyc-degraded-box .ic {
+  color: var(--warn);
+  flex: none;
+}
+.cyc-degraded-box b {
   color: var(--text);
   font-size: 10.5px;
 }
-.power-row em {
-  text-align: right;
-  font-style: normal;
-  font-size: 9px;
+.cyc-degraded-reason {
+  margin-top: 3px;
+  font-size: 9.5px;
   color: var(--dim);
 }
-.link {
-  color: var(--accent);
-  text-decoration: none;
-}
-.degraded-box {
+.cyc-foot {
   display: flex;
-  gap: 8px;
-  margin-top: 10px;
-  padding: 9px 12px;
-  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--warn) 9%, transparent);
-  font-size: 10.5px;
-  color: var(--muted);
-}
-.degraded-box .ic {
-  width: 14px;
-  height: 14px;
-  color: var(--warn);
-}
-.degraded-reason {
-  margin-top: 2px;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+  padding: 8px 2px 4px;
+  border-top: 1px dashed var(--border);
+  font-size: 8.5px;
   color: var(--dim);
-  font-size: 10px;
 }
 .spin {
-  animation: spin 0.9s linear infinite;
+  animation: cyc-spin 1s linear infinite;
 }
-@keyframes spin {
+@keyframes cyc-spin {
   to {
     transform: rotate(360deg);
   }
 }
-@media (max-width: 1180px) {
-  .cycle-main,
-  .cycle-bottom {
+
+/* ── 响应式 ─────────────────────────────────────────── */
+@media (max-width: 1279px) {
+  .cyc-row2 {
     grid-template-columns: minmax(0, 1fr);
   }
-  .compass-body {
-    grid-template-columns: minmax(0, 1fr);
-    justify-items: center;
+  .cyc-ov-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .compass-legend {
+  .cyc-retain-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cyc-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 1023px) {
+  .cyc-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cyc-hero {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .cyc-hero-badges {
+    flex-direction: row;
+    flex-wrap: wrap;
     width: 100%;
+    padding-top: 0;
+  }
+  .cyc-meta-badge {
+    flex: 1 1 140px;
+    justify-content: space-between;
+  }
+  .cyc-alert-row {
+    grid-template-columns: 40px minmax(0, 1fr) 100px 66px;
+  }
+  .cyc-alert-src {
+    display: none;
+  }
+  .cyc-six-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cyc-six-svg {
+    max-height: 220px;
+  }
+}
+@media (max-width: 759px) {
+  .cyc-kpi-grid,
+  .cyc-ov-grid,
+  .cyc-analogy-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cyc-alert-row {
+    grid-template-columns: 40px minmax(0, 1fr) 100px;
+  }
+  .cyc-alert-meta {
+    display: none;
+  }
+  .cyc-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cyc-hero-h1 {
+    font-size: 18px;
   }
 }
 </style>

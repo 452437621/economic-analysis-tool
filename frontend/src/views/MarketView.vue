@@ -72,6 +72,9 @@
         <span class="card-sub">共 {{ filtered.length }} 个品种 · {{ groups.length }} 个类别 · 点击行查看历史走势</span>
         <div class="card-actions">
           <span class="badge badge--accent">按 {{ sortLabel }} {{ sortDir === "desc" ? "降序" : "升序" }}</span>
+          <button class="btn btn--ghost btn--sm" type="button" :disabled="!filtered.length" @click="exportCsv">
+            <svg class="ic"><use href="#i-download" /></svg>导出 CSV
+          </button>
         </div>
       </div>
       <div class="table-wrap">
@@ -165,8 +168,16 @@
                 <td>
                   <span class="tm" :title="fmtDateTime(item.ts)">{{ fmtTime(item.ts, true) }}</span>
                 </td>
-                <td class="num ev-cell" title="暂无关联证据" @click.stop>
-                  <span class="dim">—</span>
+                <td class="num ev-cell" @click.stop>
+                  <button
+                    class="btn btn--ghost btn--sm"
+                    type="button"
+                    :disabled="!evidenceTitle(item)"
+                    :title="evidenceTitle(item)"
+                    @click="openInstrument(item)"
+                  >
+                    {{ item.source ? "E0" : "—" }}
+                  </button>
                 </td>
               </tr>
             </template>
@@ -412,6 +423,41 @@ function changeAbs(item: SnapshotItem): number | null {
   if (item.price === null || item.price === undefined) return null;
   if (item.prev_close === null || item.prev_close === undefined) return null;
   return item.price - item.prev_close;
+}
+
+/** 行情证据：E0 = 原始观测（本地库 market_bars / quotes），来源与采集时点写入 title */
+function evidenceTitle(item: SnapshotItem): string {
+  if (!item.source) return "";
+  const asof = item.ts ? fmtDateTime(item.ts) : "—";
+  return `E0 原始观测 · 来源 ${item.source} · 采集时点 ${asof} · 点击查看历史走势与数据来源`;
+}
+
+/** 导出当前筛选结果为 CSV（UTF-8 BOM，Excel 直接打开） */
+function exportCsv(): void {
+  const rows = filtered.value;
+  if (!rows.length) return;
+  const header = ["品种", "名称", "分类", "最新", "单位", "涨跌", "涨跌幅%", "数据源", "采集时点"];
+  const lines = rows.map((item) => [
+    item.symbol,
+    item.name,
+    categoryOf.get(item.symbol) ?? "",
+    item.price ?? "",
+    unitOf(item),
+    changeAbsText(item),
+    item.change_pct === null || item.change_pct === undefined ? "" : String(item.change_pct),
+    item.source ?? "",
+    item.ts ? fmtDateTime(item.ts) : "",
+  ]);
+  const escape = (value: string): string => (/[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
+  const csv = [header, ...lines].map((row) => row.map((cell) => escape(String(cell))).join(",")).join("\r\n");
+  const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const stamp = fmtDate(new Date().toISOString()).replace(/[^0-9]/g, "");
+  link.href = url;
+  link.download = `market-${stamp}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function changeAbsText(item: SnapshotItem): string {

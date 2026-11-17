@@ -76,6 +76,36 @@
       </article>
     </div>
 
+
+    <section class="card" style="margin-top: 12px">
+      <div class="card-head">
+        <span class="card-title">数据健康 · 序列覆盖</span>
+        <span class="card-sub">数据时点 · 整体健康度 · 各域序列覆盖（缺失的序列在研判中会显式降级）</span>
+        <div class="card-actions">
+          <span class="badge badge--sm" :class="coveragePct >= 90 ? 'badge--live' : coveragePct >= 70 ? 'badge--warn' : 'badge--down'">
+            健康 {{ coverage ? coveragePct.toFixed(1) + "%" : "—" }}
+          </span>
+        </div>
+      </div>
+      <div class="card-body coverage-body">
+        <div class="cov-head">
+          <div class="cov-main">
+            <span class="cov-label">覆盖序列</span>
+            <span class="cov-value mono">{{ coverage?.series_covered ?? "—" }} / {{ coverage?.series_total ?? "—" }}</span>
+          </div>
+          <div class="cov-meta">
+            <span>序列覆盖 <b class="mono">{{ coverage?.series_covered ?? "—" }}/{{ coverage?.series_total ?? "—" }}</b></span>
+            <span>作业健康 <b class="mono">{{ coverage?.jobs_ok ?? "—" }}/{{ coverage?.jobs_total ?? "—" }}</b></span>
+            <span>最近同步 <b class="mono">{{ coverage?.last_sync ? fmtDateTime(coverage.last_sync) : "—" }}</b></span>
+            <span>计算时间 <b class="mono">{{ coverage?.as_of ? fmtDateTime(coverage.as_of) : "—" }}</b></span>
+          </div>
+        </div>
+        <div class="cov-bar"><i :style="{ width: coveragePct + '%' }"></i></div>
+        <div class="cov-note">{{ coverage?.method ?? "健康度 = 60% × 序列覆盖率 + 40% × 作业健康率（最新观测 45 天内视为覆盖）" }}</div>
+        <EmptyState v-if="!coverage" text="覆盖率接口未就绪" hint="等待 /api/system/coverage 返回数据。" />
+      </div>
+    </section>
+
     <section class="card" style="margin-top: 12px">
       <div class="card-head">
         <span class="card-title">任务调度</span>
@@ -256,7 +286,10 @@ import {
   getJobs,
   getQuality,
   getSources,
+  getSystemCoverage,
 } from "@/api/endpoints";
+import type { CoverageResponse } from "@/api/types";
+import { getJson } from "@/api/client";
 import { useHealthStore } from "@/stores/health";
 
 const health = useHealthStore();
@@ -285,6 +318,11 @@ const {
   loading: acceptanceLoading,
   refresh: refreshAcceptance,
 } = usePolling(getAcceptance, { interval: 60000 });
+
+const {
+  data: coverage,
+} = usePolling<CoverageResponse>(() => getSystemCoverage(), { interval: 60000 });
+const coveragePct = computed(() => coverage.value?.data_quality_pct ?? 0);
 
 const jobs = computed(() => jobsData.value?.data ?? []);
 const failedJobs = computed(() => jobs.value.filter((job) => job.last_status === "error").length);

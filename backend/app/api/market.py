@@ -223,16 +223,15 @@ def position_members(
     }
 
 
-@router.get("/calendar")
-def calendar(
-    days: int = Query(14, ge=1, le=60),
-    limit: int = Query(100, ge=1, le=300),
-    offset: int = Query(0, ge=0),
-    country: str | None = Query(None, max_length=20),
-    category: str | None = Query(None, max_length=40),
-    importance_min: int | None = Query(None, ge=1, le=3),
-    session: Session = Depends(get_session),
-) -> dict:
+def _calendar_query(
+    session: Session,
+    days: int,
+    limit: int,
+    offset: int,
+    country: str | None,
+    category: str | None,
+    importance_min: int | None,
+) -> tuple[list[EconomicEvent], int]:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     conditions = [
         EconomicEvent.ts_utc >= now - timedelta(hours=6),
@@ -245,26 +244,81 @@ def calendar(
     if importance_min is not None:
         conditions.append(EconomicEvent.importance >= importance_min)
     total = int(session.scalar(select(func.count()).select_from(EconomicEvent).where(*conditions)) or 0)
-    rows = session.scalars(
-        select(EconomicEvent)
-        .where(*conditions)
-        .order_by(EconomicEvent.ts_utc.asc())
-        .offset(offset)
-        .limit(limit)
-    ).all()
+    rows = list(
+        session.scalars(
+            select(EconomicEvent)
+            .where(*conditions)
+            .order_by(EconomicEvent.ts_utc.asc())
+            .offset(offset)
+            .limit(limit)
+        ).all()
+    )
+    return rows, total
+
+
+def _calendar_item(row: EconomicEvent) -> dict:
     return {
-        "data": [
-            {
-                "id": row.id,
-                "ts": _iso(row.ts_utc),
-                "name": row.name,
-                "category": row.category,
-                "country": row.country,
-                "importance": row.importance,
-            }
-            for row in rows
-        ],
+        "id": row.id,
+        "ts": _iso(row.ts_utc),
+        "name": row.name,
+        "category": row.category,
+        "country": row.country,
+        "importance": row.importance,
+        "forecast": row.forecast,
+        "previous": row.previous,
+        "actual": row.actual,
+        "unit": row.unit,
+    }
+
+
+@router.get("/calendar")
+def calendar(
+    days: int = Query(14, ge=1, le=60),
+    limit: int = Query(100, ge=1, le=300),
+    offset: int = Query(0, ge=0),
+    country: str | None = Query(None, max_length=20),
+    category: str | None = Query(None, max_length=40),
+    importance_min: int | None = Query(None, ge=1, le=3),
+    session: Session = Depends(get_session),
+) -> dict:
+    rows, total = _calendar_query(session, days, limit, offset, country, category, importance_min)
+    return {
+        "data": [_calendar_item(row) for row in rows],
         "meta": {"count": len(rows), "total": total, "days": days, "offset": offset},
+    }
+
+
+@router.get("/market/calendar")
+def market_calendar(
+    days: int = Query(14, ge=1, le=60),
+    limit: int = Query(100, ge=1, le=300),
+    offset: int = Query(0, ge=0),
+    country: str | None = Query(None, max_length=20),
+    category: str | None = Query(None, max_length=40),
+    importance_min: int | None = Query(None, ge=1, le=3),
+    session: Session = Depends(get_session),
+) -> dict:
+    """V2 market calendar with consensus (forecast), previous and actual values."""
+    rows, total = _calendar_query(session, days, limit, offset, country, category, importance_min)
+    return {
+        "items": [_calendar_item(row) for row in rows],
+        "total": total,
+        "count": len(rows),
+        "days": days,
+        "offset": offset,
+    }
+
+
+@router.get("/market/calendar/{event_id}")
+def market_calendar_event(event_id: str, session: Session = Depends(get_session)) -> dict:
+    """Single economic-calendar event with consensus/previous/actual detail."""
+    row = session.get(EconomicEvent, event_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="event not found")
+    return {
+        **_calendar_item(row),
+        "source": row.source_code,
+        "created_at": _iso(row.created_at),
     }
 
 

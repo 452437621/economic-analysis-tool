@@ -204,6 +204,22 @@
         </div>
 
         <div class="card aside-card">
+          <div class="aside-title">关联证据 · 本期引用</div>
+          <button
+            v-for="ref in evidenceRefs"
+            :key="ref.id"
+            class="aside-link aside-link--btn"
+            type="button"
+            :title="`打开证据原文 · ${ref.label}`"
+            @click="evidence.show(ref.id)"
+          >
+            <span class="mono evidence-ref">{{ ref.id.slice(0, 8) }}</span>
+            <span class="dim">{{ ref.label }}</span>
+          </button>
+          <div v-if="!evidenceRefs.length" class="aside-empty">本期未引用可追溯证据</div>
+        </div>
+
+        <div class="card aside-card">
           <div class="aside-title">导出与分享</div>
           <div class="export-row">
             <a class="btn btn--sm" :href="briefMarkdownUrl(brief.id)" download>
@@ -359,6 +375,27 @@ const brief = ref<Brief | null>(null);
 const loading = ref(false);
 const error = ref<Error | null>(null);
 const safeHtml = ref("");
+
+/** 关联证据：优先读 brief.evidence_ids（后端 A10 扩展），否则从正文 .ev-link[data-doc] 抽取 */
+const evidenceRefs = computed<Array<{ id: string; label: string }>>(() => {
+  const fromBrief = (brief.value as unknown as { evidence_ids?: string[] } | null)?.evidence_ids ?? [];
+  const seen = new Map<string, string>();
+  for (const id of fromBrief) {
+    if (typeof id === "string" && id && !seen.has(id)) seen.set(id, "简报声明");
+  }
+  if (safeHtml.value) {
+    const doc = new DOMParser().parseFromString(safeHtml.value, "text/html");
+    for (const node of Array.from(doc.querySelectorAll<HTMLElement>(".ev-link[data-doc]"))) {
+      const id = node.dataset.doc ?? "";
+      if (!id) continue;
+      const label = (node.textContent ?? "").trim().replace(/\s+/g, " ");
+      if (!seen.has(id)) seen.set(id, label ? label.slice(0, 18) : "正文引用");
+    }
+  }
+  return Array.from(seen.entries())
+    .slice(0, 8)
+    .map(([id, label]) => ({ id, label }));
+});
 const rendered = ref<RenderedBrief | null>(null);
 const activeHeadingId = ref("");
 const articleRef = ref<HTMLElement | null>(null);

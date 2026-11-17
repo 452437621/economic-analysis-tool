@@ -115,6 +115,16 @@ def _ensure(session: Session) -> None:
         run_timeline(session)
 
 
+def _era_payload(era: dict) -> dict:
+    """A8: merge stage fields with defaults so the API contract is stable."""
+    return {
+        **era,
+        "golden_age": era.get("golden_age"),
+        "turning": era.get("turning"),
+        "current_stage": era.get("current_stage") or "",
+    }
+
+
 @router.get("/overview")
 def overview(session: Session = Depends(get_session)) -> dict:
     _ensure(session)
@@ -127,7 +137,7 @@ def overview(session: Session = Depends(get_session)) -> dict:
         "degraded": bool(run.degraded) if run else False,
         "degraded_reasons": run.degraded_reasons if run else [],
         "counts": _counts(session),
-        "eras": dataset.ERAS,
+        "eras": [_era_payload(era) for era in dataset.ERAS],
         "events": [_event_payload(row) for row in session.scalars(select(TimelineEvent).order_by(TimelineEvent.year, TimelineEvent.title)).all()],
         "powers": {
             "gdp": _power_rows(session, "gdp_share"),
@@ -182,7 +192,8 @@ def events(
 
 @router.get("/eras")
 def eras() -> dict:
-    return {"items": dataset.ERAS, "total": len(dataset.ERAS)}
+    items = [_era_payload(era) for era in dataset.ERAS]
+    return {"items": items, "total": len(items)}
 
 
 @router.get("/powers")

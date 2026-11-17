@@ -1,254 +1,195 @@
 <template>
-  <div class="view active">
-    <div class="page-head">
-      <div>
-        <div class="page-eyebrow">研究分析 · 预警台 · W1–W12</div>
-        <h1 class="page-h1">
-          预警台
-          <span class="page-sub">规则命中不是预测：每条阈值都附带原因与失效条件，触发后应人工复核</span>
-        </h1>
+  <div class="view active alr-view">
+    <header class="page-head">
+      <div class="alr-head">
+        <div class="page-eyebrow">研究分析 · 预警台</div>
+        <h1 class="page-h1">预警台 · 规则何时会被触发</h1>
+        <div class="page-sub">{{ ruleTotal }} 条可证伪规则 · 缺失指标记为未知，不默认未触发</div>
       </div>
-      <div class="page-actions">
-        <span v-if="payload?.asof" class="badge badge--sm">数据日 {{ fmtDate(payload.asof) }}</span>
-        <span v-if="alerts" class="badge badge--sm" :class="alerts.triggered ? 'badge--up' : 'badge--live'">
-          已触发 {{ alerts.triggered }} / {{ alerts.total }}
+      <div class="page-actions alr-actions">
+        <span
+          v-if="stateError && payload"
+          class="badge badge--sm badge--warn"
+          title="最近一次轮询失败，当前展示上一次成功获取的数据"
+        >
+          数据可能过期
         </span>
-        <button class="btn btn--sm" type="button" :disabled="running" @click="recalc">
+        <span class="badge badge--sm alr-badge" :title="`数据日 ${dataDate}`">
+          <svg class="ic"><use href="#i-calendar" /></svg>
+          数据日 {{ dataDate }}
+        </span>
+        <span
+          class="badge badge--sm"
+          :class="triggeredCount > 0 ? 'badge--up' : 'badge--live'"
+          :title="`已触发 ${triggeredCount} 条 / 共 ${ruleTotal} 条规则`"
+        >
+          已触发 {{ triggeredCount }}/{{ ruleTotal }}
+        </span>
+        <span class="badge badge--sm" :title="`最近运行时间 ${runLabel}`">
+          <svg class="ic"><use href="#i-clock" /></svg>
+          运行 {{ runLabel }}
+        </span>
+        <button class="btn btn--sm btn--primary" type="button" :disabled="running" @click="recalc">
           <svg class="ic" :class="{ spin: running }"><use href="#i-refresh" /></svg>
           {{ running ? "重算中…" : "立即重算" }}
         </button>
       </div>
-    </div>
+    </header>
 
-    <SkeletonBlock v-if="!payload && loading" :rows="6" :cells="3" :height="16" />
-    <ErrorState v-else-if="!payload && error" :error="error" @retry="refresh" />
+    <SkeletonBlock v-if="!payload && stateLoading" :rows="8" :cells="4" :height="16" />
+    <ErrorState v-else-if="!payload && stateError" :error="stateError" @retry="refresh" />
+    <EmptyState
+      v-else-if="!alerts"
+      text="预警数据不可用"
+      hint="本轮 cycle state 未返回 alerts 段，请稍后重试或检查后端运行状态。"
+    />
 
-    <template v-else-if="alerts">
-      <div class="kpi-grid">
-        <article class="card kpi">
+    <template v-else>
+      <div class="kpi-grid alr-summary">
+        <div class="card kpi alr-sum alr-sum--high">
           <div class="kpi-top">
             <span class="kpi-icon"><svg class="ic"><use href="#i-alert" /></svg></span>
-            <span class="kpi-label">高风险（≥ 警报线）</span>
+            <span class="kpi-label">高危触发</span>
+            <span class="kpi-flag badge badge--sm badge--up">{{ share(counts.high) }}</span>
           </div>
-          <div class="kpi-value">{{ alerts.counts.high }}<small>条触发</small></div>
-          <div class="kpi-sub">阈值见下方规则表；高严重度规则优先复核</div>
-        </article>
-        <article class="card kpi">
+          <div class="kpi-value">{{ counts.high }}<small>条触发</small></div>
+          <div class="kpi-sub">本轮快照 · 触发即需当日复核</div>
+        </div>
+
+        <div class="card kpi alr-sum alr-sum--medium">
           <div class="kpi-top">
             <span class="kpi-icon"><svg class="ic"><use href="#i-bell" /></svg></span>
-            <span class="kpi-label">中风险（≥ 警戒线）</span>
+            <span class="kpi-label">中危</span>
+            <span class="kpi-flag badge badge--sm badge--warn">{{ share(counts.medium) }}</span>
           </div>
-          <div class="kpi-value">{{ alerts.counts.medium }}<small>条触发</small></div>
-          <div class="kpi-sub">距离阈值越近，越应关注后续确认</div>
-        </article>
-        <article class="card kpi">
+          <div class="kpi-value">{{ counts.medium }}<small>条触发</small></div>
+          <div class="kpi-sub">本轮快照 · 本周内复核</div>
+        </div>
+
+        <div class="card kpi alr-sum alr-sum--low">
           <div class="kpi-top">
             <span class="kpi-icon"><svg class="ic"><use href="#i-eye" /></svg></span>
-            <span class="kpi-label">低风险（观察项）</span>
+            <span class="kpi-label">低危</span>
+            <span class="kpi-flag badge badge--sm">{{ share(counts.low) }}</span>
           </div>
-          <div class="kpi-value">{{ alerts.counts.low }}<small>条触发</small></div>
-          <div class="kpi-sub">观察级规则仅提示，不构成行动</div>
-        </article>
-        <article class="card kpi">
+          <div class="kpi-value">{{ counts.low }}<small>条触发</small></div>
+          <div class="kpi-sub">本轮快照 · 观察列表</div>
+        </div>
+
+        <div class="card kpi alr-sum alr-sum--unknown">
           <div class="kpi-top">
-            <span class="kpi-icon"><svg class="ic"><use href="#i-calendar" /></svg></span>
-            <span class="kpi-label">临近政治事件</span>
+            <span class="kpi-icon"><svg class="ic"><use href="#i-info" /></svg></span>
+            <span class="kpi-label">未知</span>
+            <span class="kpi-flag badge badge--sm badge--warn">{{ share(counts.unknown) }}</span>
           </div>
-          <div class="kpi-value">{{ upcoming.length }}<small>个 · 未来半年</small></div>
-          <div class="kpi-sub">{{ upcoming[0] ? `${upcoming[0].name}（${upcoming[0].days} 天）` : "无临近事件" }}</div>
-        </article>
+          <div class="kpi-value">{{ counts.unknown }}<small>条未知</small></div>
+          <div class="kpi-sub">本轮快照 · 缺失指标不默认未触发</div>
+        </div>
       </div>
 
-      <section class="card table-card alert-card">
-        <div class="card-head">
-          <span class="card-title">预警清单</span>
-          <span class="card-sub">按「已触发 → 高 → 中」排序 · 点击行展开原因与失效条件</span>
-          <div class="card-actions">
-            <span class="card-sub">{{ alerts.note }}</span>
-          </div>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th style="width: 22px"></th>
-                <th style="width: 58px">严重度</th>
-                <th>规则</th>
-                <th>指标</th>
-                <th class="num">当前值</th>
-                <th class="num">阈值</th>
-                <th class="num">距离</th>
-                <th class="num">状态</th>
-                <th>观测日</th>
-              </tr>
-            </thead>
-            <tbody>
-              <template v-for="item in alerts.alerts" :key="item.id">
-                <tr class="alert-line" :class="{ 'is-open': openId === item.id }" @click="toggle(item.id)">
-                  <td><span class="sev-dot" :class="`sev-dot--${item.status}`"></span></td>
-                  <td>
-                    <span class="badge badge--sm" :class="severityTone(item.severity)">
-                      {{ item.severity_label }}
-                    </span>
-                  </td>
-                  <td>
-                    <div class="rule-name">{{ item.name }}</div>
-                    <div class="rule-id mono">{{ item.id }}</div>
-                  </td>
-                  <td class="mono rule-metric">{{ item.metric_name ?? item.metric ?? "—" }}</td>
-                  <td class="num">{{ fmtNumber(item.value, 2) }}</td>
-                  <td class="num mono">{{ item.op }} {{ fmtNumber(item.threshold, 2) }}</td>
-                  <td class="num" :class="distanceTone(item.distance)">
-                    {{ item.distance === null ? "—" : fmtSigned(item.distance, 2) }}
-                  </td>
-                  <td class="num">
-                    <span class="state-text" :class="`state-text--${item.status}`">{{ statusText(item.status) }}</span>
-                  </td>
-                  <td class="mono tm">{{ item.asof ? fmtDate(item.asof) : "—" }}</td>
-                </tr>
-                <tr v-if="openId === item.id" :key="`${item.id}-detail`" class="detail-row">
-                  <td colspan="9">
-                    <div class="detail-box">
-                      <div class="detail-col">
-                        <span class="detail-label">为什么是这条规则</span>
-                        <p>{{ item.why ?? "—" }}</p>
-                      </div>
-                      <div class="detail-col">
-                        <span class="detail-label">失效条件（触发不等于必然）</span>
-                        <p>{{ item.falsifier ?? "—" }}</p>
-                      </div>
-                      <div class="detail-col">
-                        <span class="detail-label">数据来源与口径</span>
-                        <p>{{ item.source ?? "—" }}</p>
-                        <p v-if="item.reason" class="detail-note">{{ item.reason }}</p>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
-        </div>
-        <div class="card-foot">
-          <span>缺失指标记为「未知」，不会默认为「未触发」。</span>
-          <span class="mono">{{ payload?.run_id ? `run ${payload.run_id.slice(0, 8)}` : "" }}</span>
-        </div>
+      <section class="alr-block" aria-label="预警表">
+        <AlertTable :alerts="alertRows" :loading="stateLoading" />
       </section>
 
-      <div class="alert-bottom">
-        <section class="card table-card">
-          <div class="card-head">
-            <span class="card-title">规则与阈值</span>
-            <span class="card-sub">只读展示 · 修改请编辑 config/cycle.yaml 后重算</span>
-          </div>
-          <div class="table-wrap small">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th style="width: 40px">ID</th>
-                  <th style="width: 52px">等级</th>
-                  <th>规则</th>
-                  <th>指标</th>
-                  <th class="num">阈值</th>
-                  <th>失效条件</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="rule in rules" :key="rule.id">
-                  <td class="mono">{{ rule.id }}</td>
-                  <td>
-                    <span class="badge badge--sm" :class="severityTone(rule.severity)">{{ severityLabel(rule.severity) }}</span>
-                  </td>
-                  <td class="rule-name">{{ rule.name }}</td>
-                  <td class="mono rule-metric">{{ rule.metric }}</td>
-                  <td class="num mono">{{ rule.op }} {{ fmtNumber(rule.threshold, 2) }}</td>
-                  <td class="falsifier-cell">{{ rule.falsifier }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+      <section class="alr-block" aria-label="阈值编辑器">
+        <ThresholdEditor
+          :rules="rules"
+          :current="alertRows"
+          :loading="configLoading"
+          @saved="onSaved"
+        />
+      </section>
 
-        <section class="card">
-          <div class="card-head">
-            <span class="card-title">政治日历</span>
-            <span class="card-sub">半年内临近事件 · 30 天内进入高不确定性窗口</span>
-          </div>
-          <div class="card-body cal-list">
-            <div v-for="event in calendar" :key="event.date" class="cal-row" :class="{ 'cal-row--hot': event.days <= 30 }">
-              <span class="cal-date mono">{{ event.date.slice(5) }}</span>
-              <span class="cal-imp" :class="{ high: event.importance >= 3 }">{{ stars(event.importance) }}</span>
-              <div class="cal-main">
-                <span class="cal-name">{{ event.name }}</span>
-                <span class="cal-note">{{ event.note }}</span>
-              </div>
-              <span class="cal-days mono" :class="{ hot: event.days <= 30 }">
-                {{ event.days < 0 ? `已过 ${Math.abs(event.days)} 天` : `${event.days} 天` }}
-              </span>
-            </div>
-            <EmptyState v-if="!calendar.length" text="政治日历为空" hint="在 config/cycle.yaml 的 political_calendar 中添加事件。" />
-          </div>
-        </section>
-      </div>
+      <section class="alr-block" aria-label="财经日历">
+        <MarketCalendar :political="politicalCalendar" />
+      </section>
+
+      <footer class="alr-foot">
+        <span class="alr-foot-note">
+          <svg class="ic"><use href="#i-shield-check" /></svg>
+          缺失指标记为未知，不默认未触发；触发 ≠ 预测，需人工复核。
+        </span>
+        <span class="mono alr-run">run {{ runIdShort }}</span>
+        <span class="dim">全部规则来自 config/cycle.yaml</span>
+        <RouterLink class="alr-link" to="/pipeline">在透明管线查看运行记录</RouterLink>
+      </footer>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { RouterLink } from "vue-router";
+import { getCycleConfig, getCycleState, runCycle } from "@/api/endpoints";
+import type { CycleAlert, CycleAlertRule, CycleCalendarEntry, CycleConfigResponse, CycleStateResponse } from "@/api/types";
+import AlertTable from "@/components/alerts/AlertTable.vue";
+import MarketCalendar from "@/components/alerts/MarketCalendar.vue";
+import ThresholdEditor from "@/components/alerts/ThresholdEditor.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import SkeletonBlock from "@/components/ui/SkeletonBlock.vue";
+import { fmtDate, fmtTime } from "@/composables/useFormat";
 import { usePolling } from "@/composables/usePolling";
-import { fmtDate, fmtNumber, fmtSigned, stars } from "@/composables/useFormat";
-import { getCycleConfig, getCycleState, runCycle } from "@/api/endpoints";
-import type { CycleAlertRule, CycleConfigResponse, CycleStateResponse } from "@/api/types";
+import { useToast } from "@/stores/toast";
 
-const { data, error, loading, refresh } = usePolling<CycleStateResponse>(getCycleState, { interval: 60_000 });
-const { data: configData } = usePolling<CycleConfigResponse>(getCycleConfig, { interval: 600_000 });
+const toast = useToast();
+
+const {
+  data: payload,
+  error: stateError,
+  loading: stateLoading,
+  lastUpdated,
+  refresh,
+} = usePolling<CycleStateResponse>(getCycleState, { interval: 60_000 });
+
+const {
+  data: configData,
+  loading: configLoading,
+  refresh: refreshConfig,
+} = usePolling<CycleConfigResponse>(getCycleConfig, { interval: 600_000 });
 
 const running = ref(false);
-const openId = ref<string | null>(null);
-const payload = computed(() => data.value);
+
 const alerts = computed(() => payload.value?.alerts?.value ?? null);
+const alertRows = computed<CycleAlert[]>(() => alerts.value?.alerts ?? []);
 const rules = computed<CycleAlertRule[]>(() => configData.value?.alerts ?? []);
+const politicalCalendar = computed<CycleCalendarEntry[]>(() => configData.value?.political_calendar ?? []);
 
-function today(): Date {
-  return new Date();
-}
-
-const calendar = computed(() => {
-  const items = configData.value?.political_calendar ?? [];
-  const now = today();
-  return items
-    .map((item) => ({ ...item, days: Math.round((new Date(item.date).getTime() - now.getTime()) / 86_400_000) }))
-    .sort((a, b) => a.days - b.days);
+const counts = computed<Record<"high" | "medium" | "low" | "unknown", number>>(() => {
+  const raw = alerts.value?.counts;
+  return {
+    high: raw?.high ?? 0,
+    medium: raw?.medium ?? 0,
+    low: raw?.low ?? 0,
+    unknown: raw?.unknown ?? 0,
+  };
 });
 
-const upcoming = computed(() => calendar.value.filter((item) => item.days >= 0 && item.days <= 180));
+const totalRules = computed(() => alerts.value?.total ?? 0);
+const ruleTotal = computed(() => {
+  const total = totalRules.value;
+  if (total > 0) return total;
+  return rules.value.length || 12;
+});
+const triggeredCount = computed(() => alerts.value?.triggered ?? 0);
 
-function toggle(id: string | null): void {
-  if (!id) return;
-  openId.value = openId.value === id ? null : id;
-}
+const dataDate = computed(() => {
+  const iso = payload.value?.asof;
+  return iso ? fmtDate(iso) : "—";
+});
 
-type Severity = "high" | "medium" | "low";
-function severityTone(severity: Severity | string): string {
-  if (severity === "high") return "badge--up";
-  if (severity === "medium") return "badge--warn";
-  return "";
-}
-function severityLabel(severity: Severity | string): string {
-  return severity === "high" ? "高" : severity === "medium" ? "中" : "低";
-}
-function statusText(status: string | null): string {
-  if (status === "triggered") return "已触发";
-  if (status === "unknown") return "未知";
-  return "未触发";
-}
-function distanceTone(distance: number | null): string {
-  if (distance === null) return "";
-  return Math.abs(distance) <= 0 ? "is-hot" : "";
+const runLabel = computed(() => {
+  const iso = payload.value?.generated_at ?? payload.value?.asof;
+  if (iso) return fmtTime(iso, true);
+  const updated = lastUpdated.value;
+  return updated ? fmtTime(updated.toISOString(), true) : "—";
+});
+
+const runIdShort = computed(() => payload.value?.run_id?.slice(0, 8) ?? "—");
+
+function share(value: number): string {
+  const total = totalRules.value;
+  return total > 0 ? `${Math.round((value / total) * 100)}%` : "—";
 }
 
 async function recalc(): Promise<void> {
@@ -256,168 +197,142 @@ async function recalc(): Promise<void> {
   running.value = true;
   try {
     await runCycle();
-    await refresh();
+    await Promise.all([refresh(), refreshConfig()]);
+    toast.ok("已重新计算本轮预警");
+  } catch (err) {
+    toast.bad(err instanceof Error ? err.message : "重算失败，请稍后重试");
   } finally {
     running.value = false;
   }
 }
+
+/** 阈值保存成功后：刷新预警状态与规则配置，使表格「当前值 / 阈值」同步更新。 */
+async function onSaved(): Promise<void> {
+  await Promise.all([refresh(), refreshConfig()]);
+}
 </script>
 
 <style scoped>
-.alert-card {
+.alr-head {
+  min-width: 0;
+}
+
+.alr-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 6px;
+}
+
+.alr-badge .ic {
+  width: 11px;
+  height: 11px;
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+
+.alr-actions .ic {
+  width: 12px;
+  height: 12px;
+}
+
+.alr-summary {
   margin-top: 10px;
 }
-.alert-line {
-  cursor: pointer;
-}
-.alert-line.is-open td {
-  background: color-mix(in srgb, var(--surface-2) 78%, transparent);
-}
-.sev-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--dim);
-}
-.sev-dot--triggered {
-  background: var(--up);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--up) 18%, transparent);
-}
-.sev-dot--unknown {
-  border: 1px solid var(--warn);
-  background: transparent;
-}
-.rule-name {
-  font-size: 11.5px;
-  color: var(--text);
-}
-.rule-id {
-  font-size: 9px;
-  color: var(--dim);
-}
-.rule-metric {
-  font-size: 10px;
-  color: var(--muted);
-}
-.state-text {
-  font-size: 10px;
-  color: var(--dim);
-}
-.state-text--triggered {
-  color: var(--up-color, var(--up));
-  font-weight: 650;
-}
-.state-text--unknown {
-  color: var(--warn);
-}
-.detail-row td {
-  background: color-mix(in srgb, var(--surface-2) 62%, transparent);
-  padding: 0;
-}
-.detail-box {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  padding: 10px 14px 12px;
-}
-.detail-col p {
-  margin: 3px 0 0;
-  font-size: 10.5px;
-  color: var(--muted);
-  line-height: 1.55;
-  white-space: normal;
-}
-.detail-label {
-  font-size: 9.5px;
-  letter-spacing: 0.3px;
-  color: var(--dim);
-}
-.detail-note {
-  color: var(--warn) !important;
-}
-.is-hot {
-  color: var(--warn);
-}
-.alert-bottom {
-  display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
-  gap: 10px;
-  margin-top: 10px;
-  align-items: start;
-}
-.table-wrap.small {
-  max-height: 316px;
-}
-.falsifier-cell {
-  font-size: 10px;
-  color: var(--dim);
-  white-space: normal;
-  min-width: 160px;
-}
-.cal-list {
-  display: grid;
-  gap: 2px;
-}
-.cal-row {
-  display: grid;
-  grid-template-columns: 44px 30px minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-  padding: 6px 0;
-  border-bottom: 1px dashed var(--border);
-}
-.cal-row:last-child {
-  border-bottom: 0;
-}
-.cal-row--hot {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--warn) 8%, transparent), transparent 70%);
-}
-.cal-date {
-  font-size: 10.5px;
-  color: var(--accent);
-}
-.cal-imp {
-  font-size: 7px;
-  color: var(--dim);
-  letter-spacing: 1px;
-}
-.cal-imp.high {
-  color: var(--warn);
-}
-.cal-main {
-  display: grid;
-  gap: 2px;
-}
-.cal-name {
-  font-size: 11px;
-  color: var(--text);
-}
-.cal-note {
-  font-size: 9.5px;
-  color: var(--dim);
-}
-.cal-days {
-  font-size: 10px;
-  color: var(--muted);
+
+.alr-sum .kpi-label {
   white-space: nowrap;
 }
-.cal-days.hot {
+
+.alr-sum .kpi-icon {
+  flex: none;
+}
+
+.alr-sum .kpi-flag {
+  flex: none;
+  font-family: var(--mono);
+}
+
+.alr-sum--high .kpi-icon {
+  color: var(--up);
+  background: color-mix(in srgb, var(--up) 12%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--up) 32%, var(--border));
+}
+
+.alr-sum--medium .kpi-icon {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--warn) 34%, var(--border));
+}
+
+.alr-sum--low .kpi-icon {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--ok) 30%, var(--border));
+}
+
+.alr-sum--unknown .kpi-icon {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 8%, var(--surface-2));
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--warn) 48%, var(--border));
+}
+
+.alr-block {
+  margin-top: 10px;
+}
+
+.alr-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-top: 10px;
+  padding: 8px 2px 6px;
+  font-size: 10px;
+  color: var(--dim);
+}
+
+.alr-foot-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.alr-foot-note .ic {
+  width: 12px;
+  height: 12px;
+  flex: none;
   color: var(--warn);
 }
-.spin {
-  animation: spin 0.9s linear infinite;
+
+.alr-run {
+  color: var(--muted);
 }
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
+
+.alr-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.alr-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 1240px) {
+  .alr-actions {
+    gap: 5px;
   }
 }
-@media (max-width: 1180px) {
-  .alert-bottom {
-    grid-template-columns: minmax(0, 1fr);
+
+@media (max-width: 1024px) {
+  .alr-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .detail-box {
+}
+
+@media (max-width: 720px) {
+  .alr-summary {
     grid-template-columns: minmax(0, 1fr);
   }
 }

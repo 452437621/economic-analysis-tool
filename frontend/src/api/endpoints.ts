@@ -1,6 +1,8 @@
 /** 所有后端端点封装（契约见 backend/app/api）。 */
 import { deleteJson, getJson, patchJson, postJson } from "./client";
 import type {
+  CoverageResponse,
+  CycleReadingsResponse,
   Acceptance,
   AlertItem,
   AlertListResponse,
@@ -216,6 +218,7 @@ export const getV2Methods = () => getJson<V2MethodList>("/api/v2/methods");
 export const getCycleState = () => getJson<CycleStateResponse>("/api/v2/cycle/state");
 export const getCycleConfig = () => getJson<CycleConfigResponse>("/api/v2/cycle/config");
 export const runCycle = () => postJson<CycleRunResult>("/api/v2/cycle/run", {});
+export const getCycleReadings = () => getJson<CycleReadingsResponse>("/api/v2/cycle/readings");
 
 /* 世界长河（V2.0 M3） */
 export const getTimelineOverview = () => getJson<TimelineOverview>("/api/v2/timeline/overview");
@@ -239,3 +242,5 @@ export const createLedgerForecast = (payload: LedgerForecastInput) =>
     payload,
   );
 export const runLedger = () => postJson<LedgerRunResult>("/api/v2/ledger/run", {});
+
+export const getSystemCoverage = () => getJson<CoverageResponse>("/api/system/coverage");

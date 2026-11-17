@@ -6,15 +6,22 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.cycle.config import load_config
+from app.cycle.config import apply_alert_overrides, load_config
 from app.cycle.engine import run_cycle
-from app.models.v2 import AnalysisRun, Derivation
+from app.cycle.phases import long_cycle, short_cycle
+from app.cycle.readings import build_readings
+from app.cycle.scenarios import scenarios as compute_scenarios
+from app.cycle.sustainability import sustainability
+from app.ledger.engine import calibration_summary
+from app.models.v2 import AnalysisRun, Derivation, MethodRegistry
+from app.platform.coverage import series_coverage
 from app.platform.db import get_session
 from app.provenance.engine import aware
 
@@ -29,6 +36,34 @@ DERIVATION_CODES = {
     "analogs": "cycle.analogs",
     "history": "cycle.history",
 }
+
+#: The six composite scores a scenario may override (0–100).
+COMPOSITE_KEYS = ("DMI", "ICI", "ECI", "GROWTH", "INFLATION", "LIQUIDITY")
+
+
+class ConfigPatch(BaseModel):
+    """UI-editable cycle config: alert thresholds plus an audit note."""
+
+    alerts: dict[str, float] | None = None
+    note: str | None = Field(default=None, max_length=200)
+
+
+class ScenarioRequest(BaseModel):
+    """Sensitivity scenario: replace composite scores in memory, never persist."""
+
+    overrides: dict[str, float] = Field(default_factory=dict)
+
+
+def _next_calibration(today: date | None = None) -> str:
+    """Approximate the next calibration date: first weekday of next month."""
+    ref = today or date.today()
+    year = ref.year + (1 if ref.month == 12 else 0)
+    month = 1 if ref.month == 12 else ref.month + 1
+    day = date(year, month, 1)
+    while day.weekday() >= 5:
+        day += timedelta(days=1)
+    return day.isoformat()
+
 
 
 def _iso(value) -> str | None:  # noqa: ANN001
@@ -107,6 +142,13 @@ def get_indicators(
     return {"items": items, "total": len(items), "asof": payload.get("asof")}
 
 
+@router.get("/readings")
+def get_readings(session: Session = Depends(get_session)) -> dict:
+    """Eight compass readings: value, unit, z-score, daily change, sparkline."""
+
+    return build_readings(session)
+
+
 @router.get("/history")
 def get_history(session: Session = Depends(get_session)) -> dict:
     payload = _payload(session, DERIVATION_CODES["history"])
@@ -165,6 +207,133 @@ def get_config() -> dict:
         "alerts": cfg.get("alerts"),
         "scenarios": cfg.get("scenarios"),
         "political_calendar": cfg.get("political_calendar"),
+    }
+
+
+def _scenario_snapshot(composites: dict, config: dict) -> dict:
+    """Recompute every cycle output from a composites dict, in memory only."""
+    return {
+        "composites": composites,
+        "long_cycle": long_cycle(composites.get("DMI") or {}, config),
+        "short_cycle": short_cycle(
+            composites.get("GROWTH") or {},
+            composites.get("INFLATION") or {},
+            composites.get("LIQUIDITY") or {},
+            None,
+            config,
+        ),
+        # sustainability reads config["manual"] only, so composite overrides do
+        # not move it; it is returned so the UI can show all four panels.
+        "sustainability": sustainability(config),
+        "scenarios": compute_scenarios(
+            composites.get("DMI") or {},
+            composites.get("GROWTH") or {},
+            composites.get("INFLATION") or {},
+            composites.get("LIQUIDITY") or {},
+            config,
+        ),
+    }
+
+
+def _scenario_deltas(baseline: dict, scenario: dict) -> dict:
+    base = {item["id"]: item["probability"] for item in baseline["scenarios"].get("scenarios") or []}
+    moved = {item["id"]: item["probability"] for item in scenario["scenarios"].get("scenarios") or []}
+    probability_delta = {
+        scenario_id: round(float(moved.get(scenario_id, 0.0)) - float(base.get(scenario_id, 0.0)), 4)
+        for scenario_id in sorted(set(base) | set(moved))
+    }
+    return {
+        "phase_changed": (
+            baseline["long_cycle"].get("phase_id") or baseline["long_cycle"].get("phase")
+        )
+        != (scenario["long_cycle"].get("phase_id") or scenario["long_cycle"].get("phase")),
+        "state_changed": baseline["short_cycle"].get("state")
+        != scenario["short_cycle"].get("state"),
+        "scenario_probability_delta": probability_delta,
+    }
+
+
+@router.get("/meta")
+def get_meta(session: Session = Depends(get_session)) -> dict:
+    """Rule/config provenance for the V2.0 cycle page header."""
+    config = load_config()
+    calibration = calibration_summary(session)
+    series_covered, series_total = series_coverage(session)
+    methods = session.scalars(
+        select(MethodRegistry)
+        .where(MethodRegistry.method_id.like("cycle.%"))
+        .order_by(MethodRegistry.method_id)
+    ).all()
+    return {
+        "rule_version": (config.get("_meta") or {}).get("version"),
+        "next_calibration": _next_calibration(),
+        "brier": calibration.get("brier"),
+        "calibration_n": calibration.get("n") or 0,
+        "coverage": {"series_covered": series_covered, "series_total": series_total},
+        "methods": [
+            {"method_id": row.method_id, "version": row.version, "code_sha": row.code_sha}
+            for row in methods
+        ],
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.patch("/config")
+def patch_config(payload: ConfigPatch) -> dict:
+    """Persist alert-threshold overrides (cycle.yaml itself is never rewritten)."""
+    try:
+        return apply_alert_overrides(payload.alerts, payload.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/scenario")
+def post_scenario(payload: ScenarioRequest, session: Session = Depends(get_session)) -> dict:
+    """In-memory sensitivity analysis: baseline vs overridden composites.
+
+    Writes nothing and creates no run record; the latest run is only read.
+    """
+    state = _payload(session, DERIVATION_CODES["state"])
+    composites = ((state or {}).get("value") or {}).get("composites") or {}
+    if not composites:
+        raise HTTPException(
+            status_code=503,
+            detail="no cycle run available; POST /api/v2/cycle/run first",
+        )
+    unknown = sorted(set(payload.overrides) - set(COMPOSITE_KEYS))
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown composite: {', '.join(unknown)}; expected one of {', '.join(COMPOSITE_KEYS)}",
+        )
+    out_of_range = {
+        key: value for key, value in payload.overrides.items() if not 0 <= float(value) <= 100
+    }
+    if out_of_range:
+        raise HTTPException(
+            status_code=400,
+            detail=f"composite overrides must be between 0 and 100: {out_of_range}",
+        )
+    config = load_config()
+    baseline_composites = {
+        key: dict(entry) if isinstance(entry, dict) else {"value": entry}
+        for key, entry in composites.items()
+    }
+    scenario_composites = {
+        key: dict(entry) if isinstance(entry, dict) else {"value": entry}
+        for key, entry in baseline_composites.items()
+    }
+    for key, value in payload.overrides.items():
+        entry = scenario_composites.setdefault(key, {"name": key})
+        entry["value"] = float(value)
+    baseline = _scenario_snapshot(baseline_composites, config)
+    scenario = _scenario_snapshot(scenario_composites, config)
+    return {
+        "baseline": baseline,
+        "scenario": scenario,
+        "deltas": _scenario_deltas(baseline, scenario),
+        "applied": {key: float(value) for key, value in payload.overrides.items()},
+        "note": "scenario 为纯内存重算，不写库、不建 run；sustainability 来自 config.manual，不随 composites override 变化；short_cycle 无 12 个月增速序列时按 growth_d12=0 处理。",
     }
 
 

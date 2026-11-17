@@ -6,6 +6,20 @@
 
 ## [Unreleased]
 
+### 新增（UI 对齐：壳层重构、设计规范页、四个研究页重做与 8 项后端接口，2026-11-17）
+
+- **壳层按合并原型重构**：`router/index.ts` 分组改为「今日 / 市场 / 研判 / 系统」并保留全部 15 个既有页面；`Sidebar.vue` brand 改为 `E2 / EPIC V2 / 周期研判 · 宏观工作台`，底部新增数据健康进度条（`/api/system/coverage`，序列覆盖与最近同步）；`Topbar.vue` 面包屑改为 `EPIC V2 / 组 / 页`，右侧 pill 改为「数据时点 · 健康度 %」；新增 `styles/app.css` 的 `.crumb-group`。
+- **新增 `/tokens` 设计规范页**（`frontend/src/views/TokensView.vue`）：色板 14 个 token、字阶 8 档、按钮与 badge、间距、表单控件、示例数据表、骨架/空态/状态点与口径说明，作为后续页面自检基准。
+- **`/cycle` 周期罗盘按原型重做**（`CycleView.vue` + `components/cycle/{CycleCompass,CycleForces}.vue`）：hero（长债务阶段 + 短周期 + 综合置信度 + 数据覆盖/规则版本/下次校准）、四象限相位罗盘、五力仪表、8 张关键读数（真实值 + z + 日变动 + spark + E2 证据）、今日预警、历史类比 Top3；**保留**原六分量罗盘、五层周期、60 月轨迹、四情景、债务可持续性、世界秩序、降级原因框与全部轮询/重算能力。
+- **新增 8 张读数的真实数据源**（`backend/app/cycle/readings.py` + `GET /api/v2/cycle/readings`）：直接取本地 `macro_obs` / `market_bars`，计算 z（约 5 年窗口）与日变动并附 30 点 spark；缺失时返回 `missing=true` 与原因，不填占位值。实测 8/8 有值：美债 10Y 5.12%、实际利率 2.92%、10Y–2Y +29bp、黄金 3,856、金银比 81.4、LME 铜 13,237、美元指数 103.55、中美利差 −349bp。
+- **`/alerts` 预警台按原型重做**（`AlertsView.vue` + `components/alerts/{AlertTable,ThresholdEditor,MarketCalendar}.vue`）：严重度筛选、10 列表格与 10 列可编辑阈值表（保存走 `PATCH /api/v2/cycle/config`，带审计）、财经日历显示预期/前值/实际，缺失字段显示「—」；保留轮询、立即重算、unknown 显式提示与行展开三列。
+- **`/pipeline` 透明管线按原型重做**（`PipelineView.vue` + `components/pipeline/{PipelineDag,NodeDetail,PipelineTrace,ScenarioSandbox,ModelCard}.vue`）：run-strip、6 节点 DAG（采集/质检/特征/周期引擎/情景/输出，按步骤名与关键词归并）、L1–L5 溯源树、反事实沙盘（`POST /api/v2/cycle/scenario`，六分量滑杆 + 阶段/短周期/情景概率增量）、模型卡与校准摘要；`?code=` 深链与溯源抽屉全保留。
+- **`/history` 世界长河按原型重做**（`HistoryView.vue` + `components/history/{HistoryTimeline,HistoryEventDetail}.vue`）：纯前端时间窗缩放、四层泳道去重叠、霸权时期色带、储备份额曲线（SVG）、GDP/储备两张折线、周期对照表新增黄金期/转折/当前阶段三列、事件全屏详情；`?event=` 深链保留。
+- **后端同步扩展 8 项接口**：`GET /api/system/coverage`（健康度 = 60% 序列覆盖 + 40% 作业健康，含最近同步）、`GET /api/v2/cycle/meta`（规则版本/下次校准/Brier/覆盖）、`PATCH /api/v2/cycle/config`（阈值写入 `config/cycle.overrides.yaml` + `data/audit/cycle-config.jsonl` 审计）、`POST /api/v2/cycle/scenario`（纯内存重算，不写库）、`GET /api/market/calendar` 扩展预期/前值/实际与详情、`GET /api/v2/timeline/eras` 扩展黄金期/转折/当前阶段、`GET /api/briefs/{id}` 扩展 `evidence_ids` / `main_thesis`、`GET /api/v2/cycle/readings`；新增 `backend/app/platform/coverage.py` 与轻量迁移（`economic_events` 增可空 forecast/previous/actual/unit）；旧 `/api/*` 与 `/api/calendar` 全部保留。
+- **页面功能补全**：市场页表头新增「导出 CSV」（UTF-8 BOM）、品种证据列由固定「—」改为 E0 来源按钮；简报右栏新增「关联证据 · 本期引用」卡（优先接口 `evidence_ids`，回退解析正文证据链接）；总览页新增「近期事件」（政治日历）并把 4 个 KPI 进度条改为真实数据（健康度、行情覆盖、日线回补、作业健康）。
+- **验证**：`pytest tests -q` → **280 passed**（新增 `tests/test_v2_ui_align.py` 14 条含读数契约）；`scripts/lint.py` → PASSED（0 errors, 0 warnings）；`npm run build` 成功（`vue-tsc --noEmit` 0 error）；headless Chrome 逐页截图复核（总览/简报/行情/周期/长河/管线/预警台/设计规范/系统，1440 宽），修复两处截图发现的问题（周期概览卡图标尺寸、侧栏版本文案）。
+- **已知边界**：五力中「自然冲击」用原油 60 日动量代理、「技术革命」因本地无 NDX/SPX 序列保持「数据缺失」并标 E1 代理口径；财经日历的预期/前值取决于采集源，缺则为「—」；预警的胜率/置信度尚无已结算样本，显示「—」；A2 沙盘不持久化，且 `growth_12m_change` 未入推导快照，短周期判定只用水平值。
+
 ### 新增（设计原型合并：V1 布局 + V2 研究视图，2026-11-17）
 
 - **新增 `docs/design/mockup-merged/index.html`**（单文件 355 KB）：以 V2 为壳（导航、顶栏、主题、命令面板、路由），把 V1 原型的总览、市场、简报、设计规范四页并入，合并后共 8 个真实视图——总览 / 简报 / 行情 / 周期罗盘 / 世界长河 / 透明管线 / 预警台 / 设计规范。原两版文件保持不变。

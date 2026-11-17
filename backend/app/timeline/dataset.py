@@ -773,6 +773,9 @@ ERAS: list[dict] = [
         "innovation": "宝钞、晋商票号",
         "lesson": "海禁与制度僵化导致实力相对下滑：体量大不等于持续领先。",
         "grade": "B",
+        "golden_age": [1400, 1500],
+        "turning": [1500, 1600],
+        "current_stage": "已结束——1500 年前后见顶，海禁后相对衰落（B 级近似年份）",
     },
     {
         "id": "iberia",
@@ -784,6 +787,9 @@ ERAS: list[dict] = [
         "innovation": "大航海、塞维利亚交易所",
         "lesson": "靠掠夺而非生产，财富流入未转化为生产力。",
         "grade": "A",
+        "golden_age": [1415, 1550],
+        "turning": [1550, 1580],
+        "current_stage": "已结束——1550 年前后见顶，白银流入未转化为生产力",
     },
     {
         "id": "netherlands",
@@ -795,6 +801,9 @@ ERAS: list[dict] = [
         "innovation": "1602 VOC、阿姆斯特丹交易所、现代银行",
         "lesson": "小国体量撑不起全球货币，金融过度领先实体。",
         "grade": "A",
+        "golden_age": [1581, 1620],
+        "turning": [1620, 1700],
+        "current_stage": "已结束——1620 年前后见顶，金融过度领先实体，18 世纪初让位",
     },
     {
         "id": "uk",
@@ -806,6 +815,9 @@ ERAS: list[dict] = [
         "innovation": "金本位、英格兰银行、伦敦金融城",
         "lesson": "两次世界大战耗尽财力，债务峰值后让位。",
         "grade": "A",
+        "golden_age": [1815, 1913],
+        "turning": [1913, 1945],
+        "current_stage": "已结束——1913 年英镑外储占比见顶，两次世界大战后让位",
     },
     {
         "id": "usa",
@@ -817,6 +829,9 @@ ERAS: list[dict] = [
         "innovation": "布雷顿森林、石油美元、MMT 式财政",
         "lesson": "1971 后进入法币时代，债务不再有黄金约束。",
         "grade": "A",
+        "golden_age": [1945, 1971],
+        "turning": [1971, 2008],
+        "current_stage": "已过黄金期——仍是主导货币，但相对份额下降（1971 年美元与黄金脱钩）",
     },
     {
         "id": "multipolar",
@@ -828,6 +843,9 @@ ERAS: list[dict] = [
         "innovation": "数字货币、本币结算",
         "lesson": "尚在形成，不能断言结局——这是开放问题，不是已知答案。",
         "grade": "C",
+        "golden_age": None,
+        "turning": None,
+        "current_stage": "进行中——2008 年后多极秩序仍在形成，结局开放（C 级近似，不作断言）",
     },
 ]
 
