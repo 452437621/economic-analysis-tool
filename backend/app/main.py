@@ -14,6 +14,7 @@ from app.api import (
     analytics,
     decisions,
     events,
+    glassbox,
     gold,
     journal,
     knowledge,
@@ -70,6 +71,7 @@ app.include_router(journal.router)
 app.include_router(theses.router)
 app.include_router(events.router)
 app.include_router(watchlist.router)
+app.include_router(glassbox.router)
 
 if WEB_DIR.exists():
     assets_dir = WEB_DIR / "assets"

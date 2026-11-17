@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+### 新增（V2.0 M0 地基：透明化血缘引擎与玻璃盒接口，2026-11-17）
+
+诉求：「我选择B，把所有功能全部开发完成，保质保量，不能有一点瑕疵，并创建分支保留V1.0版本，创建V2.0版本分支，在此分支上开始开发。」（分支 `v1.0-final` 保留 V1.0 终点，开发在 `v2.0`）
+
+- **新增 13 张 V2.0 表**（`backend/app/models/v2.py`）：`analysis_runs`（一次运行：kind/subject/asof/status/method_id/code_version/duration/degraded_reasons）、`analysis_steps`（步骤序号/类型/输入/输出/耗时/错误）、`derivations`（稳定 id + claim/value/confidence/evidence_grade/inputs/steps/rules_hit/caveats/falsifiers/opposing）、`derivation_links`（父子谱系）、`method_registry`（方法登记与 `code_sha`）、`rule_hits`、`observations`（含 `vintage_date` 防前视）、`indicator_catalog`、`forecasts`、`forecast_outcomes`、`scenario_runs`、`timeline_events`、`power_index`。`init_db()` 自动建表并登记 6 个方法（`analytics.run/regime/wind/indicators`、`gold.composite/providers`）。
+- **新增血缘引擎 `backend/app/provenance/`**：`RunRecorder` 提供 `start/step/finish/fail/degrade/derive/record_rule`；`derive_id = sha256(method@version|inputs|params|code_sha)[:32]` 保证同输入同结论幂等；证据等级 E0–E4；降级写入 `rule_hits` 并在运行上留痕。
+- **新增玻璃盒接口 `/api/v2`**（`backend/app/api/glassbox.py`）：`GET /runs`、`/runs/{id}`（运行 + 步骤 + 规则命中 + 推导）、`/derivations`、`/derivations/{id}`（含方法、父子）、`/methods`、`/observations`、`/status`。
+- **分析运行全部接入血缘**：`analytics/runner.py` 重写为「载入行情 → 对齐日历 → 指标 → 周期 → 风向 → 相关性 → 归因 → 类比 → 领先滞后 → 事件研究 → 财经日历研究」11 个步骤，并派生 `regime.US`、`regime.CN`、`wind.market`（证据级 E3，附反证与失效条件）；`gold/runner.py` 采集全程记为一次 `gold` 运行，派生 `gold.composite`（置信度随覆盖率 0.40→0.85），数据源失败逐项降级。
+- **验证**：`pytest tests -q` → **218 passed**（新增 `tests/test_v2_provenance.py` 8 条：步骤顺序、推导幂等、降级、失败、哈希稳定性、方法登记、API 形状与 404）；`scripts/lint.py` → PASSED；对真实库执行一次分析 → 35 指标 / 2 周期 / 1 风向 / 1 相关性 / 6 归因 / 1 类比 / 1 领先滞后 / 1 事件 / 1 日历研究，运行状态 ok、11 个步骤、3 条推导落库。
+
 ### 工程（git reset --hard 事故复盘：取证、等价重建验证、防复发快照脚本，2026-11-17）
 
 诉求：「针对 git commit-tree 的事故，请进行全面排查处理，如果有必要请把之前丢失的文件相关工作重新做一遍，避免功能丢失，请深刻反省。」

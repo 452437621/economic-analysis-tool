@@ -113,9 +113,15 @@ def _ensure_light_migrations() -> None:
 def init_db() -> None:
     """Create all tables for the current schema (Alembic takes over in M1)."""
     import app.models.core  # noqa: F401  (register models)
+    import app.models.v2  # noqa: F401  (register V2.0 glassbox/cycle tables)
 
     Base.metadata.create_all(engine)
     _ensure_light_migrations()
+    from app.provenance.methods import ensure_methods
+
+    with SessionLocal() as session:
+        ensure_methods(session)
+        session.commit()
 
 
 def get_session() -> Iterator[Session]:
