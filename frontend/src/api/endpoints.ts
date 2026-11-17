@@ -46,6 +46,9 @@ import type {
   V2RunDetail,
   V2RunList,
   V2Status,
+  CycleConfigResponse,
+  CycleRunResult,
+  CycleStateResponse,
   WatchCandidate,
   WatchlistItem,
   WatchPatch,
@@ -198,3 +201,8 @@ export const getV2Derivations = (params: { code?: string; subject?: string; limi
 export const getV2Derivation = (derivationId: string) =>
   getJson<V2DerivationDetail>(`/api/v2/derivations/${encodeURIComponent(derivationId)}`);
 export const getV2Methods = () => getJson<V2MethodList>("/api/v2/methods");
+
+/* 周期引擎（V2.0 M2） */
+export const getCycleState = () => getJson<CycleStateResponse>("/api/v2/cycle/state");
+export const getCycleConfig = () => getJson<CycleConfigResponse>("/api/v2/cycle/config");
+export const runCycle = () => postJson<CycleRunResult>("/api/v2/cycle/run", {});

@@ -216,19 +216,29 @@ def _state_value(
         ],
         "composites": {
             key: {
+                "name": item.get("name"),
                 "value": item.get("value"),
                 "coverage": item.get("coverage"),
                 "confidence": item.get("confidence"),
                 "evidence": item.get("evidence"),
+                "degraded": item.get("degraded"),
+                "degrade_reason": item.get("degrade_reason"),
             }
             for key, item in composites.items()
         },
         "long_cycle": {
             "phase": long.get("phase"),
+            "phase_id": long.get("phase_id"),
             "score": long.get("score"),
+            "band": long.get("band"),
             "position": long.get("position"),
             "meaning": long.get("meaning"),
             "asset": long.get("asset_implication"),
+            "confidence": long.get("confidence"),
+            "evidence": long.get("evidence"),
+            "next_phase": long.get("next_phase"),
+            "exit_condition": long.get("exit_condition"),
+            "hysteresis_held": long.get("hysteresis_held"),
         },
         "short_cycle": {
             "state": short.get("state"),
@@ -236,12 +246,26 @@ def _state_value(
             "hysteresis_held": short.get("hysteresis_held"),
             "variables": short.get("variables"),
             "meaning": short.get("meaning"),
+            "confidence": short.get("confidence"),
+            "growth_12m_change": short.get("growth_12m_change"),
         },
         "liquidity": liquidity,
-        "inventory": {"state": inventory.get("state"), "degraded": inventory.get("degraded")},
+        "inventory": {
+            "state": inventory.get("state"),
+            "degraded": inventory.get("degraded"),
+            "degrade_reason": inventory.get("degrade_reason"),
+            "meaning": inventory.get("meaning"),
+            "asset": inventory.get("asset_implication"),
+            "price_momentum_60d": inventory.get("price_momentum_60d"),
+            "inventory_proxy_20d": inventory.get("inventory_proxy_20d"),
+            "confidence": inventory.get("confidence"),
+            "evidence": inventory.get("evidence"),
+        },
         "political": {
             "window": political.get("window"),
             "nearest": political.get("nearest"),
+            "days_to_nearest": political.get("days_to_nearest"),
+            "events": political.get("events"),
         },
     }
 

@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+### 新增（V2.0 M2 前端：周期罗盘与预警台，2026-11-17）
+
+诉求：「我选择B，把所有功能全部开发完成，保质保量，不能有一点瑕疵，并创建分支保留V1.0版本，创建V2.0版本分支，在此分支上开始开发。」
+
+- **新增「周期罗盘」页 `/cycle`**（`frontend/src/views/CycleView.vue`）：4 个 KPI（长债务阶段/DMI、短债务状态、债务可持续模式、历史类比最相似月份与相似度）；自绘 SVG 六分量罗盘（DMI/ICI/ECI/GROWTH/INFLATION/LIQUIDITY，100×Φ(z) 映射，中心显示长债务阶段）；五层周期卡（长债务/短债务/库存/信用流动性/政治窗口，各带阶段、置信、含义、下一阶段与切换条件，库存代理口径显式标注）；60 个月分量历史折线（DMI/GROWTH/INFLATION/LIQUIDITY）；四情景概率与资产含义（S1 35%/S2 30%/S3 22%/S4 14%，附公式）；历史类比 Top4（月份、相似度、增长/通胀状态、样本内提示）；债务可持续性（r−g、利息/收入、赤字/GDP、债务/GDP 与阈值）；世界秩序位置（美国内部秩序与国际秩序分开判定 + 八项实力指数 + 储备份额）；底部降级原因。
+- **新增「预警台」页 `/alerts`**（`frontend/src/views/AlertsView.vue`）：高/中/低风险触发计数与临近政治事件；W1–W12 预警清单（状态、严重度、规则、指标、当前值、阈值、距离、观测日，点击行展开「为什么是这条规则 / 失效条件 / 数据来源与口径」，缺失指标显式记为「未知」）；规则与阈值只读表（来自 `config/cycle.yaml`，提示改配置后重算）；政治日历（按天数排序，30 天内进入高不确定性窗口高亮，已过事件标注「已过 N 天」）。
+- **周期接口补展示字段**（`backend/app/cycle/engine.py`）：`composites` 增 `name/degraded/degrade_reason`；`long_cycle` 增 `phase_id/band/confidence/evidence/next_phase/exit_condition/hysteresis_held`；`short_cycle` 增 `confidence/growth_12m_change`；`inventory` 增 `degrade_reason/meaning/asset/price_momentum_60d/inventory_proxy_20d/confidence/evidence`；`political` 增 `days_to_nearest/events`——让前端能直白展示「阶段叫什么、区间在哪、下一阶段是什么、为何降级」。
+- **入口与类型**：`router/index.ts` 增 `/cycle`、`/alerts`（group 研究分析）；`Sidebar.vue` 研究分析组新增「周期罗盘」（`#i-target`）与「预警台」（`#i-bell`）；`api/types.ts` 增 18 个周期类型、`endpoints.ts` 增 `getCycleState/getCycleConfig/runCycle`。
+- **验证**：`npm run build`（vue-tsc + vite）成功 8.10s；`scripts/lint.py` → PASSED；`pytest tests -q` → **241 passed**；真实库起 `127.0.0.1:8771` 截 `/cycle` 与 `/alerts`——周期罗盘显示长债务「顶部」（区间 55–70、位置 98%、置信 0.91）、短债务「衰退」（置信 0.85）、债务可持续「财政主导」、36 个历史类比（首条 2023-09 相似 68%）、四情景 35/30/22/14，预警台显示 12 条规则全部未触发（0/12）且 W1/W5/W7 距离明确、政治日历给出 2026-11-03 中期选举已过 14 天与 2027-01-10 休战到期 54 天。
+
 ### 新增（V2.0 M2 后端：EPIC-C 2.0 周期引擎与周期接口，2026-11-17）
 
 诉求：「我选择B，把所有功能全部开发完成，保质保量，不能有一点瑕疵，并创建分支保留V1.0版本，创建V2.0版本分支，在此分支上开始开发。」

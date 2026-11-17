@@ -32,6 +32,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: "透明管线", group: "研究分析" },
   },
   {
+    path: "/cycle",
+    name: "cycle",
+    component: () => import("@/views/CycleView.vue"),
+    meta: { title: "周期罗盘", group: "研究分析" },
+  },
+  {
+    path: "/alerts",
+    name: "alerts",
+    component: () => import("@/views/AlertsView.vue"),
+    meta: { title: "预警台", group: "研究分析" },
+  },
+  {
     path: "/signals",
     name: "signals",
     component: () => import("@/views/SignalsView.vue"),
