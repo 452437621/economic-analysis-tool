@@ -438,3 +438,25 @@ def test_cycle_readings_contract(client):
         else:
             assert isinstance(item["value"], (int, float))
             assert len(item["spark"]) > 0
+
+
+def test_cycle_state_normalizes_legacy_payload(client):
+    """旧运行只写了 composites 时不崩：band/position/confidence 等字段补齐为稳定结构。"""
+
+    resp = client.get("/api/v2/cycle/state")
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    state = payload["state"]["value"]
+    long_cycle = state["long_cycle"]
+    assert isinstance(long_cycle["band"], list) and len(long_cycle["band"]) == 2
+    assert long_cycle["band"][1] >= long_cycle["band"][0]
+    for key in ("phase", "score", "position", "confidence", "phase_id", "next_phase"):
+        assert key in long_cycle
+    short_cycle = state["short_cycle"]
+    for key in ("state", "raw_state", "hysteresis_held", "confidence", "growth_12m_change"):
+        assert key in short_cycle
+    for key in ("DMI", "ICI", "ECI", "GROWTH", "INFLATION", "LIQUIDITY"):
+        assert isinstance(state["composites"][key], dict)
+        assert "name" in state["composites"][key]
+    assert payload["generated_at"]
+    assert isinstance(payload["indicators"], list)

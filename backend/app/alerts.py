@@ -75,7 +75,7 @@ def event_alerts(events: list[dict]) -> list[dict]:
             {
                 "level": "warn" if event_type in ("trade", "geopolitical") else "info",
                 "kind": "event",
-                "title": f"事件：{str(event.get('title') or '')[:60]}",
+                "title": f"事件：{str(event.get('title') or '')[:200]}",
                 "message": f"{event_type} · 关联 {symbols}",
             }
         )
@@ -214,6 +214,18 @@ def compute_alerts(
     return alerts
 
 
+def _supersede_truncated(session, title: str, since: datetime) -> None:
+    """新标题更完整时，替换掉同一事件此前被截断的告警，避免重复展示。"""
+    rows = session.scalars(
+        select(Alert).where(
+            Alert.kind == "event", Alert.title != title, Alert.created_at >= since
+        )
+    ).all()
+    for row in rows:
+        if len(row.title) < len(title) and title.startswith(row.title):
+            session.delete(row)
+
+
 def _recent_exists(session, kind: str, title: str, since: datetime) -> bool:
     return (
         session.scalar(
@@ -344,6 +356,8 @@ def scan_alerts() -> dict:
         for alert in compute_alerts(
             quotes, data_checks, plan_checks, now=now, calendar_events=calendar_events
         ) + position_divergence_alerts(position_rows, trend_changes) + event_alerts(event_rows):
+            if alert["kind"] == "event":
+                _supersede_truncated(session, alert["title"], since)
             if _recent_exists(session, alert["kind"], alert["title"], since):
                 skipped += 1
                 continue

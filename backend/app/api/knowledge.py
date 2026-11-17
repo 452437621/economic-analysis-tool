@@ -7,14 +7,22 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.serializers import DAILY_KINDS, brief_payload, brief_summary, kind_filter
+from app.knowledge.translate import MAX_ITEMS, prepare, text_hash, translate
 from app.models.core import Brief, Claim, Document, DocumentBody, DocumentSpan, Source
 from app.platform.db import get_session
 
 router = APIRouter(prefix="/api", tags=["knowledge"])
+
+
+class TranslateIn(BaseModel):
+    """中文对照请求：一次最多 ``MAX_ITEMS`` 条，多余的静默截断。"""
+
+    texts: list[str] = Field(default_factory=list)
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -334,3 +342,37 @@ def export_evidence(document_id: str, session: Session = Depends(get_session)) -
         payload,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/knowledge/translate")
+def translate_texts(payload: TranslateIn) -> dict:
+    """英文内容 → 中文对照（本地种子/缓存优先，配置 LLM key 后自动补译）。
+
+    ``translated`` 指「拿到了对照」的条数（原文已是中文时原样返回，也算对照）。
+    ``missing`` 是仍未命中的条数，前端这些条目只显示英文原文。
+    """
+    texts: list[str] = []
+    for raw in payload.texts[:MAX_ITEMS]:
+        body = prepare(raw)
+        if body and body not in texts:
+            texts.append(body)
+    mapping = translate(texts)
+    items = []
+    for body in texts:
+        key = text_hash(body)
+        info = mapping.get(key) or {}
+        items.append(
+            {
+                "hash": key,
+                "text": body,
+                "zh": info.get("zh"),
+                "source": info.get("source") or "none",
+            }
+        )
+    translated = sum(1 for item in items if item["zh"])
+    return {
+        "items": items,
+        "total": len(items),
+        "translated": translated,
+        "missing": len(items) - translated,
+    }

@@ -99,6 +99,88 @@ def _payload(session: Session, code: str) -> dict | None:
     }
 
 
+def _normalize_state(value: dict | None) -> dict:
+    """把旧运行留下的不完整 state 补齐成前端可直接渲染的稳定结构。
+
+    历史推导（EPIC-C 2.0 早期版本）只写了 phase/score/position，没有 band/
+    phase_id/confidence 等字段，前端直接下标访问会崩。这里以 ``config/cycle.yaml``
+    为唯一口径补齐缺失字段，不修改数据库里的原始推导。
+    """
+    value = dict(value or {})
+    cfg = load_config()
+    phases = [p for p in ((cfg.get("long_cycle") or {}).get("phases") or []) if isinstance(p, dict)]
+    by_id = {str(p.get("id")): p for p in phases if p.get("id")}
+    by_name = {str(p.get("name")): p for p in phases if p.get("name")}
+
+    long_cycle_value = dict(value.get("long_cycle") or {})
+    phase = None
+    if long_cycle_value.get("phase_id"):
+        phase = by_id.get(str(long_cycle_value["phase_id"]))
+    if phase is None and long_cycle_value.get("phase"):
+        phase = by_name.get(str(long_cycle_value["phase"]))
+    band = long_cycle_value.get("band") or (phase or {}).get("band") or [0, 100]
+    try:
+        band = [float(band[0]), float(band[1])]
+    except (TypeError, ValueError, IndexError):
+        band = [0.0, 100.0]
+    long_cycle_value["band"] = band
+    if phase:
+        long_cycle_value.setdefault("phase_id", phase.get("id"))
+        long_cycle_value.setdefault("phase", phase.get("name"))
+        long_cycle_value.setdefault("meaning", phase.get("meaning"))
+        long_cycle_value.setdefault("asset", phase.get("asset"))
+    score = long_cycle_value.get("score")
+    position = long_cycle_value.get("position")
+    if position is None and isinstance(score, (int, float)):
+        low, high = band
+        position = 0.0 if high <= low else max(0.0, min(1.0, (float(score) - low) / (high - low)))
+    if isinstance(position, (int, float)):
+        long_cycle_value["position"] = float(position)
+    for key in ("phase_id", "phase", "score", "position", "confidence"):
+        long_cycle_value.setdefault(key, None)
+    ids = [str(p.get("id")) for p in phases if p.get("id")]
+    current_id = str(long_cycle_value.get("phase_id") or "")
+    next_name = None
+    if current_id in ids:
+        index = ids.index(current_id)
+        if index + 1 < len(ids):
+            next_name = by_id[ids[index + 1]].get("name")
+    long_cycle_value.setdefault("next_phase", next_name)
+    long_cycle_value.setdefault("exit_condition", None)
+    value["long_cycle"] = long_cycle_value
+
+    short_cycle_value = dict(value.get("short_cycle") or {})
+    short_cycle_value.setdefault("state", None)
+    short_cycle_value.setdefault("raw_state", short_cycle_value.get("state"))
+    short_cycle_value.setdefault("hysteresis_held", False)
+    short_cycle_value.setdefault("confidence", None)
+    short_cycle_value.setdefault("growth_12m_change", None)
+    short_cycle_value.setdefault("variables", {})
+    value["short_cycle"] = short_cycle_value
+
+    for key in ("liquidity", "inventory", "political"):
+        if not isinstance(value.get(key), dict):
+            value[key] = {}
+    if not isinstance(value.get("readings"), list):
+        value["readings"] = []
+
+    composites = value.get("composites")
+    if not isinstance(composites, dict):
+        composites = {}
+    for key in ("DMI", "ICI", "ECI", "GROWTH", "INFLATION", "LIQUIDITY"):
+        item = composites.get(key)
+        if isinstance(item, dict):
+            item = dict(item)
+        elif isinstance(item, (int, float)):
+            item = {"value": item}
+        else:
+            item = {"value": None}
+        item.setdefault("name", key)
+        composites[key] = item
+    value["composites"] = composites
+    return value
+
+
 def _state_payload(session: Session) -> dict:
     state = _payload(session, DERIVATION_CODES["state"])
     if state is None:
@@ -106,19 +188,25 @@ def _state_payload(session: Session) -> dict:
         state = _payload(session, DERIVATION_CODES["state"])
     if state is None:  # pragma: no cover - defensive
         raise HTTPException(status_code=503, detail="cycle engine produced no state")
+    state["value"] = _normalize_state(state.get("value"))
     run = session.get(AnalysisRun, state["run_id"]) if state.get("run_id") else None
     extra = {
         key: _payload(session, code)
         for key, code in DERIVATION_CODES.items()
         if key != "state"
     }
+    generated_at = (
+        aware(run.finished_at).isoformat()
+        if run is not None and run.finished_at
+        else datetime.now(timezone.utc).isoformat()
+    )
     return {
         "asof": state["asof"],
         "run_id": state["run_id"],
         "status": run.status if run else None,
         "degraded": bool(run.degraded) if run else False,
         "degraded_reasons": (run.degraded_reasons or []) if run else [],
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": generated_at,
         "state": state,
         "indicators": (state.get("value") or {}).get("readings") or [],
         **extra,

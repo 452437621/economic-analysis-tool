@@ -6,10 +6,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -22,7 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, TimestampMixin, utcnow
+from app.models.base import Base, TimestampMixin, new_id, utcnow
 
 
 class AnalysisRun(Base, TimestampMixin):
@@ -329,3 +330,45 @@ class PrincipleCheck(Base):
     value: Mapped[float | None] = mapped_column(Float)
     note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TradeRecord(Base, TimestampMixin):
+    """交易记录（V2.0）：股票/期货/期权等品种的开平仓与复盘。
+
+    与 V1 的 ``journal_entries`` 按日复盘不同，这里一次建仓=一条记录；
+    ``pnl`` / ``pnl_pct`` / ``rr`` 允许手工录入，缺失时由 API 按价格推导。
+    """
+
+    __tablename__ = "trade_records"
+    __table_args__ = (
+        Index("ix_trade_records_trade_date", "trade_date"),
+        Index("ix_trade_records_asset_class", "asset_class"),
+        Index("ix_trade_records_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    name: Mapped[str | None] = mapped_column(String(64))
+    asset_class: Mapped[str] = mapped_column(String(16), nullable=False, default="futures")
+    direction: Mapped[str] = mapped_column(String(8), nullable=False, default="long")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="closed")
+    strategy: Mapped[str | None] = mapped_column(String(200))
+    planned_qty: Mapped[float | None] = mapped_column(Float)
+    filled_qty: Mapped[float | None] = mapped_column(Float)
+    entry_price: Mapped[float | None] = mapped_column(Float)
+    exit_price: Mapped[float | None] = mapped_column(Float)
+    stop_price: Mapped[float | None] = mapped_column(Float)
+    target_price: Mapped[float | None] = mapped_column(Float)
+    margin: Mapped[float | None] = mapped_column(Float)
+    leverage: Mapped[float | None] = mapped_column(Float)
+    fee: Mapped[float | None] = mapped_column(Float)
+    pnl: Mapped[float | None] = mapped_column(Float)
+    pnl_pct: Mapped[float | None] = mapped_column(Float)
+    risk_amount: Mapped[float | None] = mapped_column(Float)
+    rr: Mapped[float | None] = mapped_column(Float)
+    planned_win_rate: Mapped[float | None] = mapped_column(Float)
+    attribution: Mapped[str | None] = mapped_column(String(400))
+    plan_note: Mapped[str | None] = mapped_column(String(2000))
+    review_note: Mapped[str | None] = mapped_column(String(2000))
+    tags: Mapped[list | None] = mapped_column(JSON)

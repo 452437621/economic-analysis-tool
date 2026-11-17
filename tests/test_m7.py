@@ -39,8 +39,10 @@ def test_journal_api_roundtrip():
     with TestClient(app) as client:
         resp = client.post("/api/journal", json={"content": "测试日志内容", "entry_date": "2026-11-09"})
         assert resp.status_code == 200
-        assert resp.json()["saved"] is True
-        listing = client.get("/api/journal?limit=5").json()["data"]
+        created = resp.json()
+        assert created["created"] in (True, False)
+        assert created["item"]["content"] == "测试日志内容"
+        listing = client.get("/api/journal?limit=5").json()["items"]
         assert any(entry["content"] == "测试日志内容" for entry in listing)
 
 
