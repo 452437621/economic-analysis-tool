@@ -6,6 +6,15 @@
 
 ## [Unreleased]
 
+### 新增（V2.0 M4 后端：原则库核对、预测台账与校准，2026-11-17）
+
+- **新增原则库数据即代码**（`backend/app/ledger/principles.py`）：26 条原则（A 债务货币 8 / B 周期秩序 8 / C 冲突政治 5 / D 市场资产 5），每条带原文/推断/争议标注、可观测指标、信号、失效条件与证据级；其中 19 条配置了可自动核对的 `metric/op/threshold/near`（含观察线与「接近」判定），7 条定性原则显式保持 `unknown` 交人工复盘。
+- **新增两张表**（`backend/app/models/v2.py`）：`principles` 与 `principle_checks`（唯一约束 `(principle_id, asof)`），让「今天哪条原则成立」可逐日回看。
+- **新增台账编排**（`backend/app/ledger/engine.py`）：`ledger.review.v1` 在同一个 `RunRecorder` 内五步（读周期快照 → 同步原则 → 核对原则 → 对账到期预测 → 派生结论）；指标字典合并周期分量、读数、预警指标与外部结构性常量（全球债务/GDP 311%，IIF 2026H1，显式来源）；预测支持 12 类对象（周期六分量/黄金综合评分/XAUUSD/美债 10Y·30Y/中债 10Y/USDCNH），到期按 `target_date <= today` 结算，方向 up/down/flat（flat 容差 2%），Brier 用登记概率计算；校准按 ≤20 天 / 21–60 天 / >60 天分桶。派生 `ledger.principles`（E2）、`ledger.calibration`（E2，样本 <20 条时置信度 0.4）、`ledger.forecasts`（E1）。
+- **新增台账接口 `/api/v2/ledger`**：`GET /overview`（空库懒触发一次运行）、`/principles`、`/forecasts?status=open|resolved`、`/calibration`；`POST /forecasts`（code/direction/horizon_days/probability/point/baseline_value/notes，服务端校验 code 与方向）；`POST /run`。
+- **真实库核对结果（2026-11-17）**：26 条中命中 12（A2 利息/收入 25%、A3·B1 长周期位置 0.98、A7 全球债务/GDP 311%、A8 美元储备 56.7%、B2 增长 29.8、B4 极化 82、B5 关税 60、B6·C5 制裁 70、C2 抗议 65、C3 赤字 5.8%）、接近 2（A4 r−g +0.9pp 未转负、C4 同盟退出 50）、不成立 5（A6 SOFR−EFFR 0.02、B8 央行购金 12 个月 106 吨、C1 不平等 21、D1 黄金 60 日动量 −16%、D3 油价 60 日动量 0.85%）、缺数据 7（定性原则）。
+- **验证**：新增 `tests/test_v2_ledger.py` 14 条（数据集完整性、`_eval` 四态、指标汇总与别名、同步幂等、核对状态分布、预测登记校验、到期结算与 Brier、校准分桶、端到端三条推导、API 形状与创建/运行）；全量 `pytest tests -q` → **266 passed**；`scripts/lint.py` → PASSED（0 errors, 0 warnings）。
+
 ### 新增（V2.0 M3 世界长河：1500–2026 年表、霸权周期与当下坐标，2026-11-17）
 
 诉求：「我选择B，把所有功能全部开发完成，保质保量，不能有一点瑕疵，并创建分支保留V1.0版本，创建V2.0版本分支，在此分支上开始开发。」

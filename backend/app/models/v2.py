@@ -285,3 +285,47 @@ class PowerIndex(Base):
     unit: Mapped[str | None] = mapped_column(String(16))
     evidence_grade: Mapped[str] = mapped_column(String(2), default="B")
     source_url: Mapped[str | None] = mapped_column(String(400))
+
+
+class Principle(Base):
+    """原则库（F25）：26 条经历史检验的规则，带证据级、可观测指标与失效条件。"""
+
+    __tablename__ = "principles"
+
+    id: Mapped[str] = mapped_column(String(8), primary_key=True)
+    category: Mapped[str] = mapped_column(String(2), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    statement: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence: Mapped[str] = mapped_column(String(8), default="原文")
+    observable: Mapped[str] = mapped_column(Text, default="")
+    signal: Mapped[str] = mapped_column(Text, default="")
+    falsifier: Mapped[str] = mapped_column(Text, default="")
+    grade: Mapped[str] = mapped_column(String(2), default="C")
+    metric: Mapped[str | None] = mapped_column(String(60))
+    op: Mapped[str | None] = mapped_column(String(4))
+    threshold: Mapped[float | None] = mapped_column(Float)
+    near: Mapped[float | None] = mapped_column(Float)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PrincipleCheck(Base):
+    """原则核对结果：hit（条件成立）/ near（接近阈值）/ miss（不成立）/ unknown（缺数据）。"""
+
+    __tablename__ = "principle_checks"
+    __table_args__ = (
+        UniqueConstraint("principle_id", "asof", name="uq_principle_check"),
+        Index("ix_principle_checks_asof", "asof"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    principle_id: Mapped[str] = mapped_column(
+        ForeignKey("principles.id", ondelete="CASCADE"), nullable=False
+    )
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("analysis_runs.id", ondelete="SET NULL")
+    )
+    asof: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), default="unknown")
+    value: Mapped[float | None] = mapped_column(Float)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

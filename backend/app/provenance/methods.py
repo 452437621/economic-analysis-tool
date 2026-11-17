@@ -74,6 +74,14 @@ METHOD_SPECS: tuple[dict, ...] = (
         "module": "app.timeline.engine",
         "description": "1500–2026 事件年表入库、霸权周期与实力/储备份额、当下五维坐标与历史类比。",
     },
+    {
+        "method_id": "ledger.review.v1",
+        "name": "台账：原则库核对与预测校准",
+        "version": "1.0",
+        "kind": "model",
+        "module": "app.ledger.engine",
+        "description": "26 条原则按当前读数核对命中/接近/不成立，预测登记、到期对账与 Brier 校准。",
+    },
 )
 
 
