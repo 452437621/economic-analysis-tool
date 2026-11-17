@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+### 新增（V2.0 M1 玻璃盒前端：透明管线页与溯源抽屉，2026-11-17）
+
+诉求：「我选择B，把所有功能全部开发完成，保质保量，不能有一点瑕疵，并创建分支保留V1.0版本，创建V2.0版本分支，在此分支上开始开发。」
+
+- **新增前端类型与接口**：`frontend/src/api/types.ts` 增 `V2Run/V2Step/V2RuleHit/V2Derivation/V2Method/V2RunList/V2RunDetail/V2DerivationList/V2DerivationDetail/V2MethodList/V2Status`；`endpoints.ts` 增 `getV2Status/getV2Runs/getV2Run/getV2Derivations/getV2Derivation/getV2Methods`。
+- **新增「透明管线」页 `/pipeline`**（`frontend/src/views/PipelineView.vue`）：顶部 4 个 KPI（最近运行、推导条数、运行/观测/方法数、降级与失败）；左侧运行记录列表；右侧 11 个步骤的步骤链（序号、名称、类型、耗时、输入/输出 JSON、错误与降级原因）；底部推导清单（结论、code、证据级、置信度、措辞、观测日、「为什么 →」），支持 `?code=regime.US` 深链过滤与 30 秒轮询。
+- **新增「为什么」抽屉**（`frontend/src/components/domain/DerivationDrawer.vue`）：L1 结论（claim/value/证据级/置信度措辞）→ L2 推导步骤 → L3 规则命中 → L4 输入指标 → L5 反证与失效条件（caveats / falsifiers / opposing，全空时提示降低依赖），另有方法登记（method_id/version/code_sha）与父子谱系（parents/children）。
+- **入口接线**：`router/index.ts` 注册 `/pipeline`（group 研究分析）；`Sidebar.vue` 研究分析组新增「透明管线」（`#i-layers`）；`AnalysisView.vue` 周期区块与市场风向卡新增「为什么是这个象限 / 读数 → 溯源」，带 `code` 参数跳到管线页。
+- **验证**：`npm run build`（vue-tsc + vite）成功 7.68s；临时起 `127.0.0.1:8771` 服务（新代码）截 `/pipeline` 与 `/analysis`——管线页正确显示 11 步运行链、3 条推导（`wind.market` E3 55%、`regime.CN` E3 35%、`regime.US` E3 40%）与「为什么」入口，分析页溯源链接均落到带 code 参数的管线页。
+
 ### 新增（V2.0 M0 地基：透明化血缘引擎与玻璃盒接口，2026-11-17）
 
 诉求：「我选择B，把所有功能全部开发完成，保质保量，不能有一点瑕疵，并创建分支保留V1.0版本，创建V2.0版本分支，在此分支上开始开发。」（分支 `v1.0-final` 保留 V1.0 终点，开发在 `v2.0`）

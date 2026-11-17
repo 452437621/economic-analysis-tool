@@ -153,7 +153,15 @@
             </div>
           </div>
           <EmptyState v-else text="风向数据缺失" hint="等待分析任务产出市场风向。" />
-          <div v-if="wind" class="card-foot">score = 40% 广度 + 35% 动量 + 25% 利率 · {{ wind.asof }}</div>
+          <div v-if="wind" class="card-foot">
+            score = 40% 广度 + 35% 动量 + 25% 利率 · {{ wind.asof }}
+            <RouterLink
+              class="regime-why"
+              :to="{ path: '/pipeline', query: { code: 'wind.market' } }"
+            >
+              为什么是这个读数 → 溯源
+            </RouterLink>
+          </div>
         </section>
 
         <section class="card regime-card">
@@ -179,6 +187,12 @@
                 </div>
               </div>
               <div class="regime-method">{{ regime.method }}</div>
+              <RouterLink
+                class="regime-why"
+                :to="{ path: '/pipeline', query: { code: `regime.${regime.country}` } }"
+              >
+                为什么是这个象限 → 溯源
+              </RouterLink>
             </div>
           </div>
           <EmptyState v-else text="周期数据缺失" hint="等待分析任务产出周期状态。" />
@@ -941,6 +955,17 @@ function openHistory(symbol: string, name: string): void {
   font-size: 9px;
   line-height: 1.5;
   color: var(--dim);
+}
+.regime-why {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 9.5px;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.regime-why:hover {
+  text-decoration: underline;
 }
 
 /* ---------- 相关性 ---------- */

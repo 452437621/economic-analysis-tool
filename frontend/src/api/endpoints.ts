@@ -40,6 +40,12 @@ import type {
   Thesis,
   ThesisReview,
   TradePlan,
+  V2DerivationDetail,
+  V2DerivationList,
+  V2MethodList,
+  V2RunDetail,
+  V2RunList,
+  V2Status,
   WatchCandidate,
   WatchlistItem,
   WatchPatch,
@@ -180,3 +186,15 @@ export const saveJournal = (content: string) => postJson<JournalEntry>("/api/jou
 /* 下载链接 */
 export const briefPrintUrl = (id: string) => `/api/briefs/${id}/print`;
 export const briefMarkdownUrl = (id: string) => `/api/briefs/${id}/markdown`;
+
+/* 玻璃盒（V2.0 M0） */
+export const getV2Status = () => getJson<V2Status>("/api/v2/status");
+export const getV2Runs = (params: { kind?: string; subject?: string; limit?: number } = {}) =>
+  getJson<V2RunList>("/api/v2/runs", { params });
+export const getV2Run = (runId: string) =>
+  getJson<V2RunDetail>(`/api/v2/runs/${encodeURIComponent(runId)}`);
+export const getV2Derivations = (params: { code?: string; subject?: string; limit?: number } = {}) =>
+  getJson<V2DerivationList>("/api/v2/derivations", { params });
+export const getV2Derivation = (derivationId: string) =>
+  getJson<V2DerivationDetail>(`/api/v2/derivations/${encodeURIComponent(derivationId)}`);
+export const getV2Methods = () => getJson<V2MethodList>("/api/v2/methods");
