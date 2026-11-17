@@ -44,6 +44,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: "预警台", group: "研究分析" },
   },
   {
+    path: "/history",
+    name: "history",
+    component: () => import("@/views/HistoryView.vue"),
+    meta: { title: "世界长河", group: "研究分析" },
+  },
+  {
     path: "/signals",
     name: "signals",
     component: () => import("@/views/SignalsView.vue"),

@@ -70,6 +70,7 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
       { to: "/cycle", label: "周期罗盘", icon: "#i-target" },
       { to: "/alerts", label: "预警台", icon: "#i-bell" },
       { to: "/pipeline", label: "透明管线", icon: "#i-layers" },
+      { to: "/history", label: "世界长河", icon: "#i-book" },
       { to: "/signals", label: "交易信号", icon: "#i-activity" },
       { to: "/theses", label: "论点与证据", icon: "#i-branch" },
     ],

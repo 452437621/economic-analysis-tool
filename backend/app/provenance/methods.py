@@ -66,6 +66,14 @@ METHOD_SPECS: tuple[dict, ...] = (
         "module": "app.cycle.engine",
         "description": "DMI/ICI/ECI 分量合成、长债务与短债务周期定位、债务可持续性、世界秩序、历史类比与四情景。",
     },
+    {
+        "method_id": "timeline.catalog.v1",
+        "name": "世界长河 1500–2026",
+        "version": "1.0",
+        "kind": "dataset",
+        "module": "app.timeline.engine",
+        "description": "1500–2026 事件年表入库、霸权周期与实力/储备份额、当下五维坐标与历史类比。",
+    },
 )
 
 

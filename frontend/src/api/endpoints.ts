@@ -49,6 +49,9 @@ import type {
   CycleConfigResponse,
   CycleRunResult,
   CycleStateResponse,
+  TimelineEventItem,
+  TimelineOverview,
+  TimelineRunResult,
   WatchCandidate,
   WatchlistItem,
   WatchPatch,
@@ -206,3 +209,9 @@ export const getV2Methods = () => getJson<V2MethodList>("/api/v2/methods");
 export const getCycleState = () => getJson<CycleStateResponse>("/api/v2/cycle/state");
 export const getCycleConfig = () => getJson<CycleConfigResponse>("/api/v2/cycle/config");
 export const runCycle = () => postJson<CycleRunResult>("/api/v2/cycle/run", {});
+
+/* 世界长河（V2.0 M3） */
+export const getTimelineOverview = () => getJson<TimelineOverview>("/api/v2/timeline/overview");
+export const getTimelineEvents = (params: { layer?: string; q?: string; era?: string } = {}) =>
+  getJson<{ items: TimelineEventItem[]; total: number }>("/api/v2/timeline/events", { params });
+export const runTimeline = () => postJson<TimelineRunResult>("/api/v2/timeline/run", {});

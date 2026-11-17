@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+### 新增（V2.0 M3 世界长河：1500–2026 年表、霸权周期与当下坐标，2026-11-17）
+
+诉求：「我选择B，把所有功能全部开发完成，保质保量，不能有一点瑕疵，并创建分支保留V1.0版本，创建V2.0版本分支，在此分支上开始开发。」
+
+- **新增长河数据即代码**（`backend/app/timeline/dataset.py`）：73 条精选事件（1500–2026，分 L 长周期/B 大周期/S 短周期/E 事件冲击四层，每条带类别、证据级 A/B/C、相关势力、摘要与来源；A 级必须有公开 URL，C 级标注「叙事判断」）；6 轮霸权时期（中国明/西葡/荷兰/英国/美国/多极，含崛起-顶点-衰退、储备货币、创新与教训）；`GDP_SHARE` 27 点（Maddison 2023）、`RESERVE_SHARE` 8 点（IMF COFER + 1913 年研究者估计）、当下坐标 6 维（储备份额/债务收入/利息收入/r−g/内部极化/外部冲突）、3 个历史类比（1937/1971–73/1900–14）、10 条历史规律 H1–H10（含「可计算」说明）。本次补齐 E 层事件冲击 9 条（1987/1997/2000/2001/2008/2011/2020/2022/2026），使四层泳道都有内容。
+- **新增长河编排**（`backend/app/timeline/engine.py`）：`run_timeline()` 在同一 `RunRecorder` 内四步（事件入库 → 份额入库 → 读取周期引擎快照 → 派生结论）；事件与实力份额按稳定 id 幂等 upsert；派生 `timeline.position`（E2，六维坐标 + 三个类比 + 周期读数）、`timeline.power.shift`（E1，实力领先储备 30–50 年）、`timeline.catalog`（E1，条数与证据级分布），全部带 caveats/falsifiers/opposing；周期引擎无数据时显式降级（`timeline.cycle_missing`）。
+- **新增长河接口 `/api/v2/timeline`**（`backend/app/api/timeline.py`）：`GET /overview`（空库懒触发入库）、`/events`（layer/era/power/grade/年份区间/关键词过滤，未知 era 返回 404）、`/eras`、`/powers`、`/position`（无则 503）、`POST /run`。
+- **新增「世界长河」页 `/history`**（`frontend/src/views/HistoryView.vue`）：4 个 KPI（事件数与证据级分布、六轮霸权与当前「多极/待定」、美元储备份额 56.7% 对 1999 年约 71%、历史类比最相似 1971–73 62%）；自绘 HTML 时间轴（1500–2026、四层泳道、霸权时期色带与图例、时间窗切换 1500–1800/1800–1914/1914–1991/1991–2026/全部、层过滤、点击事件打开详情抽屉、支持 `/history?event=<id>` 深链）；GDP 份额与储备货币份额两张 ECharts 折线（图例用中文，储备线覆盖 USD/GBP/EUR/CNY）；当下坐标表（6 维：当前读数、历史锚点、判断、证据级）；历史类比卡（相似/不同点）；霸权更替表；十条历史规律卡；底部口径声明（精选非全集、叙事分期为 C/D 级）与降级原因。
+- **ECharts 注册补充**：`EChart.vue` 增 `ScatterChart` 与 `MarkAreaComponent`，供长河时间轴等图表使用。
+- **入口**：`router/index.ts` 增 `/history`（group 研究分析）；`Sidebar.vue` 研究分析组增「世界长河」（`#i-book`）；`api/types.ts` 增长河 11 个类型、`endpoints.ts` 增 `getTimelineOverview/getTimelineEvents/runTimeline`。
+- **验证**：新增 `tests/test_v2_timeline.py` 11 条（数据集完整性 73 条、A 级必须有来源、跨度与 6 个霸权期、份额关键点、H1–H10 与 3 类比、入库幂等、端到端三条推导、重复运行单份目录、接口形状与过滤、POST /run）；真实库入库 73 条事件 / 6 期 / 10 条规律 / 35 行实力份额，六维读数为储备 56.7%、债务 133%、利息/收入 25.0%、r−g +0.9pp、ICI 72.8、ECI 58.2；`pytest tests -q` → **252 passed**；`scripts/lint.py` → PASSED；`npm run build` 成功；`127.0.0.1:8771` 截图验收 `/history` 四层时间轴、两张份额折线、六维坐标、三个类比与十条规律，抽屉与深链正常。
+
 ### 新增（V2.0 M2 前端：周期罗盘与预警台，2026-11-17）
 
 诉求：「我选择B，把所有功能全部开发完成，保质保量，不能有一点瑕疵，并创建分支保留V1.0版本，创建V2.0版本分支，在此分支上开始开发。」

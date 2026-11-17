@@ -23,6 +23,7 @@ from app.api import (
     overview,
     system,
     theses,
+    timeline,
     watchlist,
 )
 from app.platform.config import ROOT_DIR, settings
@@ -74,6 +75,7 @@ app.include_router(events.router)
 app.include_router(watchlist.router)
 app.include_router(glassbox.router)
 app.include_router(cycle.router)
+app.include_router(timeline.router)
 
 if WEB_DIR.exists():
     assets_dir = WEB_DIR / "assets"

@@ -10,11 +10,12 @@ import { computed } from "vue";
 import VChart from "vue-echarts";
 import { use } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
-import { BarChart, CandlestickChart, LineChart, TreemapChart } from "echarts/charts";
+import { BarChart, CandlestickChart, LineChart, ScatterChart, TreemapChart } from "echarts/charts";
 import {
   DataZoomComponent,
   GridComponent,
   LegendComponent,
+  MarkAreaComponent,
   MarkLineComponent,
   TitleComponent,
   TooltipComponent,
@@ -27,11 +28,13 @@ use([
   LineChart,
   BarChart,
   CandlestickChart,
+  ScatterChart,
   TreemapChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
   DataZoomComponent,
+  MarkAreaComponent,
   MarkLineComponent,
   VisualMapComponent,
   TitleComponent,
