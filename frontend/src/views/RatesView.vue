@@ -87,7 +87,7 @@
             >
               <span class="mi-top">
                 <span class="mi-name">{{ row.label }}<em v-if="row.freq" class="mi-freq">{{ row.freq }}</em></span>
-                <span class="mi-code">{{ row.code }}</span>
+                <span class="mi-code" :class="{ 'mi-code--stale': daysAgo(row) > 5 }">{{ row.code }} · {{ asOfText(row) }}</span>
               </span>
               <span class="mi-value">{{ fmtMacro(row.value, row.unit) }}</span>
               <span class="mi-bottom">
@@ -152,6 +152,23 @@ const latestAsOfText = computed(() => {
   const latest = rows.value.reduce((max, row) => (row.ts > max ? row.ts : max), "");
   return latest ? fmtTime(latest, true) : "—";
 });
+
+function daysAgo(row: MacroLatestItem): number {
+  if (!row.ts) return 0;
+  const date = new Date(row.ts);
+  if (Number.isNaN(date.getTime())) return 0;
+  const now = new Date();
+  const target = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((today - target) / 86400000);
+}
+
+function asOfText(row: MacroLatestItem): string {
+  if (!row.ts) return "无数据";
+  const day = fmtDate(row.ts).slice(5);
+  const days = daysAgo(row);
+  return days <= 0 ? `${day} 当日` : `${day}（${days} 天前）`;
+}
 
 const todayLabel = computed(() => {
   const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
@@ -517,6 +534,10 @@ onMounted(() => {
   font-family: var(--mono);
   font-size: 8.5px;
   color: var(--dim);
+  white-space: nowrap;
+}
+.mi-code--stale {
+  color: var(--warn-color, #d08700);
 }
 .mi-value {
   font-family: var(--mono);

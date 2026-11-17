@@ -2,7 +2,7 @@
   <div class="view active">
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">研究分析 · 黄金 · 数据截至 {{ generatedLabel }}</div>
+        <div class="page-eyebrow">研究分析 · 黄金 · 数据截至 {{ earliestFactorAsOf }}</div>
         <h1 class="page-h1">
           黄金研判
           <span class="page-sub">央行购金 · 全球 ETF · 租赁/掉期 · 库存 · 做市商持仓</span>
@@ -172,6 +172,13 @@
                 <span class="frow-val">{{ factorValueText(factor) }}</span>
                 <span v-if="factor.available" class="frow-chg" :class="trendClass(factor.change)">{{ fmtPct(factor.change) }}</span>
                 <span v-else class="frow-chg dim">—</span>
+                <span
+                  class="frow-asof"
+                  :class="{ 'frow-asof--stale': isFactorStale(factor) }"
+                  :title="factor.as_of ? `该因子最新观测日 ${fmtDate(factor.as_of)}（${factor.freq || '—'} 频）` : '尚未采集到观测值'"
+                >
+                  {{ factorAsOfText(factor) }}
+                </span>
                 <span class="frow-weight">权重 {{ factor.weight }}</span>
                 <span class="frow-contrib">
                   贡献
@@ -413,7 +420,7 @@
         </div>
         <div class="card-foot">
           <svg class="ic"><use href="#i-info" /></svg>
-          <span>数据截至 {{ generatedLabel }} · 覆盖率 {{ fmtNumber(coverage, 1) }}% · 评分区间 −100（强空）~ +100（强多）。</span>
+          <span>数据截至 {{ earliestFactorAsOf }}（各因子里最早的观测日）· 覆盖率 {{ fmtNumber(coverage, 1) }}% · 评分区间 −100（强空）~ +100（强多）。</span>
         </div>
       </section>
     </template>
@@ -553,6 +560,41 @@ const generatedAt = computed(() => score.value?.generated_at ?? overview.value?.
 const methodology = computed(() => score.value?.methodology ?? "—");
 
 const generatedLabel = computed(() => (generatedAt.value ? fmtDateTime(generatedAt.value) : "—"));
+
+/** 各频率因子的「过旧」阈值（天）：日频 5、周频 12、月频 50、季频 130 */
+const STALE_DAYS: Record<string, number> = { d: 5, w: 12, m: 50, q: 130 };
+
+/** 距今天数：按自然日取 UTC 差值，避免时区与夏令时造成 ±1 天误差 */
+function daysSince(date: string | null | undefined): number | null {
+  if (!date) return null;
+  const target = new Date(date);
+  if (Number.isNaN(target.getTime())) return null;
+  const now = new Date();
+  const from = Date.UTC(target.getFullYear(), target.getMonth(), target.getDate());
+  const to = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((to - from) / 86400000);
+}
+
+function factorAsOfText(factor: GoldFactor): string {
+  if (!factor.as_of) return "—";
+  const days = daysSince(factor.as_of) ?? 0;
+  const day = fmtDate(factor.as_of).slice(5);
+  return days <= 0 ? `${day} 当日` : `${day}·${days}天`;
+}
+
+function isFactorStale(factor: GoldFactor): boolean {
+  const days = daysSince(factor.as_of);
+  if (days === null) return false;
+  return days > (STALE_DAYS[(factor.freq || "d").toLowerCase()] ?? 7);
+}
+
+/** 展示口径：各可用因子里最早的观测日（而非评分生成时间），避免用「刚算过」掩盖「数据很旧」 */
+const earliestFactorAsOf = computed(() => {
+  const dates = factors.value.filter((factor) => factor.available && factor.as_of).map((factor) => factor.as_of as string);
+  if (!dates.length) return generatedLabel.value;
+  const earliest = dates.reduce((min, current) => (current < min ? current : min), dates[0]);
+  return fmtDate(earliest);
+});
 const updatedLabel = computed(() => (lastUpdated.value ? fmtTime(lastUpdated.value.toISOString(), true) : "—"));
 const scoreTrend = computed<"up" | "down" | "flat">(() => {
   const value = scoreValue.value;
@@ -1431,6 +1473,15 @@ function chartMeta(chart: ChartCard): string {
   font-family: var(--mono);
   font-size: 9px;
   color: var(--dim);
+}
+.frow-asof {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.frow-asof--stale {
+  color: var(--warn-color, #d08700);
 }
 .frow-contrib {
   margin-left: auto;

@@ -40,7 +40,7 @@
             </template>
           </div>
           <div class="hist-foot">
-            <span class="hint">{{ history.kind === "instrument" ? "日线收盘价" : "宏观序列观测值" }} · 数据来自本地数据库</span>
+            <span class="hint">{{ history.kind === "instrument" ? "日线收盘价" : "宏观序列观测值" }} · 数据来自本地数据库 · 海外标的最新一点通常是其最近一个成交日（周末与节假日不产生新数据） </span>
             <span class="spacer"></span>
             <button class="btn btn--sm btn--ghost" type="button" @click="history.close()">关闭</button>
           </div>
@@ -91,9 +91,19 @@ const unitSuffix = computed(() => {
   return history.unit ? ` ${history.unit}` : "";
 });
 
+function daysSince(date: Date | null | undefined): number | null {
+  if (!date) return null;
+  const now = new Date();
+  const target = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((today - target) / 86400000);
+}
+
 const metaText = computed(() => {
   if (!history.stats) return history.error ?? "暂无数据";
-  return `${history.stats.count} 个点 · ${fmtDate(history.stats.from.toISOString())} ~ ${fmtDate(history.stats.to.toISOString())}`;
+  const days = daysSince(history.stats.to);
+  const suffix = days === null ? "" : days <= 0 ? "（最新一点：今日）" : `（最新一点：${days} 天前）`;
+  return `${history.stats.count} 个点 · ${fmtDate(history.stats.from.toISOString())} ~ ${fmtDate(history.stats.to.toISOString())}${suffix}`;
 });
 
 function valueText(value: number): string {

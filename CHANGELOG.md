@@ -56,6 +56,7 @@
 - **前端「时点」语义**：Topbar「数据已同步 HH:mm」→「刷新于 HH:mm」（原来那个时间是浏览器轮询时间）；`HistoryModal` 标注「最新一点：N 天前」并说明海外标的最新点是最近成交日；利率卡片与黄金因子行显示各自 `as_of`（超频标黄）；`useFormat.freshness` 增加交易时段判断，非交易时段显示「已收盘」而不是误报「旧数据」。
 - **质检口径的两个小毛病**：个别新闻源给出「未来」时间戳时 detail 会写「距今-1天」（改为负年龄按 0 天计）；`scripts/_common.ps1` 的 netstat 兜底把端口上的 `TIME_WAIT`/`ESTABLISHED` 连接当成监听者，导致 `stop.ps1` 刚停完就 `start.ps1` 会报「端口被进程 N (unknown) 占用」而拒绝启动（改为只认 `LISTENING` 行；注意该文件必须以 **UTF-8 BOM** 保存，否则 Windows PowerShell 5.1 会按 ANSI 读中文注释而整份脚本语法错误）。
 - 新增 `tests/test_macro_freq.py`、`tests/test_writelock.py`、`tests/test_quote_preferred.py`，`pytest tests -q` → **153 passed**。
+- 补充（2026-11-17 补交）：上列「前端语义」相关改动此前一直未提交，本次按 `web/assets` 新构建产物等价还原 6 个源文件（`useFormat.ts` / `Topbar.vue` / `HistoryModal.vue` / `MarketView.vue` / `RatesView.vue` / `GoldView.vue`）并重新构建 `web/`。**还原为语义等价重建，非逐字原文**（变量声明顺序、辅助函数写法可能与原稿不同，故 vite 产物哈希与事故前不同）；`vue-tsc --noEmit` 通过、`npm run build` 成功。
 - 验证：`collect_daily_bars` 回填 55,598 根（`tencent_daily=3`、`sina_fx_daily=2`、`tencent_fallback=3`、`eastmoney_daily_failed=3`、无错误）；35 个标的实时报价 `stale_sec` 全部在 1–6 分钟内；`check_data_quality` 8 项 0 失败；`/api/system/data-quality` **7/7 通过**；`/api/market/bars` 除 ECB 6 个汇率与 USDCNH（上游当日参考汇率未发布）外全部到 2026-11-16；采集日志出现新分支 `groups: {cn_futures:12, overseas:9, fx:7, tencent_preferred:1, cn_equity:4}`；NDX 报价改为腾讯 27,512.65（昨收 27,943.74，与日线一致）。
 - 文档：[05 数据源与接口清单](docs/05-数据源与接口清单.md) 增补 7.4（优先级链与上游证据）与 7.5（哪些是故障、哪些是周末/官方未发布的正常滞后）。
 

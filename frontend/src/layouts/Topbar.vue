@@ -11,9 +11,9 @@
       <span class="kbd">Ctrl K</span>
     </button>
     <div class="top-actions">
-      <span class="pill" :title="health.error ?? `后端 ${apiHost} · 版本 ${health.health?.version ?? '—'}`">
+      <span class="pill" :title="health.error ?? `后端 ${apiHost} · 版本 ${health.health?.version ?? '—'} · 时间为本页最近一次成功刷新`">
         <span class="dot" :class="health.healthy ? 'dot--live' : 'dot--warn'"></span>
-        数据已同步 <b>{{ syncTime }}</b>
+        刷新于 <b>{{ syncTime }}</b>
       </span>
       <button
         class="icon-btn"

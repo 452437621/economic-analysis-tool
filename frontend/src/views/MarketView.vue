@@ -7,7 +7,7 @@
           市场行情
           <span class="page-sub">
             {{ snapshotMeta.with_quote ?? snapshot.length }} / {{ snapshotMeta.count ?? snapshot.length }} 标的已接入 ·
-            数据时点 {{ fmtTime(snapshotMeta.asof, true) }}
+            采集时点 {{ fmtTime(snapshotMeta.asof, true) }}
           </span>
         </h1>
       </div>
@@ -116,7 +116,7 @@
                 </button>
               </th>
               <th style="width: 152px">数据源</th>
-              <th style="width: 104px">时点</th>
+              <th style="width: 104px">采集时点</th>
               <th class="num" style="width: 58px">证据</th>
             </tr>
           </thead>
@@ -188,7 +188,7 @@
         <span class="mini-legend">
           <span>上涨 <b class="up">■</b></span>
           <span>下跌 <b class="down">■</b></span>
-          <span>时点均为北京时间</span>
+          <span>采集时点均为北京时间（同一价格在未变化时按 4 分钟去重，时点会跳）</span>
         </span>
       </div>
     </div>

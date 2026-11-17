@@ -98,6 +98,14 @@ export function fmtAgo(seconds: number | null | undefined): string {
   return `${Math.round(seconds / 86400)} 天前`;
 }
 
+/** 是否处于交易时段（北京时间，周一至周五 09:00–15:05 / 21:00–23:00） */
+export function inTradingSession(now: Date = new Date()): boolean {
+  const day = now.getDay();
+  if (day === 0 || day === 6) return false;
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  return (minutes >= 540 && minutes <= 905) || (minutes >= 1260 && minutes <= 1380);
+}
+
 /** 数据新鲜度徽标文案与级别（旧版 staleBadge） */
 export function freshness(
   staleSec: number | null | undefined,
@@ -106,8 +114,8 @@ export function freshness(
   if (staleSec === null || staleSec === undefined) return { text: "", level: "plain" };
   const delay = delaySec ?? 0;
   if (delay >= 600) return { text: `延迟 ${Math.round(delay / 60)}m`, level: "plain" };
-  if (staleSec > 1800) return { text: "旧数据", level: "warn" };
-  return { text: "实时", level: "ok" };
+  if (staleSec <= 1800) return { text: "实时", level: "ok" };
+  return inTradingSession() ? { text: "未更新", level: "warn" } : { text: "已收盘", level: "plain" };
 }
 
 export function stars(importance: number | null | undefined): string {
