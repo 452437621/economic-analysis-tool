@@ -41,6 +41,70 @@ logger = logging.getLogger(__name__)
 # long we consider it abandoned and rewrite it as 'interrupted'.
 STALE_RUN_MINUTES = 90
 
+def _run_cycle() -> dict:
+    """V2.0 周期定位：跑一次完整 EPIC-C 2.0 管线，返回可审计的紧凑摘要。
+
+    完整结果落库在 analysis_runs/analysis_steps/derivations，JobRun 只保留摘要，
+    避免 64 KiB 的派生 JSON 把作业日志撑爆。
+    """
+    from app.cycle.engine import run_cycle
+
+    with SessionLocal() as session:
+        result = run_cycle(session)
+    long_cycle = result.get("long_cycle") or {}
+    short_cycle = result.get("short_cycle") or {}
+    alerts = result.get("alerts") or {}
+    analogs = result.get("analogs") or {}
+    return {
+        "run_id": result.get("run_id"),
+        "status": result.get("status"),
+        "asof": result.get("asof"),
+        "long_cycle": long_cycle.get("phase"),
+        "short_cycle": short_cycle.get("state"),
+        "alerts_triggered": alerts.get("triggered"),
+        "alerts_unknown": alerts.get("unknown"),
+        "analogs": analogs.get("n"),
+        "degraded_reasons": result.get("degraded_reasons"),
+    }
+
+
+def _run_timeline() -> dict:
+    """把 1500–2026 年表与当下坐标重新入库（数据集改过之后由周日任务刷新）。"""
+    from app.timeline.engine import run_timeline
+
+    with SessionLocal() as session:
+        result = run_timeline(session)
+    return {
+        "run_id": result.get("run_id"),
+        "status": result.get("status"),
+        "asof": result.get("asof"),
+        "events": result.get("events"),
+        "eras": result.get("eras"),
+        "lessons": result.get("lessons"),
+    }
+
+
+def _run_ledger() -> dict:
+    """原则核对 + 预测对账：命中/接近/不成立/缺数据四态与校准分桶。"""
+    from app.ledger.engine import run_ledger
+
+    with SessionLocal() as session:
+        result = run_ledger(session)
+    counts = result.get("counts") or {}
+    calibration = result.get("calibration") or {}
+    return {
+        "run_id": result.get("run_id"),
+        "status": result.get("status"),
+        "asof": result.get("asof"),
+        "principles_hit": counts.get("hit"),
+        "principles_near": counts.get("near"),
+        "principles_miss": counts.get("miss"),
+        "principles_unknown": counts.get("unknown"),
+        "brier": calibration.get("brier"),
+        "degraded_reasons": result.get("degraded_reasons"),
+    }
+
+
 JOBS = {
     "collect_quotes": pipeline.collect_quotes,
     "collect_daily_bars": pipeline.collect_daily_bars,
@@ -57,9 +121,12 @@ JOBS = {
     "extract_claims_llm": pipeline.extract_claims_llm,
     "check_data_quality": pipeline.check_data_quality,
     "analyze": run_analytics,
+    "cycle": _run_cycle,
     "decide": run_decision,
     "theses": generate_theses,
     "score_predictions": score_predictions,
+    "ledger": _run_ledger,
+    "timeline": _run_timeline,
     "scan_alerts": scan_alerts,
     "brief_premarket": lambda: brief_mod.generate("premarket"),
     "brief_postmarket": lambda: brief_mod.generate("postmarket"),

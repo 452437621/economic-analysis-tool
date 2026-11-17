@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+### 新增（V2.0 M5 打磨：总览定位条、调度接入与版本 2.0.0，2026-11-17）
+
+- **总览页新增周期定位条**（`frontend/src/views/OverviewView.vue`）：Hero 下方一行显示「长债务周期 → 短周期 → 预警已触发/总数」，数据来自 `/api/v2/cycle/state`（2 分钟轮询），并提供 `/cycle`、`/alerts`、`/history` 三个入口，让「今天在周期里的位置」在首页即可见。
+- **调度器接入三个 V2.0 作业**（`backend/app/platform/scheduler.py`、`backend/app/jobs/runner.py`、`backend/app/init_db.py`）：`cycle` 每日 16:20（在 analyze 16:10 之后、decide 16:30 之前）、`ledger` 每日 16:45（周期快照就绪后核对原则与到期预测）、`timeline` 每周日 09:30（数据集改动后刷新年表）。作业登记表同步新增默认 cron 标签，`JobRun` 只保存紧凑摘要（周期阶段/短周期状态/预警计数/原则四态/Brier），完整血缘仍在 `analysis_runs` 与 `derivations`。
+- **版本升级到 2.0.0**：`backend/app/__init__.py`、`pyproject.toml`、`frontend/package.json` 三处同步（`/api/system/health` 与 `tests/test_release` 校验通过）。
+- **文档更新**：README 状态行改为 V2.0.0、页面表补 6 个新页面、V2.0 预览段改为「已实施」并列出设计文档与原型；`docs/18` 新增「6.0 实施记录」（M0–M5 状态、实际落地、提交号、与计划的三处偏差）。
+- **验证**：`pytest tests -q` → **266 passed**；`scripts/lint.py` → PASSED（0 errors, 0 warnings）；`npm run build` 成功；三个新作业用 `python -m app.jobs.runner --job cycle|timeline|ledger` 实跑均 ok（cycle：长债务顶部/短周期衰退/预警 1 条；ledger：命中 12 / 接近 2 / 不成立 5 / 缺数据 7）；headless Chrome 复核总览页定位条渲染正常。
+
 ### 新增（V2.0 M4 前端：预测台账与原则库，2026-11-17）
 
 - **新增预测台账页 `/ledger`**（`frontend/src/views/LedgerView.vue`）：4 个 KPI（已结命中率、Brier 与分档说明、未结/已结与下一到期、原则命中 x/26）；「登记一条新预测」表单（12 类对象、方向、期限、主观概率、基线、备注）直接调用 `POST /api/v2/ledger/forecasts`，并自动预选第一个对象；预测清单分「全部/未结/已结」并逐条显示方向、概率、基线、登记日、到期日、实际值与 Brier；下方「校准分桶」（≤20 / 21–60 / >60 天）与「原则核对现状」（成立/接近/不成立/缺数据四态 + 命中样例）。

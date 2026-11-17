@@ -53,6 +53,18 @@
             <template v-else>运行 brief_manual 任务后生成</template>
           </span>
         </div>
+        <div class="hero-cycle">
+          <RouterLink class="hero-cycle-main" to="/cycle">
+            <span class="hc-k">长债务周期</span><strong class="hc-v">{{ cycleSummary?.longPhase ?? "—" }}</strong>
+            <span class="hc-sep">·</span>
+            <span class="hc-k">短周期</span><strong class="hc-v">{{ cycleSummary?.shortState ?? "—" }}</strong>
+            <span class="hc-sep">·</span>
+            <span class="hc-k">预警</span><strong class="hc-v">{{ cycleSummary?.triggered ?? 0 }}/{{ cycleSummary?.total ?? 0 }}</strong>
+            <span class="hc-go">周期罗盘 →</span>
+          </RouterLink>
+          <RouterLink class="hero-cycle-link" to="/alerts">预警台</RouterLink>
+          <RouterLink class="hero-cycle-link" to="/history">世界长河</RouterLink>
+        </div>
       </article>
 
       <aside class="card clock-card">
@@ -309,8 +321,8 @@ import WatchlistManager from "@/components/domain/WatchlistManager.vue";
 import { usePolling } from "@/composables/usePolling";
 import { fmtInt, fmtMacro, fmtPct, fmtPrice, fmtSigned, fmtTime, stars, trendClass } from "@/composables/useFormat";
 import { SNAPSHOT_CATEGORIES } from "@/utils/market";
-import { briefPrintUrl, getOverview } from "@/api/endpoints";
-import type { Brief, SnapshotItem, WatchlistItem } from "@/api/types";
+import { briefPrintUrl, getCycleState, getOverview } from "@/api/endpoints";
+import type { Brief, CycleStateResponse, SnapshotItem, WatchlistItem } from "@/api/types";
 import { usePrefsStore } from "@/stores/prefs";
 import { useHealthStore } from "@/stores/health";
 import { useAlertsStore } from "@/stores/alerts";
@@ -349,6 +361,21 @@ const jobsInfo = computed(
 );
 const healthInfo = computed(() => overview.value?.health ?? null);
 const healthy = computed(() => healthInfo.value?.status === "ok");
+
+/* ---------- V2.0 周期定位条：长债务 / 短债务 / 预警计数 ---------- */
+const { data: cycleState } = usePolling<CycleStateResponse>(getCycleState, { interval: 120000 });
+
+const cycleSummary = computed(() => {
+  const payload = cycleState.value;
+  if (!payload) return null;
+  const state = payload.state?.value;
+  return {
+    longPhase: state?.long_cycle?.phase ?? "—",
+    shortState: state?.short_cycle?.state ?? "—",
+    triggered: payload.alerts?.value?.triggered ?? 0,
+    total: payload.alerts?.value?.total ?? 0,
+  };
+});
 
 const healthBadgeText = computed(() => {
   if (healthy.value) return "正常";
@@ -638,4 +665,34 @@ onMounted(() => {
 .overview-error {
   margin: 0 0 8px;
 }
+
+.hero-cycle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+.hero-cycle-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  text-decoration: none;
+}
+.hero-cycle-main:hover .hc-go { text-decoration: underline; }
+.hc-k { color: var(--dim); }
+.hc-v { font-family: var(--mono); font-weight: 600; }
+.hc-sep { color: var(--dim); }
+.hc-go { margin-left: 4px; color: var(--accent); }
+.hero-cycle-link {
+  color: var(--muted);
+  text-decoration: none;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+.hero-cycle-link:hover { color: var(--accent); }
 </style>

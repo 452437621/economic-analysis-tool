@@ -236,6 +236,33 @@ def _register_collectors() -> None:
         max_instances=1,
         coalesce=True,
     )
+    # EPIC-C 2.0：16:20 周期定位（在 analyze 16:10 之后、decide 16:30 之前），
+    # 16:45 台账核对（周期快照就绪后核对 26 条原则与到期预测）。
+    scheduler.add_job(
+        _collector("cycle"),
+        trigger=CronTrigger(hour=16, minute=20, timezone=CST),
+        id="cycle_daily",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _collector("ledger"),
+        trigger=CronTrigger(hour=16, minute=45, timezone=CST),
+        id="ledger_daily",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    # 年表是数据即代码，只有数据集改动才需要重跑，放在周日并避让 backfill。
+    scheduler.add_job(
+        _collector("timeline"),
+        trigger=CronTrigger(day_of_week="sun", hour=9, minute=30, timezone=CST),
+        id="timeline_weekly",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     scheduler.add_job(
         _collector("scan_alerts"),
         trigger=IntervalTrigger(seconds=300),
