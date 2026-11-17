@@ -6,6 +6,26 @@
 
 ## [Unreleased]
 
+### 新增（交易模块、世界长河按原型 1:1 重绘、顶栏双 pill，2026-11-17）
+
+- **「交易日志」升级为独立「交易」模块**：新增 `trade_records` 表（`backend/app/models/v2.py`）与 `backend/app/api/trades.py` 七个端点——`GET /api/trades`（关键词 / 品种类型 / 方向 / 状态 / 日期区间筛选 + 分页）、`GET /api/trades/{id}`、`POST /api/trades`、`PATCH /api/trades/{id}`、`DELETE /api/trades/{id}`、`GET /api/trades/summary`（笔数/胜率/累计盈亏/盈亏比/手续费/平均盈亏）、`GET /api/trades/stats`（按品种类型与按月分组）。字段覆盖参考表 `商品期货交易计划与执行分析系统.xlsx` 的计划与复盘链路：品种/名称/类型（期货·股票·期权·外汇·加密）/方向/状态（计划·挂单·持仓·已平仓·已取消）/策略/计划数量/实际数量/开仓价/平仓价/止损价/止盈价/保证金/杠杆/手续费/盈亏/收益率/风险金额/盈亏比/预计胜率/盈亏归因/计划说明/复盘结论/标签；盈亏、收益率、盈亏比由服务端按开平仓价与数量计算，避免前后端口径漂移（预计胜率表单按 `%` 录入、库内统一存 0–1 小数）。
+- **新增 `/trades` 页面**（`frontend/src/views/TradesView.vue` + `components/trades/{TradeTable,TradeFormDrawer,TradeKpi}.vue`）：5 张 KPI（总笔数/胜率/累计盈亏/盈亏比/手续费）、搜索与四组筛选、按交易日倒序表格（盈亏红绿）、新建与编辑抽屉（基本信息 / 价格与仓位 / 风险与复盘 / 标签 四组，前端实时预估盈亏与收益率、品种代码 datalist 速选）、删除二次确认、空态与错误态；`/journal` 改为重定向到 `/trades`，侧栏「交易日志」更名为「交易」，简报页的内嵌日志块改为跳转链接卡；下线未再使用的 `views/JournalView.vue` 与其样式，`/api/journal` 接口保留（作为按日笔记能力，未被页面引用）。
+- **世界长河按合并原型 1:1 重绘**（新增 `frontend/src/components/history/HistoryTimelineChart.vue`，替换原 ECharts 双折线与旧四泳道）：储备货币份额带（荷兰盾/英镑/美元/人民币四条曲线 + 峰值标注 + 2026 后推演区）、每 50 年网格与年份刻度、荷兰/英国/美国/中国四条帝国泳道与崛起·顶峰·衰落三色带、22 类事件按图层换形状（债务危机菱形、战争三角、技术革命圆点、帝国兴衰圆环）并带引线与年份上下交替标注、图例、缩放（100/130/170/220%）与三档时间窗、五类图层 chips；画布宽度与原型一致按容器自适应（`W = (可视宽 - 8) × zoom`，100% 时不产生横向滚动）；数据优先取 `/api/v2/timeline/{overview,events,eras,powers}`，接口不可用时回落原型静态数据并标注「示意数据」；点击事件联动右侧详情卡。
+- **顶栏时间口径重构**（`frontend/src/layouts/Topbar.vue`）：拆成两个 pill——① 绿色状态点 + 「数据采集」+ 采集时间（`yyyy-MM-dd HH:mm`）+ 健康百分比；② 系统当前时间 `yyyy-MM-dd HH:mm:ss`（每秒刷新）。数据生成时间不再进顶栏，统一为各页标题旁的 `.gen-at`「（生成于 …）」。
+- **修复**：全局 `.ic` 补 `width/height: 14px`（此前 `svg { display:block }` 使世界长河页头 16px 时钟图标被撑成 300×150）；`backend/app/api/cycle.py` 新增 `_normalize_state()` 兼容旧推导（见下）；`backend/app/alerts.py` 事件标题上限由 60 改 200 并新增 `_supersede_truncated()` 清理历史截断告警。
+- **验证**：`pytest tests -q` → **314 passed**（新增 `tests/test_trades.py` 与 `tests/test_zh_translate.py`、`tests/test_journal.py`）；`scripts/lint.py` → PASSED（0 errors, 0 warnings）；`npm run build` 成功、`vue-tsc --noEmit` 0 error；headless Chrome 逐路由扫 16 页 **0 JS 错误**，截图复核总览/交易/周期/长河/管线/预警台/台账/原则库/信号。
+- **已知边界**：交易模块未接券商/期货公司成交单（纯手工台账）；`/trades` 当前为空库，示例数据仅在验证时插入并已清除；世界长河的储备份额与事件年份为示意数据（E0 叙事级），不是精确历史统计。
+
+### 修复（可用性九项：白屏、菜单归类、中文对照与时间口径，2026-11-17）
+
+- **修复 `/cycle` 点击重算白屏**：根因是数据库里的旧版 `cycle.state.world` 推导缺少 `band/phase_id/confidence/next_phase`，前端模板直接下标 `long_cycle.band[0]` 抛 `TypeError: Cannot read properties of undefined (reading '0')`。后端 `backend/app/api/cycle.py` 新增 `_normalize_state()`，按 `config/cycle.yaml` 的相位区间补齐 `band/phase_id/phase/meaning/asset/position/next_phase`、`short_cycle` 六键、六分量 `composites` 与 `readings` 结构，`generated_at` 改用该次运行的 `finished_at`；前端 `CycleView.vue` 与 `components/cycle/*` 同步加防守（`asNumber/asText` 兜底、空数组/缺字段降级、接口失败提示不白屏）。
+- **删除「设计规范」菜单与 `/tokens` 页面**：设计 token 属于内部约束，不再出现在使用系统中（规范文本仍在 `docs/21-UI设计规范.md`）。
+- **研判二级菜单归类**（`frontend/src/layouts/Sidebar.vue`）：新增二级小标题——周期与位置（周期罗盘/世界长河）、透明与证据（透明管线/分析引擎）、预警与台账（预警台/预测台账/原则库）、专题（黄金研判/交易信号/论点与证据）。
+- **事件与新闻中英对照**（`backend/app/knowledge/translate.py`、`config/translations.zh.json`、`POST /api/knowledge/translate`）：本地种子 + 缓存（`sha1` 文本哈希）双层，未命中且配置 `DEEPSEEK_API_KEY` 时走 LLM 兜底；`ThesesView.vue` 事件/新闻改为中文在上、英文原文弱化，缺失时提示配置 Key；总览告警同样双语（前端 `utils/labelMap.ts` 提供 kind/level/category 中文标签，翻译前剥离「事件：」前缀）。
+- **判研六页内容补全**（`History/Pipeline/Alerts/Ledger/Principles/Cycle` 及其子组件）：周期罗盘新增页面状态机（骨架/错误/空态「暂无周期状态」/字段缺失）；世界长河事件详情可放大抽屉；透明管线 `?code=` 自动展开溯源、契约外步骤显式提示；预警台左表右阈值、未知指标三处提示；预测台账增加未结/已结标记、备注列与 Brier 分桶柱图；原则库按类别分组并附「如何核对」抽屉。
+- **全站时间口径与样式统一**：删除各页「更新于」徽标，数据生成时间统一为标题旁 `.gen-at`；`AlertsView/HistoryView/PipelineView/SignalsView/LedgerView/PrinciplesView` 六处改造完成；清理 `BriefsView` 残留日志样式与全局未用 `.clock`、`.pipe-generated-badge`。
+- **验证**：CDP 复扫 `/trades /alerts /history /pipeline /signals /ledger /principles /overview` 全部 0 JS 错误；`vue-tsc` 0 error；`pytest` 314 passed；`lint` PASSED。
+
 ### 新增（UI 对齐：壳层重构、设计规范页、四个研究页重做与 8 项后端接口，2026-11-17）
 
 - **壳层按合并原型重构**：`router/index.ts` 分组改为「今日 / 市场 / 研判 / 系统」并保留全部 15 个既有页面；`Sidebar.vue` brand 改为 `E2 / EPIC V2 / 周期研判 · 宏观工作台`，底部新增数据健康进度条（`/api/system/coverage`，序列覆盖与最近同步）；`Topbar.vue` 面包屑改为 `EPIC V2 / 组 / 页`，右侧 pill 改为「数据时点 · 健康度 %」；新增 `styles/app.css` 的 `.crumb-group`。
