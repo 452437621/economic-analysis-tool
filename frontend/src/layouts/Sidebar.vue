@@ -71,6 +71,8 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
       { to: "/alerts", label: "预警台", icon: "#i-bell" },
       { to: "/pipeline", label: "透明管线", icon: "#i-layers" },
       { to: "/history", label: "世界长河", icon: "#i-book" },
+      { to: "/ledger", label: "预测台账", icon: "#i-tasks" },
+      { to: "/principles", label: "原则库", icon: "#i-shield-check" },
       { to: "/signals", label: "交易信号", icon: "#i-activity" },
       { to: "/theses", label: "论点与证据", icon: "#i-branch" },
     ],

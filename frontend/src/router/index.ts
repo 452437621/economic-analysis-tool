@@ -50,6 +50,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: "世界长河", group: "研究分析" },
   },
   {
+    path: "/ledger",
+    name: "ledger",
+    component: () => import("@/views/LedgerView.vue"),
+    meta: { title: "预测台账", group: "研究分析" },
+  },
+  {
+    path: "/principles",
+    name: "principles",
+    component: () => import("@/views/PrinciplesView.vue"),
+    meta: { title: "原则库", group: "研究分析" },
+  },
+  {
     path: "/signals",
     name: "signals",
     component: () => import("@/views/SignalsView.vue"),

@@ -6,6 +6,13 @@
 
 ## [Unreleased]
 
+### 新增（V2.0 M4 前端：预测台账与原则库，2026-11-17）
+
+- **新增预测台账页 `/ledger`**（`frontend/src/views/LedgerView.vue`）：4 个 KPI（已结命中率、Brier 与分档说明、未结/已结与下一到期、原则命中 x/26）；「登记一条新预测」表单（12 类对象、方向、期限、主观概率、基线、备注）直接调用 `POST /api/v2/ledger/forecasts`，并自动预选第一个对象；预测清单分「全部/未结/已结」并逐条显示方向、概率、基线、登记日、到期日、实际值与 Brier；下方「校准分桶」（≤20 / 21–60 / >60 天）与「原则核对现状」（成立/接近/不成立/缺数据四态 + 命中样例）。
+- **新增原则库页 `/principles`**（`frontend/src/views/PrinciplesView.vue`）：四态计数条 + 类别 chip（全部 26 / 债务与货币 / 周期与秩序 / 冲突与政治 / 市场与资产）+ 状态 chip + 关键词搜索；每条原则一张卡，显示原文/推断/争议依据级、证据级、可观测指标、信号、失效条件、当前指标与阈值-当前值、核对结论，卡片左边框按状态着色，定性原则显式标注「留待复盘时人工核对」。
+- **接线**：`router/index.ts` 新增 `/ledger`、`/principles`（研究分析组）；`Sidebar.vue` 在「世界长河」后加入两项（图标 `#i-tasks`、`#i-shield-check`）；`api/types.ts` 新增台账类型 12 个，`api/endpoints.ts` 新增 `getLedgerOverview / getLedgerPrinciples / getLedgerForecasts / getLedgerCalibration / createLedgerForecast / runLedger`。
+- **验证**：`npm run build` 成功（`vue-tsc --noEmit` 通过，`LedgerView-BUIZAIwr.js` 13.20KB、`PrinciplesView-xKkTUxo.js` 5.60KB）；headless Chrome 1440 宽截图复核两页结构与真实数据（原则库 12 成立 / 2 接近 / 5 不成立 / 7 缺数据，与接口一致）；修复构建期类型错误 2 处（`LedgerRunResult` 未导入、`lastUpdated` 为 `Date` 需转 ISO）与截图后发现的两处小问题（默认预测对象未预选、原则卡文案错字）。
+
 ### 新增（V2.0 M4 后端：原则库核对、预测台账与校准，2026-11-17）
 
 - **新增原则库数据即代码**（`backend/app/ledger/principles.py`）：26 条原则（A 债务货币 8 / B 周期秩序 8 / C 冲突政治 5 / D 市场资产 5），每条带原文/推断/争议标注、可观测指标、信号、失效条件与证据级；其中 19 条配置了可自动核对的 `metric/op/threshold/near`（含观察线与「接近」判定），7 条定性原则显式保持 `unknown` 交人工复盘。

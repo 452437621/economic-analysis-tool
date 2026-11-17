@@ -47,6 +47,13 @@ import type {
   V2RunList,
   V2Status,
   CycleConfigResponse,
+  LedgerCalibration,
+  LedgerCounts,
+  LedgerForecastInput,
+  LedgerForecastList,
+  LedgerOverview,
+  LedgerPrincipleItem,
+  LedgerRunResult,
   CycleRunResult,
   CycleStateResponse,
   TimelineEventItem,
@@ -215,3 +222,20 @@ export const getTimelineOverview = () => getJson<TimelineOverview>("/api/v2/time
 export const getTimelineEvents = (params: { layer?: string; q?: string; era?: string } = {}) =>
   getJson<{ items: TimelineEventItem[]; total: number }>("/api/v2/timeline/events", { params });
 export const runTimeline = () => postJson<TimelineRunResult>("/api/v2/timeline/run", {});
+
+/* 台账（V2.0 M4）：原则库核对与预测台账 */
+export const getLedgerOverview = () => getJson<LedgerOverview>("/api/v2/ledger/overview");
+export const getLedgerPrinciples = () =>
+  getJson<{ asof: string | null; run_id: string; counts: LedgerCounts; items: LedgerPrincipleItem[]; categories: Record<string, string> }>(
+    "/api/v2/ledger/principles",
+  );
+export const getLedgerForecasts = (status?: "open" | "resolved") =>
+  getJson<LedgerForecastList>("/api/v2/ledger/forecasts", { params: status ? { status } : {} });
+export const getLedgerCalibration = () =>
+  getJson<{ run_id: string; calibration: LedgerCalibration; claim: string | null }>("/api/v2/ledger/calibration");
+export const createLedgerForecast = (payload: LedgerForecastInput) =>
+  postJson<{ ok: boolean; id: string; code: string; direction: string; target_date: string }>(
+    "/api/v2/ledger/forecasts",
+    payload,
+  );
+export const runLedger = () => postJson<LedgerRunResult>("/api/v2/ledger/run", {});
