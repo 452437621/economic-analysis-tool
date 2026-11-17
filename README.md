@@ -165,7 +165,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 
 交互与体验：深色终端风默认 + 浅色/护眼/跟随系统；红涨绿跌可切换；Ctrl+K 命令面板；证据抽屉（原文 + 断言高亮）；ECharts 历史走势（区间切换/缩放）；自选分组、拖拽排序与内联编辑；打印样式；深链兼容 `?doc=`、`?history=`、`?brief=`、`?theme=`、`?updown=`、`?palette=1`、`?settings=1`、`?alerts=1`、`?watch=1`。
 
-> **V2.0 已实施（2026-11-17）**：在上表 8 个页面之外新增 `/cycle`、`/alerts`、`/pipeline`、`/history`、`/ledger`、`/principles` 六页，并在总览页加入「长债务 → 短周期 → 预警」定位条。透明化的核心是数据血缘：每次运行写 `analysis_runs` / `analysis_steps` / `derivations`，每条结论都能回答「用了哪些输入、走哪几步、命中哪些规则、置信度多少、哪些证据会推翻它」。设计依据：[18 V2.0 改造总案](docs/18-V2.0改造总案.md)、[19 透明化业务流程](docs/19-透明化业务流程设计.md)、[22 EPIC-C 2.0](docs/22-EPIC-C周期引擎2.0.md)、[23 历史周期图谱](docs/23-历史周期图谱1500-2026.md)、[24 原则库](docs/24-原则库与当下研判.md)；交互原型：[mockup-v2](docs/design/mockup-v2/index.html)。
+> **V2.0 已实施（2026-11-17）**：在上表 8 个页面之外新增 `/cycle`、`/alerts`、`/pipeline`、`/history`、`/ledger`、`/principles` 六页，并在总览页加入「长债务 → 短周期 → 预警」定位条。透明化的核心是数据血缘：每次运行写 `analysis_runs` / `analysis_steps` / `derivations`，每条结论都能回答「用了哪些输入、走哪几步、命中哪些规则、置信度多少、哪些证据会推翻它」。设计依据：[18 V2.0 改造总案](docs/18-V2.0改造总案.md)、[19 透明化业务流程](docs/19-透明化业务流程设计.md)、[22 EPIC-C 2.0](docs/22-EPIC-C周期引擎2.0.md)、[23 历史周期图谱](docs/23-历史周期图谱1500-2026.md)、[24 原则库](docs/24-原则库与当下研判.md)；交互原型：[mockup-v2](docs/design/mockup-v2/index.html)；合并版原型：[mockup-merged](docs/design/mockup-merged/index.html)（V1 布局 + V2 研究视图，共 8 视图）。
 
 ---
 
@@ -208,6 +208,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 | [研究笔记：1500–2026 历史核实](docs/research/history-1500-2026.md) | MPD2023 GDP 份额、储备份额数据、62 条危机与战争、周期长度的学术检验、24 节点 JSON |
 | [研究笔记：代码库审计](docs/research/codebase-audit.md) | 63 端点/40 表/算法逐个说明/调度/EPIC-C 差距/10 条技术债/10 条工程建议 |
 | [V2.0 交互原型](docs/design/mockup-v2/index.html) | 单文件 HTML 原型：周期罗盘 / 世界长河 / 透明管线 / 预警台 / 为什么抽屉 / 浅色，含 6 张 1440×1000 截图 |
+| [原型合并版](docs/design/mockup-merged/index.html) | 单文件 HTML：把 V1 的总览 / 市场 / 简报 / 设计规范并入 V2 壳，共 8 视图、深浅主题，含 13 张 1440 宽截图与 `build.py` 复现脚本 |
 
 ### 工程与维护
 

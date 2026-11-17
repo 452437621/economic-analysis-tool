@@ -6,6 +6,15 @@
 
 ## [Unreleased]
 
+### 新增（设计原型合并：V1 布局 + V2 研究视图，2026-11-17）
+
+- **新增 `docs/design/mockup-merged/index.html`**（单文件 355 KB）：以 V2 为壳（导航、顶栏、主题、命令面板、路由），把 V1 原型的总览、市场、简报、设计规范四页并入，合并后共 8 个真实视图——总览 / 简报 / 行情 / 周期罗盘 / 世界长河 / 透明管线 / 预警台 / 设计规范。原两版文件保持不变。
+- **合并方式可复现**（同目录 `build.py`）：用 Chrome headless `--dump-dom` 抓取 V1 渲染后的 DOM → 提取 `#view-{overview,market,brief,tokens}` 四个 section 存为 `<template>` → V1 的 CSS 加 `.v1-page` 作用域与浅色主题前缀后存入 `<script type="text/plain">` → 首次切换到 V1 视图时用 `attachShadow({mode:"open"})` 注入，`MutationObserver` 同步深浅主题；V2 原有四视图、为什么抽屉与命令面板逻辑未改。
+- **导航与路由改写**：今日（总览/简报）、市场（行情；利率与日历保留「待接入」）、研判（周期罗盘/世界长河/透明管线/预警台）、系统（设计规范）；`VIEWS` 扩为 8 项、默认视图改为 `overview`、URL 同步与偏好存储沿用 V2 机制；无新增依赖（无外链字体、无外部脚本）。
+- **详细检查**：8 个视图 × 深色/浅色共 13 张 1440 宽截图逐页复核（`docs/design/mockup-merged/preview-*.png`）；修掉两处合并缺陷——① 正则按嵌套 `<section>` 切分会残留标签文本，改为按视图起点切分；② 浅色主题下 V1 内容仍为深色，原因是独立的 `html[data-theme="light"]` token 块被误删，改为映射到 `.v1-page[data-theme="light"]`。
+- **已知差异**（也写入原型 README）：V1 三页内容冻结在 2026-11-13 设计快照，页内按钮为静态展示（`data-go` 跳转除外）；利率与日历仍是「待接入」占位；V1 内容的数据是示意值，不是实时接口。
+- 验证：`scripts/lint.py` PASSED；合并文件无外链、无 `@import`、无外部 `script src`；相对链接检查通过。
+
 ### 新增（V2.0 M5 打磨：总览定位条、调度接入与版本 2.0.0，2026-11-17）
 
 - **总览页新增周期定位条**（`frontend/src/views/OverviewView.vue`）：Hero 下方一行显示「长债务周期 → 短周期 → 预警已触发/总数」，数据来自 `/api/v2/cycle/state`（2 分钟轮询），并提供 `/cycle`、`/alerts`、`/history` 三个入口，让「今天在周期里的位置」在首页即可见。
