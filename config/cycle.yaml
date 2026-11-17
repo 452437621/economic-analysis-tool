@@ -1,0 +1,692 @@
+# EPIC-C 2.0 周期引擎配置
+#
+# 设计依据：docs/22-EPIC-C周期引擎2.0.md、docs/24-原则库与当下研判.md
+# 约定：
+#   * 市场指标由数据库序列计算（macro_obs / market_bars），用 10 年滚动 z → 100×Φ(z) 映射到 0–100；
+#   * 结构性指标（债务/GDP、储备份额、极化程度等）暂未接入 BIS/IMF/WID 的自动化数据源，
+#     以「人工观测 + 来源 + 观测日 + 证据等级」登记在 manual 段，score 为专家映射值（0–100），
+#     并在输出中标注 evidence 与 degrade，绝不把它们伪装成模型计算值；
+#   * direction: +1 表示「数值上升 → 该打分维度更热/风险更高」；-1 相反；
+#   * 所有阈值都放在本文件，改阈值不需要改代码。
+version: 2.0.0
+
+normalization:
+  window_days: 2520      # 约 10 年日频，用于 z-score
+  min_obs: 250           # 低于该样本量不做 z，直接降级
+  clip_z: 3.5
+  map: phi               # score = 100 * Φ(z)
+
+# ── 分量打分器 ─────────────────────────────────────────────
+# DMI 债务/货币（Debt & Money Index）：越高 = 债务周期越到后期、货币压力越大
+# ICI 内部秩序（Internal Conflict Index）：越高 = 社会撕裂与政治功能失调越重
+# ECI 外部秩序（External Conflict Index）：越高 = 大国冲突与秩序对抗越强
+# GROWTH / INFLATION / LIQUIDITY：市场隐含的增长、通胀、流动性热度（0–100，50 为常态）
+scores:
+  DMI:
+    name: 债务与货币压力
+    higher: 越高越接近长债务周期后段
+  ICI:
+    name: 内部秩序压力
+    higher: 越高社会撕裂越重
+  ECI:
+    name: 外部秩序压力
+    higher: 越高地缘对抗越强
+  GROWTH:
+    name: 增长热度
+    higher: 增长越强
+  INFLATION:
+    name: 通胀热度
+    higher: 通胀压力越大
+  LIQUIDITY:
+    name: 流动性松紧
+    higher: 越宽松
+
+# ── 市场指标（可回算历史）─────────────────────────────────
+indicators:
+  - id: us_curve_slope
+    name: 美债 10Y−2Y 斜率
+    score: GROWTH
+    weight: 0.30
+    direction: 1
+    expr: "US10Y - US2Y"
+    unit: pp
+    layer: 短债务周期
+    why: 曲线倒挂是信用收缩与衰退的领先信号；陡峭化通常对应宽松或增长预期修复
+    caveat: 本轮倒挂源于长端期限溢价与 QT，信号强度弱于 1990s
+  - id: us_copper_gold
+    name: 铜金比
+    score: GROWTH
+    weight: 0.20
+    direction: 1
+    expr: "CU / XAUUSD"
+    unit: ratio
+    layer: 增长
+    why: 铜代表实体需求、黄金代表避险，比值上行通常对应增长改善
+  - id: us_spx_mom
+    name: 标普 500 60 日动量
+    score: GROWTH
+    weight: 0.20
+    direction: 1
+    expr: "SPX / SPX.shift(60) - 1"
+    unit: pct
+    layer: 增长
+    why: 风险资产动量是增长与流动性预期的合成代理
+    caveat: 估值驱动的上涨可能掩盖盈利下滑
+  - id: us_breakeven
+    name: 10 年盈亏平衡通胀
+    score: INFLATION
+    weight: 0.45
+    direction: 1
+    expr: "US10Y_BE"
+    unit: "%"
+    layer: 通胀
+    why: 市场定价的通胀预期，是通胀周期的直接读数
+  - id: oil_mom
+    name: 原油 60 日动量
+    score: INFLATION
+    weight: 0.30
+    direction: 1
+    expr: "SC / SC.shift(60) - 1"
+    unit: pct
+    layer: 通胀
+    why: 能源价格是 CPI 与通胀预期的主要冲击源
+  - id: gold_mom
+    name: 黄金 60 日动量
+    score: INFLATION
+    weight: 0.25
+    direction: 1
+    expr: "XAUUSD / XAUUSD.shift(60) - 1"
+    unit: pct
+    layer: 通胀
+    why: 黄金同时反映通胀对冲与货币信用折价
+    caveat: 央行购金等结构性需求会削弱其与通胀的短期相关性
+  - id: us_real10y
+    name: 10 年实际利率
+    score: LIQUIDITY
+    weight: 0.35
+    direction: -1
+    expr: "US10Y_REAL"
+    unit: "%"
+    layer: 信用/流动性
+    why: 实际利率是金融条件的核心价格；上行等同收紧
+  - id: us_effr
+    name: 有效联邦基金利率
+    score: LIQUIDITY
+    weight: 0.25
+    direction: -1
+    expr: "EFFR"
+    unit: "%"
+    layer: 信用/流动性
+    why: 政策利率水平决定短端资金成本
+  - id: dxy_mom
+    name: 美元指数 60 日动量
+    score: LIQUIDITY
+    weight: 0.20
+    direction: -1
+    expr: "DXY / DXY.shift(60) - 1"
+    unit: pct
+    layer: 信用/流动性
+    why: 美元走强收紧全球美元流动性，尤其冲击新兴市场
+  - id: cn_curve_slope
+    name: 中国 10Y−2Y 斜率
+    score: GROWTH
+    weight: 0.35
+    direction: 1
+    expr: "CN10Y - CN2Y"
+    unit: pp
+    layer: 短债务周期
+    why: 中国曲线形态与信用脉冲方向高度相关
+  - id: cn_asset_mom
+    name: 沪深 300 60 日动量
+    score: GROWTH
+    weight: 0.35
+    direction: 1
+    expr: "000300 / 000300.shift(60) - 1"
+    unit: pct
+    layer: 增长
+    why: A 股是政策与信用条件的快速映射
+  - id: cn_credit_proxy
+    name: 中国 10 年国债收益率
+    score: LIQUIDITY
+    weight: 0.50
+    direction: -1
+    expr: "CN10Y"
+    unit: "%"
+    layer: 信用/流动性
+    why: 长端利率下行通常对应货币宽松与资产荒
+  - id: us_sofr_spread
+    name: SOFR−EFFR 利差
+    score: DMI
+    weight: 0.15
+    direction: 1
+    expr: "SOFR_EFFR"
+    unit: pp
+    layer: 信用/流动性
+    why: 回购市场相对政策利率的溢价，是美元融资压力的高频读数
+  - id: us_30y
+    name: 30 年美债收益率
+    score: DMI
+    weight: 0.20
+    direction: 1
+    expr: "US30Y"
+    unit: "%"
+    layer: 债务
+    why: 长端收益率计入期限溢价与财政可持续性折价
+  - id: gold_level_mom
+    name: 黄金 250 日动量
+    score: DMI
+    weight: 0.15
+    direction: 1
+    expr: "XAUUSD / XAUUSD.shift(250) - 1"
+    unit: pct
+    layer: 货币信用
+    why: 黄金中期强势是货币信用折价与去美元化的价格证据
+  - id: us_10y
+    name: 10 年美债收益率
+    score: DMI
+    weight: 0.15
+    direction: 1
+    expr: "US10Y"
+    unit: "%"
+    layer: 债务
+    why: 无风险利率抬升加重存量债务的再融资成本
+
+# ── 结构性指标（人工观测，需按来源更新）──────────────────
+# score 为专家映射：按阈值把观测值映射到 0–100（见 scale 说明），不是模型输出。
+manual:
+  - id: us_debt_gdp
+    name: 美国联邦债务/GDP
+    score: DMI
+    weight: 0.20
+    value: 133
+    unit: "%"
+    score_value: 78
+    asof: 2026-11-13
+    evidence: E2
+    scale: "100: ≥160%；75: 130–140%；50: 100–110%；25: 70–90%"
+    source: 美国财政部 Debt to the Penny（2026-11-13 联邦债务 40.617 万亿美元）/ BEA 名义 GDP 约 30.6 万亿
+    url: https://fiscaldata.treasury.gov/datasets/debt-to-the-penny/
+  - id: us_interest_revenue
+    name: 联邦利息支出/财政收入
+    score: DMI
+    weight: 0.15
+    value: 25
+    unit: "%"
+    score_value: 72
+    asof: 2026-09-30
+    evidence: E2
+    scale: "100: ≥35%；75: 25–30%；50: 15–20%；25: <10%"
+    source: CBO《The Budget and Economic Outlook》与财政部月度报表（FY2026 利息支出约 1.2 万亿、收入约 5.0 万亿）
+    url: https://www.cbo.gov/publication/61189
+  - id: us_deficit_gdp
+    name: 联邦赤字/GDP
+    score: DMI
+    weight: 0.10
+    value: 5.8
+    unit: "%"
+    score_value: 65
+    asof: 2026-09-30
+    evidence: E2
+    scale: "100: ≥10%；75: 6–8%；50: 3–4%；25: <2%"
+    source: CBO 2026 财年预算展望（赤字 1.9 万亿、约占 GDP 5.8%）
+    url: https://www.cbo.gov/publication/61189
+  - id: us_reserve_share
+    name: 美元全球外汇储备份额
+    score: DMI
+    weight: 0.10
+    value: 56.7
+    unit: "%"
+    score_value: 70
+    asof: 2026-09-30
+    evidence: E2
+    scale: "100: <45%；75: 55–60%；50: 65–70%；25: ≥75%（含 1999 年 71% 的历史对照）"
+    source: IMF COFER 2026Q2（美元 56.70%，2026Q1 57.13%，2025Q4 56.42%）
+    url: https://data.imf.org/regular.aspx?key=41175
+  - id: us_r_minus_g
+    name: 实际利率 − 实际增长（r−g）
+    score: DMI
+    weight: 0.10
+    value: 0.9
+    unit: pp
+    score_value: 68
+    asof: 2026-09-30
+    evidence: E1
+    scale: "100: ≥3pp；75: 1–2pp；50: 0 附近；25: <−2pp"
+    source: 10Y 实际利率 2.92% − IMF/CBO 美国潜在增速约 2.0%（推导值，E1）
+    url: https://fred.stlouisfed.org/series/DFII10
+  - id: cn_debt_gdp
+    name: 中国非金融部门债务/GDP
+    score: DMI
+    weight: 0.20
+    value: 305
+    unit: "%"
+    score_value: 72
+    asof: 2026-06-30
+    evidence: E2
+    scale: "100: ≥330%；75: 290–320%；50: 230–260%；25: <200%"
+    source: BIS 信贷缺口与 IIF 全球债务监测（2026H1 中国非金融部门约 305%）
+    url: https://www.bis.org/statistics/totcredit.htm
+  - id: cn_interest_revenue
+    name: 中国利息支出/广义财政收入
+    score: DMI
+    weight: 0.10
+    value: 18
+    unit: "%"
+    score_value: 58
+    asof: 2026-06-30
+    evidence: E3
+    scale: "100: ≥30%；75: 20–25%；50: 12–18%；25: <8%"
+    source: 财政部预算执行报告与社融存量推算（估算值，E3，口径与国际口径不可直接比较）
+    url: https://www.mof.gov.cn/
+  - id: us_polarization
+    name: 美国政治极化
+    score: ICI
+    weight: 0.30
+    value: 82
+    unit: "index"
+    score_value: 82
+    asof: 2026-11-01
+    evidence: E4
+    scale: "直接给 0–100 的专家映射，依据 2026 年中期选举周期与国会投票极化"
+    source: Voteview 党派极化指数趋势 + 2026 年中期选举事件（人工研判，E4）
+    url: https://voteview.com/
+  - id: us_trust
+    name: 公众信任度
+    score: ICI
+    weight: 0.25
+    value: 28
+    unit: "%"
+    score_value: 72
+    asof: 2026-06-30
+    evidence: E4
+    scale: "100: <20%；75: 20–30%；50: 40–50%；25: ≥60%"
+    source: Pew / Gallup 对联邦政府信任长期序列（人工转述，E4）
+    url: https://www.pewresearch.org/politics/
+  - id: us_inequality
+    name: 收入前 1% 占比
+    score: ICI
+    weight: 0.20
+    value: 21
+    unit: "%"
+    score_value: 70
+    asof: 2025-12-31
+    evidence: E4
+    scale: "100: ≥22%；75: 19–21%；50: 14–16%；25: <12%"
+    source: WID.world 美国税前收入前 1% 份额（人工转述，E4）
+    url: https://wid.world/
+  - id: us_protests
+    name: 社会抗议强度
+    score: ICI
+    weight: 0.25
+    value: 65
+    unit: "index"
+    score_value: 65
+    asof: 2026-11-01
+    evidence: E4
+    scale: "ACLED 抗议事件密度按人口标准化后的 0–100 专家映射（人工，E4）"
+    source: ACLED 美国抗议与骚乱事件密度（人工转述，E4）
+    url: https://acleddata.com/
+  - id: us_conflicts
+    name: 美国对外冲突强度
+    score: ECI
+    weight: 0.30
+    value: 55
+    unit: "index"
+    score_value: 55
+    asof: 2026-11-01
+    evidence: E4
+    scale: "UCDP 冲突死亡 + 军事行动频率的 0–100 专家映射（人工，E4）"
+    source: UCDP 年度冲突数据 + 2026 年红海/霍尔木兹事件（人工，E4）
+    url: https://ucdp.uu.se/
+  - id: us_sanctions
+    name: 制裁与出口管制强度
+    score: ECI
+    weight: 0.20
+    value: 70
+    unit: "index"
+    score_value: 70
+    asof: 2026-11-01
+    evidence: E4
+    scale: "OFAC 清单条目增速与实体清单数量的 0–100 专家映射（人工，E4）"
+    source: OFAC SDN 清单规模与 BIS 实体清单（人工，E4）
+    url: https://sanctionssearch.ofac.treas.gov/
+  - id: us_tariffs
+    name: 关税强度
+    score: ECI
+    weight: 0.20
+    value: 60
+    unit: "index"
+    score_value: 60
+    asof: 2026-11-01
+    evidence: E4
+    scale: "有效关税税率相对 2018 年前基线的 0–100 专家映射（人工，E4）"
+    source: 中美关税休战延长至 2027-01-10 的现行税率结构（人工，E4）
+    url: https://ustr.gov/
+  - id: us_military_spend
+    name: 军费/GDP
+    score: ECI
+    weight: 0.15
+    value: 3.4
+    unit: "%"
+    score_value: 55
+    asof: 2025-12-31
+    evidence: E3
+    scale: "100: ≥5%；75: 4–4.5%；50: 3–3.5%；25: <2%"
+    source: SIPRI Military Expenditure Database（美国约 3.4% GDP）
+    url: https://www.sipri.org/databases/milex
+  - id: us_alliance_exit
+    name: 条约与同盟退出强度
+    score: ECI
+    weight: 0.15
+    value: 50
+    unit: "index"
+    score_value: 50
+    asof: 2026-11-01
+    evidence: E4
+    scale: "退出/暂停条约与同盟承诺数量的 0–100 专家映射（人工，E4）"
+    source: 军控条约与同盟承诺变化记录（人工，E4）
+    url: https://www.state.gov/
+
+# ── 长债务周期 7 阶段 ────────────────────────────────────
+# 用 DMI 分数定位，enter/exit 构成滞回带，避免阈值附近来回跳变。
+long_cycle:
+  phases:
+    - id: normal
+      name: 正常
+      band: [0, 25]
+      meaning: 债务增速与收入增速匹配，杠杆温和
+      asset: 风险资产中性偏多，久期中性
+    - id: bubble_early
+      name: 泡沫早期
+      band: [25, 40]
+      meaning: 信贷加速、资产价格上涨开始脱离现金流
+      asset: 股票与信用债占优，开始降低杠杆
+    - id: bubble_late
+      name: 泡沫后期
+      band: [40, 55]
+      meaning: 杠杆增速超过收入，新增债务的边际产出下降
+      asset: 减持高杠杆资产，增加现金与黄金
+    - id: top
+      name: 顶部
+      band: [55, 70]
+      meaning: 债务/收入接近极限，紧缩开始拖累增长
+      asset: 长久期债券风险上升，黄金与现金占优
+    - id: deflationary
+      name: 紧缩/去杠杆
+      band: [70, 82]
+      meaning: 信用收缩、资产价格下跌、去杠杆压力显性化
+      asset: 现金与国债阶段性占优，股票承压
+    - id: printing
+      name: 印钞/货币化
+      band: [82, 90]
+      meaning: 央行购买债务、实际利率被压低
+      asset: 黄金、通胀保值资产、非美货币占优
+    - id: debasement
+      name: 货币贬值/秩序重构
+      band: [90, 100]
+      meaning: 货币信用受损，储备货币地位与资本管制成为议题
+      asset: 黄金与实物资产，规避本币计价债券
+  hysteresis: 3.0
+
+# ── 短债务周期 5 态（5–8 年）────────────────────────────
+short_cycle:
+  states: [复苏, 扩张, 过热, 放缓, 衰退]
+  # 规则按顺序匹配：growth/inflation/liq 为 0–100 分；d12 为增长 12 个月变化
+  rules:
+    - when: "growth < 40 and d12 > 0"
+      state: 复苏
+      meaning: 增长从低位回升，通胀仍低，政策仍偏松
+    - when: "growth >= 40 and growth < 70 and inflation < 60"
+      state: 扩张
+      meaning: 增长稳健、通胀温和，是风险资产最友好的阶段
+    - when: "inflation >= 60 and growth >= 45"
+      state: 过热
+      meaning: 通胀高企迫使央行收紧，估值与久期承压
+    - when: "growth < 45 and inflation >= 45"
+      state: 放缓
+      meaning: 增长下滑但通胀仍有黏性（滞胀风险）
+    - when: "growth < 40 and d12 <= 0"
+      state: 衰退
+      meaning: 增长与通胀同步回落，信用事件概率上升
+  default: 放缓
+  hysteresis: 2.0
+
+# ── 库存周期（3–4 年，工业品代理）───────────────────────
+inventory_cycle:
+  proxies: [CU, I, ZN, NI]
+  states:
+    - id: 主动补库
+      meaning: 价格与库存同步上行，需求真实
+      asset: 工业品与周期股占优
+    - id: 被动补库
+      meaning: 需求转弱、库存被动累积
+      asset: 降低周期暴露
+    - id: 主动去库
+      meaning: 需求下滑，企业主动减产清库存
+      asset: 防御与现金占优
+    - id: 被动去库
+      meaning: 需求回升、库存被动下降，补库前夜
+      asset: 提前布局工业品
+  rules:
+    - when: "price_mom > 3 and inv_mom > 0"
+      state: 主动补库
+    - when: "price_mom <= 3 and inv_mom > 0"
+      state: 被动补库
+    - when: "price_mom < -3 and inv_mom < 0"
+      state: 主动去库
+    - when: "price_mom >= -3 and inv_mom < 0"
+      state: 被动去库
+
+# ── 世界大周期（内部秩序 / 国际秩序分开显示）─────────────
+world:
+  internal_stages:
+    - id: 1
+      name: 新秩序
+    - id: 2
+      name: 制度建设
+    - id: 3
+      name: 和平与繁荣
+    - id: 4
+      name: 债务与分歧
+    - id: 5
+      name: 财政糟糕与冲突
+    - id: 6
+      name: 内战与革命
+  external_stages:
+    - id: 1
+      name: 单极稳定
+    - id: 2
+      name: 多极摩擦
+    - id: 3
+      name: 规则失效
+    - id: 4
+      name: 全面对抗
+  # 人工阶段判定：stages 未自动化，必须写明依据、来源与观测日
+  judgments:
+    - id: us_internal
+      name: 美国内部秩序阶段
+      stage: 5
+      confidence: 0.66
+      evidence: E4
+      asof: 2026-11-17
+      reason: 债务与赤字高企、极化与抗议上升、财政空间收窄，中期选举后冲突显性化；按达利欧六阶段框架为「财政糟糕与冲突」。
+      falsifier: 若赤字率回落至 3% 以下且极化指数连续 2 年下降，则阶段判定下调。
+      source: docs/23-历史周期图谱1500-2026.md §5；达利欧 2026 年公开表态
+      url: https://www.economicprinciples.org/
+    - id: global_order
+      name: 国际秩序阶段
+      stage: 2
+      confidence: 0.58
+      evidence: E4
+      asof: 2026-11-17
+      reason: 美元储备份额 56.70% 仍居主导但趋势下行、关税与制裁常态化、区域冲突多点，处于「多极摩擦」而非规则完全失效。
+      falsifier: 若美元份额单季下滑超过 2pp 或出现对主要经济体的全面金融制裁，则上调至规则失效。
+      source: docs/23-历史周期图谱1500-2026.md §5；IMF COFER
+      url: https://data.imf.org/regular.aspx?key=41175
+  # 八项实力（霸权打分 SPI）：暂以人工评分，注明来源
+  power_index:
+    name: 美国综合实力（SPI）
+    asof: 2026-11-17
+    evidence: E4
+    components:
+      - {id: education, name: 教育, value: 80}
+      - {id: innovation, name: 创新, value: 92}
+      - {id: cost, name: 成本竞争力, value: 45}
+      - {id: military, name: 军力, value: 90}
+      - {id: trade, name: 贸易, value: 55}
+      - {id: output, name: 产出, value: 85}
+      - {id: finance, name: 金融中心, value: 88}
+      - {id: reserve, name: 储备货币, value: 62}
+  reserve_currency:
+    code: USD
+    share: 56.7
+    asof: 2026-09-30
+    evidence: E2
+    source: IMF COFER 2026Q2
+    url: https://data.imf.org/regular.aspx?key=41175
+
+# ── 政治日历（可人工维护）──────────────────────────────
+political_calendar:
+  - date: 2026-11-03
+    name: 美国中期选举
+    importance: 3
+    note: 国会控制权决定财政与关税路径
+  - date: 2027-01-10
+    name: 中美关税休战到期
+    importance: 3
+    note: 休战若不再延长，有效关税将跳升
+  - date: 2027-03-01
+    name: 美国债务上限与拨款截止
+    importance: 2
+    note: 关注技术性违约风险与短端利率跳升
+
+# ── 四情景（未来 6–36 个月）─────────────────────────────
+scenarios:
+  - id: S1
+    name: 财政主导 / 温和通胀化债
+    base: 0.35
+    desc: 名义增长高于利率，债务靠通胀与金融抑制消化，实际利率被压低
+    assets: 黄金、通胀保值债券、大宗商品占优；长久期名义债承压
+    triggers: [赤字率维持 5% 以上, 实际利率被压低, 美元份额缓慢下行]
+  - id: S2
+    name: 温和放缓 / 软着陆
+    base: 0.30
+    desc: 增长回落但通胀同步下行，央行获得降息空间
+    assets: 国债与高质量股票占优；信用利差收窄
+    triggers: [增长分数回落至 40 以下, 通胀分数回落, 失业率温和上行]
+  - id: S3
+    name: 信用事件 / 硬着陆
+    base: 0.20
+    desc: 高利率下再融资失败或私募信贷/商业地产爆雷，信用收缩
+    assets: 现金与国债占优；高收益债与周期股承压
+    triggers: [信用利差走阔, SOFR−EFFR 利差抬升, 曲线急速陡峭化]
+  - id: S4
+    name: AI 生产率上行
+    base: 0.15
+    desc: 生产率提升压低单位成本，增长与利润同时改善
+    assets: 科技与生产率受益资产占优；实际利率中枢上移
+    triggers: [生产率增速上台阶, 企业利润率扩张, 通胀回落至 2% 附近]
+
+# ── 预警规则（阈值可在前端调整，M4 落库）───────────────
+alerts:
+  - id: W1
+    severity: high
+    name: 长端利率失控风险
+    metric: us_30y
+    op: ">="
+    threshold: 5.75
+    why: 30 年期收益率突破 5.75% 会触发按揭与再融资的负反馈
+    falsifier: 若随后 20 个交易日回落至 5.4% 以下则视为假警报
+  - id: W2
+    severity: high
+    name: 曲线上移与财政主导共振
+    metric: us_10y
+    op: ">="
+    threshold: 5.5
+    why: 长端在降息周期仍上行，说明期限溢价主导，债券不再是避风港
+    falsifier: 若伴随通胀预期回落而实际利率下行，则不成立
+  - id: W3
+    severity: medium
+    name: 美元融资压力
+    metric: us_sofr_spread
+    op: ">="
+    threshold: 0.10
+    why: 回购溢价持续走阔往往先于流动性事件
+    falsifier: 季末效应结束后回落则不计
+  - id: W4
+    severity: medium
+    name: 黄金与美元同涨
+    metric: gold_mom
+    op: ">="
+    threshold: 8.0
+    why: 黄金与美元同涨说明市场在同时定价通胀与信用风险
+    falsifier: 若实际利率同步上行则解释为避险而非信用折价
+  - id: W5
+    severity: high
+    name: 央行购金潮
+    metric: cb_gold
+    op: ">="
+    threshold: 300
+    why: 央行黄金储备 12 个月净增超过 300 吨，意味着储备多元化加速
+    falsifier: 若 ETF 流出抵消则对金价影响有限
+    note: >-
+      本地 gold_metrics.CB_GOLD_GLOBAL_TONNES 是「央行黄金储备存量（WGC/IFS 口径）」，
+      取最接近 365 天的两个观测相减得到 12 个月净变化；与 WGC《Gold Demand Trends》
+      的季度净购金（2026Q3 约 321 吨）不是同一口径，后者仅作外部交叉验证，
+      不进入本引擎的自动阈值判断。
+  - id: W6
+    severity: medium
+    name: 美元储备份额趋势下行
+    metric: us_reserve_share
+    op: "<="
+    threshold: 55.0
+    why: 份额跌破 55% 会强化储备多元化的自我实现预期
+    falsifier: 若连续两季回升则视为噪声
+  - id: W7
+    severity: high
+    name: 中美利差压制人民币
+    metric: cn_us_spread
+    op: "<="
+    threshold: -350
+    why: 利差过阔加大资本流出与汇率防守成本
+    falsifier: 若出口顺差与结汇需求对冲则压力有限
+  - id: W8
+    severity: medium
+    name: 中国长端利率过快下行
+    metric: cn_10y
+    op: "<="
+    threshold: 1.5
+    why: 长端快速下行反映资产荒与悲观预期
+    falsifier: 若伴随信用扩张与通胀回升则属正常宽松
+  - id: W9
+    severity: medium
+    name: 油价冲击
+    metric: oil_mom
+    op: ">="
+    threshold: 15.0
+    why: 能源冲击会同时推升通胀与压制增长
+    falsifier: 若为供给短期扰动且库存高位则影响有限
+  - id: W10
+    severity: low
+    name: 黄金超买
+    metric: gold_rsi
+    op: ">="
+    threshold: 75.0
+    why: 短期超买后回撤概率上升
+    falsifier: 若由央行结构性买盘驱动则回撤有限
+  - id: W11
+    severity: high
+    name: 政治事件窗口
+    metric: political_days
+    op: "<="
+    threshold: 30
+    why: 中期选举与关税到期前后政策不确定性抬升
+    falsifier: 若事件结果符合预期则波动快速回落
+  - id: W12
+    severity: medium
+    name: 内部秩序压力
+    metric: us_polarization
+    op: ">="
+    threshold: 85
+    why: 极化突破 85 分位后政策连续性与资产定价折价风险上升
+    falsifier: 若跨党派法案通过则压力缓解

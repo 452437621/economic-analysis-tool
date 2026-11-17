@@ -71,6 +71,11 @@ def test_run_recorder_writes_steps_and_derivation():
 def test_derive_is_idempotent_for_same_inputs():
     init_db()
     code = "test.provenance.idempotent"
+    # 共享测试库可能保留了推导 id 规则变更前写入的旧行，先清掉这个测试专用的 code。
+    with SessionLocal() as session:
+        for stale in session.scalars(select(Derivation).where(Derivation.code == code)).all():
+            session.delete(stale)
+        session.commit()
     ids = []
     for _ in range(2):
         with SessionLocal() as session:

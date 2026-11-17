@@ -84,11 +84,17 @@ def derive_id(
     inputs: list[str] | None,
     params: dict | None,
     code_sha: str | None,
+    code: str | None = None,
 ) -> str:
-    """稳定推导 id：同方法、同输入、同参数、同代码得到同一 id。"""
+    """稳定推导 id：同方法、同输入、同参数、同代码得到同一 id。
+
+    推导 ``code``（如 ``cycle.scenarios``）也参与哈希，否则同一运行里
+    输入相同、结论不同的多条推导会撞 id。
+    """
     payload = "|".join(
         [
             f"{method_id}@{version}",
+            code or "",
             canonical_json(sorted(inputs or [])),
             canonical_json(params or {}),
             code_sha or "",
@@ -266,7 +272,7 @@ class RunRecorder:
         code_sha = resolved.code_sha if resolved else None
         version = resolved.version if resolved else method_version
         ref = resolve_method_code_sha(method) or code_sha
-        did = derive_id(method, version, inputs, None, ref)
+        did = derive_id(method, version, inputs, None, ref, code)
         row = self.session.get(Derivation, did)
         if row is None:
             row = Derivation(id=did, created_at=utcnow())

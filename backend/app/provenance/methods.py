@@ -58,6 +58,14 @@ METHOD_SPECS: tuple[dict, ...] = (
         "module": "app.gold.providers",
         "description": "央行购金、ETF、租赁利率、三地库存、COT、做市商等指标源采集。",
     },
+    {
+        "method_id": "cycle.engine.v1",
+        "name": "EPIC-C 2.0 周期引擎",
+        "version": "1.0",
+        "kind": "model",
+        "module": "app.cycle.engine",
+        "description": "DMI/ICI/ECI 分量合成、长债务与短债务周期定位、债务可持续性、世界秩序、历史类比与四情景。",
+    },
 )
 
 

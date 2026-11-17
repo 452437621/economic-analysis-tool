@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api import (
     alerts,
     analytics,
+    cycle,
     decisions,
     events,
     glassbox,
@@ -72,6 +73,7 @@ app.include_router(theses.router)
 app.include_router(events.router)
 app.include_router(watchlist.router)
 app.include_router(glassbox.router)
+app.include_router(cycle.router)
 
 if WEB_DIR.exists():
     assets_dir = WEB_DIR / "assets"

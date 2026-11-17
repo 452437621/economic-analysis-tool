@@ -6,6 +6,17 @@
 
 ## [Unreleased]
 
+### 新增（V2.0 M2 后端：EPIC-C 2.0 周期引擎与周期接口，2026-11-17）
+
+诉求：「我选择B，把所有功能全部开发完成，保质保量，不能有一点瑕疵，并创建分支保留V1.0版本，创建V2.0版本分支，在此分支上开始开发。」
+
+- **新增 `config/cycle.yaml`**：全部阈值/权重/来源集中配置——6 个分量（DMI/ICI/ECI/GROWTH/INFLATION/LIQUIDITY）、16 个市场指标表达式（如 `US10Y - US2Y`、`CU / XAUUSD`）、15 个结构性人工指标（债务/GDP、利息/财政收入、赤字、储备份额、r−g、极化、信任、不平等、冲突、制裁、关税等，每条带 `evidence/scale/source/url` 与观测日）、7 阶段长债务周期 band + 滞回、5 态短债务周期规则、库存四态、世界秩序六阶段与 SPI 八项权重、政治日历、四情景基准概率、W1–W12 预警阈值。
+- **新增 `backend/app/cycle/`**（10 个模块）：`config`（配置加载与证据权重）、`market`（行情 + 宏观面板、表达式求值、10 年滚动 z-score）、`indicators`（指标读数与 E0–E4 证据级、缺失/陈旧降级）、`composite`（按证据质量加权重归一、覆盖率与陈旧惩罚后的置信度、E4 占比过高自动压置信）、`phases`（长债务 7 阶段 + 滞回、短周期 5 态 + 两次确认、流动性三态、库存周期、政治日历）、`history`（60 个月分量轨迹，供图表与类比）、`sustainability`（r−g、利息/收入 20%/30%、赤字三模式判别）、`world`（美国内部秩序与国际秩序分开判定、八项实力指数）、`analogs`（20 维状态向量余弦 + 欧氏、剔除最近 12 个月与样本内间隔）、`scenarios`（S1–S4 规则化调整并归一化）、`alerts`（阈值比较、缺指标记 unknown 不默认未触发）。
+- **新增周期编排 `backend/app/cycle/engine.py`**：`run_cycle()` 在同一个 `RunRecorder` 内执行 10 个步骤（载入面板 → 指标读数 → 分量合成 → 历史轨迹 → 周期定位 → 债务可持续性 → 世界秩序 → 历史类比 → 情景 → 预警），派生 `cycle.state.world`、`cycle.scenarios`、`cycle.sustainability.US`、`cycle.world.order`、`cycle.analogs`、`cycle.alerts`、`cycle.history` 七条结论（含 caveats/falsifiers/opposing），并写入 `scenario_runs` 与 `cycle.*` 观测。
+- **新增周期接口 `/api/v2/cycle`**（`backend/app/api/cycle.py`）：`GET /state`（无数据时懒触发一次运行）、`/indicators?layer=`、`/history`、`/analogs`、`/scenarios`、`/alerts`、`/config`，`POST /run` 手动触发；统一返回 claim/value/证据级/置信度/asof/run_id/caveats/falsifiers。
+- **口径修正**：央行黄金本地序列是存量口径（WGC/IFS），预警 W5 改为「12 个月净增 >300 吨」并用最接近 365 天的观测做差分（实测 106.4 吨），`docs/24` 同步注明与 WGC 季度净购金口径不可混用；黄金/原油动量统一为百分数与阈值比较。
+- **验证**：新增 `tests/test_v2_cycle.py` 23 条（配置、z-score、合成降级、长/短周期滞回、情景和为 1、可持续性、世界秩序、类比剔除近期、历史轨迹、运行幂等、六个接口形状），全量 `pytest tests -q` → **241 passed**；`scripts/lint.py` → PASSED；真实库运行 `run_cycle` 状态 ok（DMI 69.7 / ICI 72.8 / ECI 58.2 / GROWTH 29.8 / INFLATION 21.1 / LIQUIDITY 47.3，长债务处顶部区间，四情景 34.5%/29.8%/22.1%/13.6%，12 条预警当前 0 触发）。
+
 ### 新增（V2.0 M1 玻璃盒前端：透明管线页与溯源抽屉，2026-11-17）
 
 诉求：「我选择B，把所有功能全部开发完成，保质保量，不能有一点瑕疵，并创建分支保留V1.0版本，创建V2.0版本分支，在此分支上开始开发。」
