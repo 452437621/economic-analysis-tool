@@ -6,6 +6,13 @@
 
 ## [Unreleased]
 
+### 修复（「分析依据」更名、原则库抽屉排版，2026-11-18）
+
+- **「论点与证据」更名为「分析依据」**：`frontend/src/layouts/Sidebar.vue`、`frontend/src/router/index.ts`（`meta.title`）、`frontend/src/views/ThesesView.vue`（页头标题、eyebrow 与刷新提示）、`frontend/src/components/domain/CommandPalette.vue` 同步；面包屑随之显示「EPIC V2 / 证据 / 分析依据」。
+- **原则库详情抽屉排版修复**（`frontend/src/views/PrinciplesView.vue`）：「如何核对」四步列表原先用两列 grid，序号伪元素、标题 `b` 与正文 `span` 共三个网格项只占两列，导致正文被挤进 20px 序号列、逐字竖排。改为序号 `grid-column:1; grid-row:1 / span 2`，标题与正文都落在第二列（`grid-column:2`）并允许 `overflow-wrap: anywhere`；实测步骤正文宽度由 20px 恢复为 419px（抽屉内容宽）。
+- **抽屉标题栏抗溢出**（`frontend/src/styles/app.css`）：`.drawer-title` / `.drawer-sub` 增加 `min-width: 0` + 省略号截断，长原则名与副标题不再挤压关闭按钮。
+- 验证：`vue-tsc --noEmit` 0 error、`npm run build` ✓、CDP 复扫 10 条路由 0 JS 错误、原则库 26 张卡片抽屉实测无横向溢出。
+
 ### 变更（菜单扁平化为两级、数据健康并入顶栏，2026-11-18）
 - **侧栏只保留两级菜单**（`frontend/src/layouts/Sidebar.vue`）：今日（总览 / 简报 / 交易）、市场（市场行情 / 利率与流动性）、专题（黄金研判 / 交易信号）、证据（分析引擎 / 分析过程 / 论点与证据）、周期（周期罗盘 / 世界长河 / 原则库）、预警（预警台 / 预测台账）、系统（系统状态）；取消「研判」一级与全部三级小标题，`NavSection` / `sectionsOf()` 与 `.nav-sub` 一并删除。
 - **页面与分组更名**（`frontend/src/router/index.ts`）：「透明管线」改为「分析过程」，面包屑分组按新结构标注（证据 / 周期 / 预警 / 专题），「简报与日志」统一为「简报」；`PipelineView.vue` 页头与 `AlertsView.vue`、`LedgerView.vue` 的跳转文案同步改为「分析过程」。

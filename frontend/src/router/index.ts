@@ -77,7 +77,7 @@ const routes: RouteRecordRaw[] = [
     path: "/theses",
     name: "theses",
     component: () => import("@/views/ThesesView.vue"),
-    meta: { title: "论点与证据", group: "证据" },
+    meta: { title: "分析依据", group: "证据" },
   },
   {
     path: "/briefs",

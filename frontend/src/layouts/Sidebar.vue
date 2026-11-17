@@ -74,7 +74,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/analysis", label: "分析引擎", icon: "#i-cpu" },
       { to: "/pipeline", label: "分析过程", icon: "#i-layers" },
-      { to: "/theses", label: "论点与证据", icon: "#i-book" },
+      { to: "/theses", label: "分析依据", icon: "#i-book" },
     ],
   },
   {

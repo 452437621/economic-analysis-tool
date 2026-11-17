@@ -84,7 +84,7 @@ const PAGES: PaletteItem[] = [
   { id: "page-gold", label: "黄金研判", hint: "研究分析", icon: "#i-flame", kind: "page", run: () => { void router.push("/gold"); } },
   { id: "page-analysis", label: "分析引擎", hint: "研究分析", icon: "#i-cpu", kind: "page", run: () => { void router.push("/analysis"); } },
   { id: "page-signals", label: "交易信号", hint: "研究分析", icon: "#i-activity", kind: "page", run: () => { void router.push("/signals"); } },
-  { id: "page-theses", label: "论点与证据", hint: "研究分析", icon: "#i-branch", kind: "page", run: () => { void router.push("/theses"); } },
+  { id: "page-theses", label: "分析依据", hint: "研究分析", icon: "#i-branch", kind: "page", run: () => { void router.push("/theses"); } },
   { id: "page-briefs", label: "简报与日志", hint: "内容", icon: "#i-file", kind: "page", run: () => { void router.push("/briefs"); } },
   { id: "page-system", label: "系统状态", hint: "系统", icon: "#i-db", kind: "page", run: () => { void router.push("/system"); } },
 ];

@@ -647,14 +647,18 @@ function openDetail(id: string): void {
   counter-increment: prg-step;
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);
-  gap: 8px;
+  column-gap: 8px;
+  row-gap: 2px;
   font-size: 11.5px;
   line-height: 1.65;
   color: var(--muted);
 }
 
+/* 序号占第一列并为标题+正文跨两行，标题与正文都落在第二列，避免正文被挤进 20px 窄列 */
 .prg-steps li::before {
   content: counter(prg-step);
+  grid-column: 1;
+  grid-row: 1 / span 2;
   align-self: start;
   width: 18px;
   height: 18px;
@@ -670,10 +674,19 @@ function openDetail(id: string): void {
 }
 
 .prg-steps li b {
+  grid-column: 2;
+  grid-row: 1;
   display: block;
   color: var(--text);
   font-weight: 600;
   font-size: 11px;
+}
+
+.prg-steps li > span {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .prg-steps code {

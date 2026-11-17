@@ -727,8 +727,8 @@ html[data-theme="light"] .heat-tile.strong .ht-pct { color: var(--text); }
 .drawer--settings { width: 404px; }
 .drawer-head { flex: none; display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 16px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 92%, var(--bg)); }
 .drawer-head > .ic { width: 16px; height: 16px; flex: none; }
-.drawer-head .drawer-title { white-space: nowrap; }
-.drawer-head .drawer-sub { white-space: nowrap; }
+.drawer-head .drawer-title { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.drawer-head .drawer-sub { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
 .drawer-title { font-size: 13.5px; font-weight: 680; letter-spacing: .2px; }
 .drawer-sub { font-size: 10px; color: var(--dim); font-family: var(--mono); }
 .drawer-body { flex: 1; overflow-y: auto; padding: 14px 16px 20px; }

@@ -2,9 +2,9 @@
   <div class="view active">
     <div class="page-head">
       <div>
-        <div class="page-eyebrow">研究分析 · 论点 / 事件 / 新闻 / 日历</div>
+        <div class="page-eyebrow">研究分析 · 依据 / 事件 / 新闻 / 日历</div>
         <h1 class="page-h1">
-          论点与证据
+          分析依据
           <span class="page-sub">论点复核 · 情景概率 · 事件驱动 · 新闻溯源 · 财经日历</span>
         </h1>
       </div>
@@ -928,7 +928,7 @@ function refreshAll(): void {
     calendarPoll.refresh(),
     calendarFacetsPoll.refresh(),
   ]);
-  toast.info("已刷新论点与证据数据");
+  toast.info("已刷新分析依据数据");
 }
 </script>
 
