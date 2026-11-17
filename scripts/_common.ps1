@@ -55,7 +55,7 @@ function Get-PortListeners {
     try {
       $lines = @(& netstat -ano -p tcp 2>$null)
       foreach ($line in $lines) {
-        if ("$line" -match "^\s*TCP\s+\S+:$Port\s+\S+\s+\S+\s+(\d+)\s*$") {
+        if ("$line" -match "^\s*TCP\s+\S+:$Port\s+\S+\s+LISTENING\s+(\d+)\s*$") {
           $found += [pscustomobject]@{ OwningProcess = [int]$Matches[1] }
         }
       }
