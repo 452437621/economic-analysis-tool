@@ -111,8 +111,23 @@ def fetch_lbma_vault() -> ProviderResult:
 WGC_ETF_HOLDINGS = "https://fsapi.gold.org/api/v11/charts/etfv2/revised/holdings-chart2"
 
 
+def _wgc_etf_totals(payload: dict, freq: str) -> list[tuple]:
+    """[("as_of", total_tonnes, regions)] from the WGC ETF holdings payload."""
+    node = ((payload.get("chartData") or {}).get("data") or {}).get(freq) or {}
+    totals: list[tuple] = []
+    for row in (node.get("tonnes") or {}).get("set") or []:
+        if not row or len(row) < 5:
+            continue
+        regions = [value for value in row[1:5] if isinstance(value, (int, float))]
+        if not regions:
+            continue
+        as_of = _utc(datetime.fromtimestamp(row[0] / 1000, tz=timezone.utc).date())
+        totals.append((as_of, float(sum(regions)), row[1:5]))
+    return totals
+
+
 def fetch_wgc_etf() -> ProviderResult:
-    """Global gold ETF holdings (monthly, tonnes) + monthly flow."""
+    """Global gold ETF holdings (weekly tonnes) + monthly flow."""
     name = "wgc_etf"
     try:
         with HttpClient(timeout=60) as client:
@@ -120,24 +135,20 @@ def fetch_wgc_etf() -> ProviderResult:
         if resp.status_code != 200:
             raise RuntimeError(f"WGC ETF HTTP {resp.status_code}")
         payload = resp.json()
-        monthly = payload["chartData"]["data"]["Monthly"]["tonnes"]
-        rows = monthly.get("set") or []
+        # 持仓总量取周度序列（上游每周四更新，滞后 3~10 天）；
+        # 早先误取 Monthly，导致该指标永远比上游慢一个月。
+        weekly = _wgc_etf_totals(payload, "Weekly")
+        totals = weekly or _wgc_etf_totals(payload, "Monthly")
         records: list[dict] = []
-        totals: list[tuple[datetime, float]] = []
-        for row in rows:
-            if not row or len(row) < 5:
-                continue
-            stamp = row[0]
-            regions = [value for value in row[1:5] if isinstance(value, (int, float))]
-            if not regions:
-                continue
-            total = float(sum(regions))
-            as_of = _utc(datetime.fromtimestamp(stamp / 1000, tz=timezone.utc).date())
-            totals.append((as_of, total))
-            records.append(_record("ETF_GLOBAL_TONNES", as_of, total, "wgc", **{"regions": row[1:5]}))
-        if len(totals) >= 2:
-            last_as_of, last = totals[-1]
-            _, previous = totals[-2]
+        for as_of, total, regions in totals:
+            records.append(
+                _record("ETF_GLOBAL_TONNES", as_of, total, "wgc", **{"regions": regions})
+            )
+        # 1 个月净流量仍是月度口径（月度末值同比上一个月）
+        monthly = _wgc_etf_totals(payload, "Monthly")
+        if len(monthly) >= 2:
+            last_as_of, last, _ = monthly[-1]
+            _, previous, _ = monthly[-2]
             records.append(_record("ETF_FLOW_1M_TONNES", last_as_of, last - previous, "wgc"))
         if not records:
             raise RuntimeError("WGC ETF returned no rows")

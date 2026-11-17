@@ -171,13 +171,25 @@ def _latest_news(session: Session, limit: int = 10) -> list[dict]:
 
 
 def _freshness(session: Session) -> list[dict]:
+    """One row per dataset — the newest check only.
+
+    The old version sliced the last 12 rows of a dataset-ordered query, so a
+    single dataset could repeat (and其它数据集被挤掉), which made the
+    「数据与信息缺口」 section look like it was reporting the same thing 5 times.
+    """
     checks = session.scalars(
-        select(DataCheck).where(DataCheck.kind == "freshness").order_by(DataCheck.dataset)
+        select(DataCheck)
+        .where(DataCheck.kind == "freshness")
+        .order_by(DataCheck.check_date)
     ).all()
-    return [
-        {"dataset": check.dataset, "passed": check.passed, "detail": check.detail}
-        for check in checks[-12:]
-    ]
+    latest: dict[str, dict] = {}
+    for check in checks:
+        latest[check.dataset] = {
+            "dataset": check.dataset,
+            "passed": check.passed,
+            "detail": check.detail,
+        }
+    return list(latest.values())
 
 
 def build_markdown(session: Session, kind: str, now: datetime | None = None) -> tuple[str, dict]:
@@ -309,8 +321,17 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
     lines.append("| 国家 | 序列 | 最新 | 时点 |")
     lines.append("|---|---|---|---|")
     for row in order_rate_rows(macro):
-        ts = local_time(row["ts"]).strftime("%m-%d")
-        lines.append(f"| {row['country']} | {row['name']}（{row['code']}） | {row['value']:.2f}% | {ts} |")
+        row_local = local_time(row["ts"])
+        age_days = (trade_date - row_local.date()).days
+        # 周末/当地收盘前没有当日数据是常态，把"几天前"显式写出来，
+        # 避免一条 11-13 的海外利率被读成"数据源挂了"。
+        cell = f"{row_local.strftime('%m-%d')}" + (f"（{age_days} 天前）" if age_days > 0 else "（当日）")
+        lines.append(f"| {row['country']} | {row['name']}（{row['code']}） | {row['value']:.2f}% | {cell} |")
+    lines.append("")
+    lines.append(
+        "- 口径：美债/德债/日债/法债为各市场**最近一个已发布交易日**的数据，"
+        "周末与当地收盘前不会有当日值，时点早于中债属正常；SOFR/EFFR 于美东 08:00/09:00 发布前一日值。"
+    )
     lines.append("")
 
     lines.append("## 4. 会员持仓（Top20，净持仓 = 多 − 空）")

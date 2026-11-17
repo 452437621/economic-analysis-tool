@@ -20,6 +20,11 @@ GLOBAL_DAILY_URL = (
     "https://stock2.finance.sina.com.cn/futures/api/jsonp.php/"
     "var%20_{code}=/GlobalFuturesService.getGlobalFuturesDailyKLine?symbol={code}"
 )
+# 外汇/美元指数日线（vip 域的 NewForexService，支持 fx_susdcnh 与 DINIW 等长历史）
+FOREX_DAILY_URL = (
+    "https://vip.stock.finance.sina.com.cn/forex/api/jsonp.php/"
+    "var%20_{code}=/NewForexService.getDayKLine?symbol={code}"
+)
 REALTIME_URL = "https://hq.sinajs.cn/list={codes}"
 
 
@@ -98,6 +103,40 @@ def parse_global_daily_jsonp(text: str) -> list[Bar]:
             continue
     bars.sort(key=lambda bar: bar.ts)
     return bars
+
+
+def parse_forex_daily_jsonp(text: str) -> list[Bar]:
+    """Parse Sina forex daily K-line.
+
+    Payload is a JSONP string of ``YYYY-MM-DD,open,low,high,close,`` records
+    separated by ``|`` (the field order is open/low/high/close — not the
+    open/high/low/close used by the futures service).
+    """
+    start, end = text.find('"'), text.rfind('"')
+    if start < 0 or end <= start:
+        return []
+    body = text[start + 1 : end]
+    bars: list[Bar] = []
+    for record in body.split("|"):
+        fields = record.strip().split(",")
+        if len(fields) < 5:
+            continue
+        try:
+            ts = datetime.strptime(fields[0].strip(), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            open_, low, high, close = (float(fields[i]) for i in range(1, 5))
+        except ValueError:
+            continue
+        if low > high:  # defensive: never emit an impossible OHLC bar
+            low, high = high, low
+        bars.append(Bar(ts=ts, open=open_, high=high, low=low, close=close))
+    bars.sort(key=lambda bar: bar.ts)
+    return bars
+
+
+def fetch_forex_daily(client: HttpClient, code: str) -> list[Bar]:
+    resp = client.get(FOREX_DAILY_URL.format(code=code), headers=SINA_REFERER)
+    resp.raise_for_status()
+    return parse_forex_daily_jsonp(resp.content.decode("utf-8", errors="replace"))
 
 
 def fetch_global_daily(client: HttpClient, code: str) -> list[Bar]:

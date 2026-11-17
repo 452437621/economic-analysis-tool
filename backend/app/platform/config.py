@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     risk_per_trade_pct: float = 0.25
     watchlist_only: bool = False
 
+    # Quote snapshots are collected every minute, so keep a month of intraday
+    # history at most (the table would otherwise grow by ~1M rows / month).
+    quotes_retention_days: int = 30
+
     @property
     def llm_available(self) -> bool:
         return bool(self.deepseek_api_key)

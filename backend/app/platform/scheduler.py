@@ -53,12 +53,19 @@ def _job_enabled(name: str) -> bool:
 def _collector(name: str):
     async def _run() -> None:
         from app.jobs.runner import run_job
+        from app.platform.writelock import write_lock
 
         try:
             if not await asyncio.to_thread(_job_enabled, name):
                 logger.info("scheduled job skipped (disabled): %s", name)
                 return
-            await asyncio.to_thread(run_job, name)
+
+            def _serialized() -> None:
+                # 采集任务串行化：SQLite 只允许一个写者，并发写会让某一轮整轮失败
+                with write_lock():
+                    run_job(name)
+
+            await asyncio.to_thread(_serialized)
         except Exception:  # pragma: no cover - defensive
             logger.exception("scheduled job failed: %s", name)
 
@@ -67,9 +74,12 @@ def _collector(name: str):
 
 def _register_collectors() -> None:
     now = datetime.now(CST)
+    # 行情每分钟采一次：FX / 海外指数 / 夜盘期货全天在动，5 分钟一采会让总览
+    # 的价格连续几分钟纹丝不动（store.upsert_quotes 内部对未变化的行情做了
+    # 去重落库，所以提高频率不会把库里写满重复行）。
     scheduler.add_job(
         _collector("collect_quotes"),
-        trigger=IntervalTrigger(seconds=300),
+        trigger=IntervalTrigger(seconds=60),
         id="collect_quotes",
         replace_existing=True,
         max_instances=1,
@@ -102,7 +112,10 @@ def _register_collectors() -> None:
     )
     scheduler.add_job(
         _collector("collect_rates"),
-        trigger=IntervalTrigger(hours=6),
+        # 美债/德债/日债/法债均按"收盘后发布"，NY Fed 的 SOFR 08:00 ET、EFFR 09:00 ET
+        # 分别发布前一日数据；6 小时一采会让 EFFR 常常落后一个交易日（看起来像停更），
+        # 改为一小时一采，最坏滞后 1 小时。
+        trigger=IntervalTrigger(hours=1),
         id="collect_rates",
         replace_existing=True,
         max_instances=1,
@@ -308,6 +321,16 @@ def _register_collectors() -> None:
         _collector("collect_daily_bars"),
         trigger=CronTrigger(hour=6, minute=30, timezone=CST),
         id="collect_daily_bars_us",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    # 每周日盘前补全历史缺口 + 订正上游写坏的行情（与日线入库上限的调整配套）。
+    # 放在周日 09:00：早于 weekly_review（10:00），先修数据再出周报。
+    scheduler.add_job(
+        _collector("backfill_history"),
+        trigger=CronTrigger(day_of_week="sun", hour=9, minute=0, timezone=CST),
+        id="backfill_history",
         replace_existing=True,
         max_instances=1,
         coalesce=True,

@@ -137,5 +137,12 @@ def save_manual_metric(
 @router.post("/refresh")
 def refresh(background: BackgroundTasks) -> dict:
     """异步执行一次 gold 采集（下载 WGC/CFTC/LBMA 等，耗时约 20-60s）。"""
-    background.add_task(collect_gold)
+    from app.platform.writelock import write_lock
+
+    def _run() -> None:
+        # 和其它采集任务共用写锁，避免与定时任务并发写 SQLite 时整轮失败
+        with write_lock():
+            collect_gold()
+
+    background.add_task(_run)
     return {"accepted": True, "message": "gold collection started in background"}

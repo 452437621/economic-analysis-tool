@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends
@@ -143,6 +143,15 @@ def data_quality(session: Session = Depends(get_session)) -> dict:
     for check in checks:
         key = f"{check.kind}:{check.dataset}"
         latest_by_dataset.setdefault(key, check)
+    # 一次质检会为所有数据集写同一批 check_date（个别检查项互相间隔几十毫秒），
+    # 只展示最近一次运行的条目，否则已经下线的检查项（旧版本留下的行）会永远挂
+    # 在页面上。窗口取 5 分钟，既能覆盖同一轮的毫秒级差异，也不会捞到上一轮的旧行。
+    if latest_by_dataset:
+        newest = max(check.check_date for check in latest_by_dataset.values())
+        cutoff = newest - timedelta(minutes=5)
+        latest_by_dataset = {
+            key: check for key, check in latest_by_dataset.items() if check.check_date >= cutoff
+        }
     return {
         "data": [
             {

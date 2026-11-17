@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, func, select
 
-from app.ingest import store
+from app.ingest import bars_quality, continuity, store
 from app.ingest.contracts import Bar, Quote
 from app.ingest.http import HttpClient
 from app.ingest.providers import (
@@ -26,6 +26,7 @@ from app.ingest.providers import (
     shfe_positions,
     sina,
     sina_positions,
+    tencent,
     treasury,
 )
 from app.ingest.providers.html_extract import extract_main_text
@@ -35,8 +36,14 @@ from app.ingest.symbols import (
     EM_QUOTE_SECID,
     EM_SECID,
     SINA_FX,
+    SINA_FX_DAILY,
     SINA_GLOBAL_FUTURES,
     SINA_HF,
+    TENCENT_KLINE,
+    TENCENT_KLINE_RAW,
+    TENCENT_QUOTE,
+    TENCENT_QUOTE_PREFERRED,
+    TENCENT_SINGLE_BAR,
     compute_dxy,
 )
 from app.knowledge.extract import extract_numeric_claims
@@ -63,6 +70,9 @@ SOURCE_SINA = dict(
 )
 SOURCE_EM = dict(
     name="东方财富", kind="market", tier="S2", reliability=0.85, base_url="https://quote.eastmoney.com"
+)
+SOURCE_TENCENT = dict(
+    name="腾讯财经", kind="market", tier="S2", reliability=0.8, base_url="https://gu.qq.com"
 )
 SOURCE_TREASURY = dict(
     name="美国财政部", kind="official", tier="S1", reliability=0.95, base_url="https://home.treasury.gov"
@@ -113,7 +123,7 @@ MACRO_SERIES_META: dict[str, dict] = {
     "JP30Y": {"name": "日本国债30年", "unit": "%", "country": "JP"},
     "DE2Y": {"name": "德国国债2年", "unit": "%", "country": "DE"},
     "DE10Y": {"name": "德国国债10年", "unit": "%", "country": "DE"},
-    "FR10Y": {"name": "法国国债10年（月度）", "unit": "%", "country": "FR"},
+    "FR10Y": {"name": "法国国债10年（月度）", "unit": "%", "country": "FR", "freq": "m"},
     "CN2Y": {"name": "中国国债2年", "unit": "%", "country": "CN"},
     "CN5Y": {"name": "中国国债5年", "unit": "%", "country": "CN"},
     "CN10Y": {"name": "中国国债10年", "unit": "%", "country": "CN"},
@@ -133,6 +143,61 @@ def _latest(bars: list[Bar], limit: int) -> list[Bar]:
     return bars[-limit:] if len(bars) > limit else bars
 
 
+# 日线入库上限：与 /api/market/bars 的 limit 上限（3000）和前端「全部」一致，
+# 否则历史弹窗拿到的深度会被采集端的截断悄悄削掉（新浪 CF0 有 5319 根）。
+DAILY_BAR_LIMIT = 3000
+
+# 末根与上一根收盘价偏离超过这个百分比，就认为上游给的是脏数据。
+MAX_TAIL_MOVE_PCT = 25.0
+
+
+def _guard_tail_bar(client: HttpClient, symbol: str, bars: list[Bar]) -> list[Bar]:
+    """落库前拦掉「最新一根被上游写坏」的行情。
+
+    实测腾讯原始端点 ``us.NDX`` 在 2026-11-16 返回 close=10.0（当日纳斯达克100
+    实收 27197.15），这种点一旦入库，趋势图会出现断崖，而且每次重跑都会把它覆盖
+    回来。处理顺序：先用单根接口订正；订正不了就丢掉这一根——宁可留一天缺口，
+    也不能让假行情留在序列里（缺口会由 continuity 检查报出来）。
+    """
+    if len(bars) < 2 or not bars[-2].close or not bars[-1].close:
+        return bars
+    move = abs(bars[-1].close / bars[-2].close - 1.0) * 100.0
+    if move <= MAX_TAIL_MOVE_PCT:
+        return bars
+    single_code = TENCENT_SINGLE_BAR.get(symbol)
+    if single_code:
+        try:
+            single = tencent.fetch_daily_kline(client, single_code, adjust=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("single-bar fallback failed: %s (%s)", symbol, exc)
+            single = []
+        fresh = single[-1] if single else None
+        if (
+            fresh is not None
+            and fresh.ts.date() == bars[-1].ts.date()
+            and abs(fresh.close / bars[-2].close - 1.0) * 100.0 <= MAX_TAIL_MOVE_PCT
+        ):
+            logger.warning(
+                "tail bar corrected: %s %s %s -> %s",
+                symbol, bars[-1].ts.date(), bars[-1].close, fresh.close,
+            )
+            bars[-1] = Bar(
+                ts=bars[-1].ts,
+                open=fresh.open,
+                high=fresh.high,
+                low=fresh.low,
+                close=fresh.close,
+                volume=fresh.volume,
+                open_interest=fresh.open_interest,
+            )
+            return bars
+    logger.warning(
+        "tail bar dropped: %s %s close=%s (%.1f%% vs prev)",
+        symbol, bars[-1].ts.date(), bars[-1].close, move,
+    )
+    return bars[:-1]
+
+
 def _quote_symbols(session) -> dict[str, str]:
     rows = session.query(Instrument).filter(Instrument.active.is_(True)).all()
     return {row.symbol: row.id for row in rows}
@@ -141,7 +206,7 @@ def _quote_symbols(session) -> dict[str, str]:
 def collect_quotes() -> dict:
     """Fetch real-time/delayed quotes across all configured sources."""
     started = time.perf_counter()
-    stats: dict = {"quotes": 0, "groups": {}, "errors": []}
+    stats: dict = {"quotes": 0, "skipped": 0, "groups": {}, "errors": []}
 
     with HttpClient(min_interval=0.2) as client, SessionLocal() as session:
         sina_source = store.get_source(session, **SOURCE_SINA)
@@ -153,6 +218,7 @@ def collect_quotes() -> dict:
             t0 = time.perf_counter()
             quotes = list(sina.fetch_domestic_quotes(client, CN_FUTURES).values())
             n = store.upsert_quotes(session, quotes, symbol_ids, sina_source.id)
+            stats["skipped"] += max(0, len(quotes) - n)
             store.record_health(session, sina_source.id, ok=True, latency_ms=int((time.perf_counter() - t0) * 1000))
             stats["groups"]["cn_futures"] = n
             stats["quotes"] += n
@@ -166,6 +232,7 @@ def collect_quotes() -> dict:
             t0 = time.perf_counter()
             quotes = list(sina.fetch_overseas_quotes(client, SINA_HF).values())
             n = store.upsert_quotes(session, quotes, symbol_ids, sina_source.id)
+            stats["skipped"] += max(0, len(quotes) - n)
             store.record_health(session, sina_source.id, ok=True, latency_ms=int((time.perf_counter() - t0) * 1000))
             stats["groups"]["overseas"] = n
             stats["quotes"] += n
@@ -182,6 +249,7 @@ def collect_quotes() -> dict:
             quotes = list(fx_quotes.values())
             dxy_price = compute_dxy({symbol: quote.price for symbol, quote in fx_quotes.items()})
             n = store.upsert_quotes(session, quotes, symbol_ids, sina_source.id)
+            stats["skipped"] += max(0, len(quotes) - n)
             store.record_health(session, sina_source.id, ok=True, latency_ms=int((time.perf_counter() - t0) * 1000))
             stats["groups"]["fx"] = n
             stats["quotes"] += n
@@ -190,21 +258,97 @@ def collect_quotes() -> dict:
             store.record_health(session, sina_source.id, ok=False, error=str(exc))
             stats["errors"].append(f"fx: {exc}")
 
-        # 4) A-share / index / DXY / USDCNH via Eastmoney
+        # 4) A-share / index / DXY / USDCNH via Eastmoney (intraday-line fallback is
+        #    inside eastmoney.fetch_quote), Tencent as last resort so that quotes keep
+        #    updating even when Eastmoney's snapshot endpoint is blocked.
         try:
             t0 = time.perf_counter()
-            quotes = []
+            quotes: list[Quote] = []
+            em_failed: list[str] = []
+
+            # 少数标的必须先走腾讯（东财同一 secid 指向的不是同一个指数，见
+            # TENCENT_QUOTE_PREFERRED 的注释），取到后就不再打东财。
+            preferred_ok: set[str] = set()
+            if TENCENT_QUOTE_PREFERRED:
+                preferred_codes = {
+                    code: symbol for symbol, code in TENCENT_QUOTE_PREFERRED.items()
+                }
+                try:
+                    prefetched = tencent.fetch_quotes(client, preferred_codes)
+                except Exception as exc:  # noqa: BLE001 - 失败就退回东财
+                    logger.warning("tencent preferred quotes failed: %s", exc)
+                    prefetched = {}
+                if prefetched:
+                    tc_source = store.get_source(session, **SOURCE_TENCENT)
+                    n = store.upsert_quotes(
+                        session, list(prefetched.values()), symbol_ids, tc_source.id
+                    )
+                    stats["skipped"] += max(0, len(prefetched) - n)
+                    stats["groups"]["tencent_preferred"] = n
+                    stats["quotes"] += n
+                    preferred_ok = set(prefetched)
+
             for symbol, secid in {**EM_SECID, **EM_QUOTE_SECID}.items():
-                quote = eastmoney.fetch_quote(client, secid, symbol)
-                if quote:
-                    quotes.append(quote)
+                if symbol in preferred_ok:
+                    continue
+                try:
+                    quote = eastmoney.fetch_quote(client, secid, symbol)
+                except Exception as exc:  # noqa: BLE001 - 单个标的失败不拖垮整组
+                    logger.warning("eastmoney quote failed: %s (%s)", symbol, exc)
+                    quote = None
+                if quote is None:
+                    em_failed.append(symbol)
+                    continue
+                quotes.append(quote)
             fetched = {quote.symbol for quote in quotes}
+
+            if em_failed:
+                mapping = {
+                    code: symbol for symbol, code in TENCENT_QUOTE.items() if symbol in em_failed
+                }
+                fallback: dict[str, Quote] = {}
+                if mapping:
+                    try:
+                        fallback = tencent.fetch_quotes(client, mapping)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("tencent quote fallback failed: %s", exc)
+                if fallback:
+                    tc_source = store.get_source(session, **SOURCE_TENCENT)
+                    n = store.upsert_quotes(
+                        session, list(fallback.values()), symbol_ids, tc_source.id
+                    )
+                    stats["skipped"] += max(0, len(fallback) - n)
+                    store.record_health(
+                        session,
+                        tc_source.id,
+                        ok=True,
+                        latency_ms=int((time.perf_counter() - t0) * 1000),
+                    )
+                    stats["groups"]["tencent_fallback"] = n
+                    stats["quotes"] += n
+                    fetched |= set(fallback)
+
             if dxy_price and "DXY" not in fetched:
-                quotes.append(Quote(symbol="DXY", ts=_now(), price=dxy_price, delay_sec=30))
+                # 东财没有 DXY 时用新浪汇率合成的篮子指数兜底（属于新浪的派生值）
+                dxy_proxy = [Quote(symbol="DXY", ts=_now(), price=dxy_price, delay_sec=30)]
+                n = store.upsert_quotes(session, dxy_proxy, symbol_ids, sina_source.id)
+                stats["skipped"] += max(0, len(dxy_proxy) - n)
+                stats["groups"]["dxy_proxy"] = n
+                stats["quotes"] += n
+
             n = store.upsert_quotes(session, quotes, symbol_ids, em_source.id)
-            store.record_health(session, em_source.id, ok=True, latency_ms=int((time.perf_counter() - t0) * 1000))
+            stats["skipped"] += max(0, len(quotes) - n)
+            store.record_health(
+                session,
+                em_source.id,
+                ok=not em_failed,
+                latency_ms=int((time.perf_counter() - t0) * 1000),
+                error=("quote failed: " + ", ".join(em_failed)) if em_failed else None,
+            )
             stats["groups"]["cn_equity"] = n
             stats["quotes"] += n
+            if em_failed:
+                stats["errors"].append(f"cn_equity: {', '.join(em_failed)}")
         except Exception as exc:  # noqa: BLE001
             logger.exception("eastmoney quotes failed")
             store.record_health(session, em_source.id, ok=False, error=str(exc))
@@ -224,26 +368,35 @@ def collect_quotes() -> dict:
 def collect_daily_bars() -> dict:
     """Backfill/update daily bars: domestic futures (Sina) + A-share (Eastmoney)."""
     started = time.perf_counter()
-    stats: dict = {"bars": 0, "symbols": 0, "errors": []}
+    stats: dict = {
+        "bars": 0,
+        "symbols": 0,
+        "tencent_fallback": 0,
+        "tencent_daily": 0,
+        "sina_fx_daily": 0,
+        "errors": [],
+    }
 
     with HttpClient(min_interval=0.4) as client, SessionLocal() as session:
         sina_source = store.get_source(session, **SOURCE_SINA)
         em_source = store.get_source(session, **SOURCE_EM)
         symbol_ids = _quote_symbols(session)
 
+        sina_errors: list[str] = []
         for symbol, code in CN_FUTURES.items():
             instrument_id = symbol_ids.get(symbol)
             if not instrument_id:
                 continue
             try:
-                bars = _latest(sina.fetch_daily_continuous(client, code), 2000)
+                bars = _latest(sina.fetch_daily_continuous(client, code), DAILY_BAR_LIMIT)
+                bars = bars_quality.drop_holiday_stubs(bars)
                 n = store.upsert_bars(session, instrument_id, "1d", bars, sina_source.id, delay_sec=0)
                 stats["bars"] += n
                 stats["symbols"] += 1
             except Exception as exc:  # noqa: BLE001
                 logger.exception("daily bars failed: %s", symbol)
                 stats["errors"].append(f"{symbol}: {exc}")
-        store.record_health(session, sina_source.id, ok=not stats["errors"])
+                sina_errors.append(f"{symbol}: {exc}")
 
         # Overseas futures / spot daily bars (Sina GlobalFuturesService)
         for symbol, code in SINA_GLOBAL_FUTURES.items():
@@ -251,40 +404,106 @@ def collect_daily_bars() -> dict:
             if not instrument_id:
                 continue
             try:
-                bars = _latest(sina.fetch_global_daily(client, code), 2000)
+                bars = _latest(sina.fetch_global_daily(client, code), DAILY_BAR_LIMIT)
+                bars = bars_quality.drop_holiday_stubs(bars)
                 n = store.upsert_bars(session, instrument_id, "1d", bars, sina_source.id, delay_sec=900)
                 stats["bars"] += n
                 stats["symbols"] += 1
             except Exception as exc:  # noqa: BLE001
                 logger.exception("global daily bars failed: %s", symbol)
                 stats["errors"].append(f"{symbol}: {exc}")
+                sina_errors.append(f"{symbol}: {exc}")
+        # 新浪的健康状态在全部新浪抓取（期货 + 外汇日线）结束后统一记录
 
-        for symbol, secid in EM_SECID.items():
+        # 日线优先级链：排在前面且成功的来源优先落库，全链失败才记错。
+        # - 美国指数（SPX/NDX/DJIA）走腾讯原始 K 线端点优先。东财在美股盘中会把当日
+        #   未收盘的残根写进日线（2026-11-13 SPX 存 7520.77，实际收盘 7561.67），一旦
+        #   东财端点停更，残根就永久固化，看起来像"数据停滞"。
+        # - 美元指数/离岸人民币走新浪外汇日线优先。东财 K 线端点 push2his 长期不可达，
+        #   而新浪 NewForexService 能直接给出 DXY/USDCNH 的完整日线。
+        # - A股/恒生保持东财优先（口径最好），腾讯前复权端点兜底。
+        em_errors: list[str] = []
+        tencent_errors: list[str] = []
+        sina_fx_errors: list[str] = []
+        tencent_source = None
+        for symbol, secid in {**EM_SECID, **EM_DAILY_SECID}.items():
             instrument_id = symbol_ids.get(symbol)
             if not instrument_id:
                 continue
-            try:
-                bars = _latest(eastmoney.fetch_daily_kline(client, secid), 2000)
-                n = store.upsert_bars(session, instrument_id, "1d", bars, em_source.id)
-                stats["bars"] += n
-                stats["symbols"] += 1
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("daily kline failed: %s", symbol)
-                stats["errors"].append(f"{symbol}: {exc}")
+            bars = None
+            source_id = em_source.id
+            if symbol in TENCENT_KLINE_RAW:
+                code = TENCENT_KLINE_RAW[symbol]
+                try:
+                    bars = _latest(tencent.fetch_daily_kline(client, code, adjust=False), DAILY_BAR_LIMIT)
+                    bars = _guard_tail_bar(client, symbol, bars)
+                    if tencent_source is None:
+                        tencent_source = store.get_source(session, **SOURCE_TENCENT)
+                    source_id = tencent_source.id
+                    stats["tencent_daily"] += 1
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("tencent raw daily kline failed: %s (%s)", symbol, exc)
+                    tencent_errors.append(f"{symbol}: {exc}")
+            elif symbol in SINA_FX_DAILY:
+                code = SINA_FX_DAILY[symbol]
+                try:
+                    bars = _latest(sina.fetch_forex_daily(client, code), DAILY_BAR_LIMIT)
+                    source_id = sina_source.id
+                    stats["sina_fx_daily"] += 1
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("sina forex daily failed: %s (%s)", symbol, exc)
+                    sina_fx_errors.append(f"{symbol}: {exc}")
+            if bars is None:
+                try:
+                    bars = _latest(eastmoney.fetch_daily_kline(client, secid), DAILY_BAR_LIMIT)
+                    source_id = em_source.id
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("eastmoney daily kline failed: %s", symbol)
+                    em_errors.append(f"{symbol}: {exc}")
+                    code = TENCENT_KLINE.get(symbol)
+                    if code is None:
+                        stats["errors"].append(f"{symbol}: {exc}")
+                        continue
+                    try:
+                        bars = _latest(tencent.fetch_daily_kline(client, code), DAILY_BAR_LIMIT)
+                        if tencent_source is None:
+                            tencent_source = store.get_source(session, **SOURCE_TENCENT)
+                        source_id = tencent_source.id
+                        stats["tencent_fallback"] += 1
+                    except Exception as fallback_exc:  # noqa: BLE001
+                        logger.exception("tencent daily kline failed: %s", symbol)
+                        tencent_errors.append(f"{symbol}: {fallback_exc}")
+                        stats["errors"].append(f"{symbol}: {fallback_exc}")
+                        continue
+            bars = bars_quality.drop_holiday_stubs(bars)
+            n = store.upsert_bars(session, instrument_id, "1d", bars, source_id)
+            stats["bars"] += n
+            stats["symbols"] += 1
 
-        for symbol, secid in EM_DAILY_SECID.items():
-            instrument_id = symbol_ids.get(symbol)
-            if not instrument_id:
-                continue
-            try:
-                bars = _latest(eastmoney.fetch_daily_kline(client, secid), 2000)
-                n = store.upsert_bars(session, instrument_id, "1d", bars, em_source.id)
-                stats["bars"] += n
-                stats["symbols"] += 1
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("daily kline failed: %s", symbol)
-                stats["errors"].append(f"{symbol}: {exc}")
-        store.record_health(session, em_source.id, ok=not stats["errors"])
+        # 东财日线端点（kline/get）可能被边缘风控单独丢弃，而实时报价（分时兜底）仍然
+        # 可用；东财的健康状态由每 5 分钟一次的 collect_quotes 判定，这里不再覆盖，
+        # 避免日线端点被拦时「东方财富」在健康页来回闪烁。
+        if em_errors:
+            stats["eastmoney_daily_failed"] = len(em_errors)
+            logger.warning("eastmoney daily kline failed for %s symbols", len(em_errors))
+        if tencent_source is not None:
+            store.record_health(
+                session,
+                tencent_source.id,
+                ok=not tencent_errors,
+                error=("; ".join(tencent_errors))[:1000] if tencent_errors else None,
+            )
+        if sina_fx_errors:
+            stats["errors"].append(f"sina fx daily: {', '.join(sina_fx_errors)}")
+        # 每个来源只标记自己那部分结果，避免新浪的失败把东财记成失败（反之亦然）
+        store.record_health(
+            session,
+            sina_source.id,
+            ok=not (sina_errors or sina_fx_errors),
+            error=("; ".join(sina_errors + sina_fx_errors))[:1000]
+            if (sina_errors or sina_fx_errors)
+            else None,
+        )
 
         # FX daily history: Frankfurter (ECB reference rates)
         fx_source = store.get_source(session, **SOURCE_FRANKFURTER)
@@ -296,7 +515,7 @@ def collect_daily_bars() -> dict:
                 instrument_id = symbol_ids.get(symbol)
                 if not instrument_id or not bars:
                     continue
-                n = store.upsert_bars(session, instrument_id, "1d", _latest(bars, 2000), fx_source.id, delay_sec=0)
+                n = store.upsert_bars(session, instrument_id, "1d", bars_quality.drop_holiday_stubs(_latest(bars, DAILY_BAR_LIMIT)), fx_source.id, delay_sec=0)
                 stats["bars"] += n
                 stats["symbols"] += 1
             store.record_health(session, fx_source.id, ok=True)
@@ -334,6 +553,7 @@ def collect_rates() -> dict:
                     name=meta.get("name"),
                     unit=meta.get("unit"),
                     country=meta.get("country"),
+                    freq=meta.get("freq"),
                 )
                 stats["points"] += n
                 stats["series"] += 1
@@ -357,6 +577,7 @@ def collect_rates() -> dict:
                     name=meta.get("name"),
                     unit=meta.get("unit"),
                     country=meta.get("country"),
+                    freq=meta.get("freq"),
                 )
                 stats["points"] += n
                 stats["series"] += 1
@@ -380,6 +601,7 @@ def collect_rates() -> dict:
                     name=meta.get("name"),
                     unit=meta.get("unit"),
                     country=meta.get("country"),
+                    freq=meta.get("freq"),
                 )
                 stats["points"] += n
                 stats["series"] += 1
@@ -402,6 +624,7 @@ def collect_rates() -> dict:
                     name=meta.get("name"),
                     unit=meta.get("unit"),
                     country=meta.get("country"),
+                    freq=meta.get("freq"),
                 )
                 stats["points"] += n
                 stats["series"] += 1
@@ -423,6 +646,7 @@ def collect_rates() -> dict:
                     name=meta.get("name"),
                     unit=meta.get("unit"),
                     country=meta.get("country"),
+                    freq=meta.get("freq"),
                 )
                 stats["points"] += n
                 stats["series"] += 1
@@ -447,6 +671,7 @@ def collect_rates() -> dict:
                     name=meta.get("name"),
                     unit=meta.get("unit"),
                     country=meta.get("country"),
+                    freq=meta.get("freq"),
                 )
                 stats["points"] += n
                 stats["series"] += 1
@@ -814,26 +1039,122 @@ def check_data_quality() -> dict:
 
         now = _now()
 
-        def freshness(dataset: str, latest, max_age_days: int) -> None:
+        def freshness(dataset: str, latest, max_age_days: int, note: str | None = None) -> None:
             if latest is not None and latest.tzinfo is None:
                 latest = latest.replace(tzinfo=timezone.utc)
             age = (now - latest).days if latest is not None else None
+            if age is not None and age < 0:
+                # 个别新闻源会给出「未来」时间戳（时区换算/预告稿），按当日算，
+                # 否则页面会出现「距今-1天」这种看不懂的字样。
+                age = 0
             passed = age is not None and age <= max_age_days
+            detail = f"最新={latest.date() if latest else '无'}"
+            if age is not None:
+                detail += f", 距今{age}天"
+            if not passed:
+                detail += f", 超过{max_age_days}天阈值"
+            if note:
+                detail += f" ({note})"
             session.add(
                 DataCheck(
                     kind="freshness",
                     dataset=dataset,
                     check_date=now,
                     passed=passed,
-                    detail=f"latest={latest.date() if latest else None}, age_days={age}",
+                    detail=detail,
                 )
             )
             stats["checks"] += 1
             if not passed:
                 stats["failed"] += 1
 
-        freshness("国内期货日线", session.scalar(select(func.max(MarketBar.ts_utc))), 5)
-        freshness("美债利率", session.scalar(select(func.max(MacroObs.ts_utc))), 10)
+        # 日线：按标的逐条比对，避免"某个标的停更被全表最大值掩盖"。
+        bar_max_age_days = 5
+        bar_latest = session.execute(
+            select(Instrument.symbol, func.max(MarketBar.ts_utc))
+            .join(MarketBar, MarketBar.instrument_id == Instrument.id)
+            .where(MarketBar.timeframe == "1d")
+            .group_by(Instrument.id)
+        ).all()
+        if bar_latest:
+            def _age(value):
+                if value is None:
+                    return None
+                if value.tzinfo is None:
+                    value = value.replace(tzinfo=timezone.utc)
+                return (now - value).days
+
+            pairs = [(symbol, ts, _age(ts)) for symbol, ts in bar_latest]
+            latest_ts = max((ts for _, ts, _ in pairs if ts is not None), default=None)
+            stale = sorted(
+                [
+                    (symbol, ts, age)
+                    for symbol, ts, age in pairs
+                    if age is None or age > bar_max_age_days
+                ],
+                key=lambda item: (item[2] is not None, -(item[2] or 0)),
+            )
+            detail = f"最新={latest_ts.date() if latest_ts else '无'}, 标的{len(pairs)}个"
+            if stale:
+                detail += "; 滞后: " + ", ".join(
+                    f"{symbol}:{ts.date() if ts else '无'}({age}天)" for symbol, ts, age in stale[:6]
+                )
+                if len(stale) > 6:
+                    detail += f" 等{len(stale)}个"
+            session.add(
+                DataCheck(
+                    kind="freshness",
+                    dataset="日线行情",
+                    check_date=now,
+                    passed=not stale,
+                    detail=detail,
+                )
+            )
+            stats["checks"] += 1
+            if stale:
+                stats["failed"] += 1
+
+        # 宏观序列：按序列频率给阈值（日频 5 天 / 周频 10 天 / 月频 70 天 / 季频 150 天），
+        # 逐条检查——全表最大值会把"日债停在 10-30"这类单序列断更完全掩盖。
+        # 月/季频阈值要留出官方发布滞后（如 ECB 法国10年 11-01 的观测要到 12 月初才发布）。
+        freq_days = {"d": 5, "w": 10, "m": 70, "q": 150}
+        macro_rows = session.execute(
+            select(MacroSeries.code, MacroSeries.freq, func.max(MacroObs.ts_utc))
+            .outerjoin(MacroObs, MacroObs.series_id == MacroSeries.id)
+            .group_by(MacroSeries.id)
+        ).all()
+        if macro_rows:
+            stale_macro: list[str] = []
+            oldest = None
+            for code, freq, ts in macro_rows:
+                age = None
+                if ts is not None:
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+                    age = (now - ts).days
+                limit = freq_days.get((freq or "d").lower(), 5)
+                if age is None or age > limit:
+                    stale_macro.append(f"{code}:{ts.date() if ts else '无'}({age}天, {freq}频)")
+                if ts is not None and (oldest is None or ts < oldest):
+                    oldest = ts
+            detail = f"序列{len(macro_rows)}条, 最旧={oldest.date() if oldest else '无'}"
+            if stale_macro:
+                detail += "; 滞后: " + ", ".join(stale_macro[:8])
+                if len(stale_macro) > 8:
+                    detail += f" 等{len(stale_macro)}条"
+            session.add(
+                DataCheck(
+                    kind="freshness",
+                    dataset="宏观序列",
+                    check_date=now,
+                    passed=not stale_macro,
+                    detail=detail,
+                )
+            )
+            stats["checks"] += 1
+            if stale_macro:
+                stats["failed"] += 1
+
         freshness("行情快照", session.scalar(select(func.max(QuoteRow.ts_utc))), 1)
         freshness(
             "官方新闻",
@@ -888,6 +1209,34 @@ def check_data_quality() -> dict:
         stats["checks"] += 1
         if missing_macro:
             stats["failed"] += 1
+
+        # 历史连续性：不预置交易日历，用「同业共识」判断某个标的漏了哪天
+        # （休市日不会被误判），趋势图缺一根或出现错误行情都会在这里暴露。
+        for dataset, findings in (
+            ("日线行情", continuity.daily_findings(session)),
+            ("宏观序列", continuity.macro_findings(session)),
+        ):
+            known = continuity.missing_known_gaps(session) if dataset == "日线行情" else 0
+            passed, problems, detail = continuity.summarize(findings, known_gaps=known)
+            session.add(
+                DataCheck(
+                    kind="continuity",
+                    dataset=f"{dataset}连续性",
+                    check_date=now,
+                    expected=len({item.subject for item in findings}),
+                    actual=0,
+                    deviation=problems,
+                    passed=passed,
+                    detail=detail,
+                )
+            )
+            stats["checks"] += 1
+            if not passed:
+                stats["failed"] += 1
+
+        # 分钟级行情快照只保留最近 N 天（EPIC_QUOTES_RETENTION_DAYS），
+        # 一天清理一次把 SQLite 文件大小压回稳态。
+        stats["quotes_pruned"] = store.prune_quotes(session)
         session.commit()
 
     stats["elapsed_ms"] = int((time.perf_counter() - started) * 1000)

@@ -23,6 +23,62 @@
 - 数据与事实修正（相对早期草稿）：联邦债务 $40.617T、FY2026 赤字 5.8% GDP、FOMC 3.75–4.00%、美元储备份额 2026Q2 56.70%（1999 约 71%，Q1/Q2 回升，撤销「崩塌论」）、全球债务 $365T = 311% GDP、央行 Q3 购金 321 吨；1870 年 MPD 口径美国 GDP 已超英国、1913 年英镑占已知官方储备约 64%；**DB XAUUSD 3,864 与 WGC 转述 4,065–4,140 差约 5%，已标注为待对账项**。
 - 验证：`scripts/lint.py` → PASSED（0 errors / 0 warnings，含 docs 链接检查）；docs 内相对链接 0 断链；原型 `node --check` 通过、headless 无控制台错误、无横向滚动。
 
+### 修复（历史数据连续性：缺口补全 + 休市伪日线清理 + 自动连续性检查，2026-11-17）
+
+诉求：全面检查是否存在「某天数据缺失」导致趋势图失真，补全历史数据并增加检查机制。逐标的比对后发现真正断掉的不多，但有两种问题会直接让趋势图失真：**上游串码**（一根脏 K 线造成 −100% 断崖）和**休市伪日线**（交易所休市那天新浪/腾讯伪造一根假 K 线，反过来把正常标的误报成缺数据）。
+
+- **NDX 2026-11-16 日线被上游串码（真故障，最严重的失真）**：存的是 `O=10.09 H=10.14 L=9.88 C=10.0 V=6299265`，而当天纳斯达克100 实收 **27,197.15**，趋势图直接砸到 0 附近。根因在腾讯的**原始**端点 `us.NDX` 自己返回这条脏数据（`kline?param=us.NDX,day,,,320` 的 321 根里最后一根 close=10.0），而**不带点**的 `usNDX` 走 `fqkline` 只给当日一根、值为 27,197.15。新增 `TENCENT_SINGLE_BAR` 与 `_guard_tail_bar()`：日线末根相对前收偏离超 `MAX_TAIL_MOVE_PCT=25%` 时，用单根接口订正（日期一致且偏离回到阈值内）或直接丢弃，不再入库。存量那根已用 `backfill.repair_outliers` 订正为 27,197.15。
+- **郑商所 4 个真缺口回补（真故障）**：`CF` 缺 2019-04-23 / 2024-01-30 / 2024-03-01，`SR` 缺 2019-04-23 —— 新浪连续合约（CF0/SR0）自己也缺这 4 天（重拉仍 MISSING），但郑商所官方逐日文件 `DFSStaticFiles/Future/{YYYY}/{YYYYMMDD}/FutureDataDaily.txt` 全部可取。新增 `app/ingest/backfill.py` 的 `fill_bar_gaps()`：按 `czce.main_contract()`（持仓量最大合约）取当日主力收盘，回补值 CF `15865 / 16080 / 16150`、SR `5343`，与前后日衔接自然（如 CF 2019-04-23 前一日 15845、后一日 15740）。
+- **中国国债收益率历史被截断（真故障）**：`eastmoney_yield.fetch_rates` 只请求第 1 页（`pageSize=5000` 但服务端一页硬顶 500），报表实际共 9,389 行 / 19 页 → CN2Y/5Y/10Y/30Y/10Y2Y 只有 473 点（2024-12-26 起），比美/德/日序列短一年多。改为 `PAGE_SIZE=500` + `MAX_PAGES=40` 翻页直到早于 `start_year`，重采后 **473 → 1,214 点，回溯到 2022-01-04**，与 US/DE/JP 序列对齐。
+- **日线入库深度被写死 2000 根（真故障）**：`pipeline` 里 7 处 `_latest(bars, 2000)` 把上游给的更长历史砍掉（新浪 CF0 有 5,319 根、2005 年起）。新增 `DAILY_BAR_LIMIT = 3000`（与 `/api/market/bars` 的 limit 上限一致），重采后 `market_bars` 从 65,533 行增至 84,229 行。
+- **新增历史连续性检查（新机制）**：新增 `app/ingest/continuity.py`，**不预置交易日历**，用「同业共识日」判定：按 `CALENDAR_GROUPS`（国内期货 / 美股指数 / COMEX-NYMEX / LME / 汇率 / A股 / 港股 / 各自的宏观序列）分组，同一组里 ≥ `CONSENSUS_SHARE=0.75` 的成员有数据（至少 2 个、`floor` 向下取整）才算交易日，只有少数成员有数据的那一天判为缺口。另有 `silences()`（连续多日无新点，日线 12 天）与 `anomalies()`（近 60 天单日 |涨跌| > 25%，含 OHLC ≤ 0 等 `invalid`）。`check_data_quality` 末尾产出两条 `kind="continuity"` 的 `data_checks`（`日线行情连续性` / `宏观序列连续性`），每轮质检自动跑，System 页直接可见。
+- **休市伪日线清理（新机制，含两条误伤反例）**：新浪/腾讯在休市日会造一根假 K 线（OHLC 复制前一交易日、成交量为 0 或同样被复制），这些假行会让「共识日历」把真实交易日误判成缺口（首轮报出 `CF/I/P/SR/CL:gap`）。新增 `app/ingest/bars_quality.py`：规则 1 = `open/high/low` 三者全等于前一日；规则 1b = `open/high` 相同且成交量被复制（双方都须为正数才比，容差 `max(1, 0.1%)`）；规则 2 = `high==low` 且无成交量且收盘变动 ≤ 5bp。**两条必须保留的反例**：①新浪外汇日线是「每天一个价」格式（`O=H=L=C`、无成交量），此类序列先由 `is_single_print_series()` 识别、整条跳过规则；②长假后第一个交易日上游会复制前一日开盘价和最高价，但低点/收盘是真的（`GC 2023-01-17`、`CL 2022-09-06`、`GC 2024-01-16`），不能删。清理后共删 **82 根 / 20 个标的**（国内 2015-09-03、2015-10-01/02、2017-01-02；COMEX 2016-12-26、2018-12-25、2019-01-01、各 Good Friday；LME 同期假日），入库路径（4 处 `upsert_bars` 前）同步过滤，存量由 `backfill.clean_holiday_stubs()` 清。**教训**：第一版规则删了 5,303 行（含外汇 6 对 70%+ 的正常日行情），靠 `data/epic_before_stub_cleanup.db` 备份还原 —— 清理类脚本必须先 WAL checkpoint + 备份 + 小样本验证。
+- **上游历史缺口登记（新机制）**：`continuity.KNOWN_GAPS` 登记已逐条核实过、**上游确实没有且无处可补**的点：`I` 2015-02-25、`P` 2015-06-23 / 2015-10-08 / 2016-04-05 / 2017-10-09（共 5 点）。证据：大商所逐日行情页有瑞数信息（RiverSecurity）JS 反爬（GET/POST 均 412，带 cookie 无效）、上期所 `kx/{YYYYMMDD}.dat` 归档只留最近一批（2022 年及更早 404）、腾讯/同花顺/东财都不服务国内期货连续合约、新浪重拉仍是这几天缺失。检查不再重复报这批假警，但会在 detail 里如实写「另有 5 个点属上游历史缺口，无法回溯补全，已登记」。
+- **停牌窗口登记**：`KNOWN_HOLDS` 记录 `NI` 2022-03-10..10（沪镍连续涨停无成交）、`NI_LME` 2022-03-08..16（LME 镍逼空停牌），这类「真实交易日但无成交」不算缺口。
+- **新增周任务 `backfill_history`**（周日 09:00，`CronTrigger`）：`clean_holiday_stubs()` → `repair_outliers()` → `fill_bar_gaps()` 三层幂等执行，历史脏点/缺口可在无人值守下自愈。注意 `platform/scheduler.py` 是硬编码 add_job 列表，DB 的 jobs 行不足以让任务真正调度，两处都要注册。
+- 新增 `tests/test_continuity.py`（21）、`tests/test_bars_quality.py`（14）、`tests/test_backfill.py`（8）、`tests/test_pipeline_guard.py`（10）、`tests/test_eastmoney_yield.py`（5），`pytest tests -q` → **211 passed**。
+- 验证：`backfill_history` 实跑一轮 `stubs=82 / repaired=1 / filled=4`；日线 findings 从 18 → 8 → 2 → **0**，宏观 findings 0；`check_data_quality` 10 项 0 失败；`/api/system/data-quality` **9/9 通过**（含两条 continuity）；NDX 末三根 11-16=27,197.15 / 11-13=27,943.74 / 11-12=28,289.19。
+- 文档：[05 数据源与接口清单](docs/05-数据源与接口清单.md) 增补 7.6（连续性检查口径、休市伪日线规则、上游已知缺口）。
+### 修复（全量数据源新鲜度排查：日线停滞在 11-13、日债停 10-30、黄金 ETF 停 10-31，2026-11-16）
+
+现象：`/market` 页大量海外资产日线停在 2026-11-13，日债停在 10-30，黄金 ETF 持仓停在 10-31。逐项直连上游核对后分成「真故障」与「正常滞后」两类，真故障 6 个全部修掉。
+
+- **东财 K 线端点全面不可达（真故障）**：`push2his`/`push2delay` 的 8 个 secid（含 1./23./48. 分片、https/http）全部 `curl 56`。而 SPX/NDX/DJIA/DXY/USDCNH 的日线**只**依赖东财，于是永久停更，且最后一根是盘中残根（11-13：SPX DB 7520.77 vs 实际 7561.67、DJIA 52157.84 vs 52347.55、NDX 24995.65 vs 27943.74、DXY 103.19 vs 103.4109）。新增免费兜底源并改为显式优先级链（`TENCENT_KLINE_RAW` / `SINA_FX_DAILY`），见下。历史（11-12 及更早）与腾讯/新浪逐位一致，只需修正残根。
+- **腾讯美股指数 K 线需走「原始」端点（新发现）**：`fqkline/get?param=usDJI,...` 只返回 1 根；`kline/kline?param=usINX,day,,,320` 返回 320 根（2025-08-08 起）。`tencent.fetch_daily_kline` 增加 `adjust=False`，`parse_kline` 容错 data 键改名（`usINX`→`us.INX`、`usNDX`→`us.NDX`）。
+- **新浪外汇日线（新接入）**：`vip.stock.finance.sina.com.cn/forex/.../NewForexService.getDayKLine`，`DINIW` 10609 条（1985 起，含当日）、`fx_susdcnh` 3135 条；字段序为 `date,open,low,high,close`。DXY/USDCNH 日线改由新浪优先。
+- **日本国债取错文件（真故障）**：MOF 历史汇总 `historical/jgbcme_all.csv` 只到 2026-10-30，当年文件 `jgbcme.csv` 已含 11-13。`jgb.fetch_rates` 改为「当年 + 历史」两份合并，历史文件加 24 小时缓存（因为 `collect_rates` 提到 1 小时一次）。JP2Y/JP10Y/JP30Y 由 444 点（止于 10-30）变为 698 点（2024-01-04 起，到 11-13）。
+- **WGC 黄金 ETF 持仓取错频率（真故障）**：`ETF_GLOBAL_TONNES` 是周频指标（`registry.py` freq="w"），却取 WGC 回包的 `Monthly` 序列，永远滞后一个月。新增 `_wgc_etf_totals(payload, freq)`，持仓优先写 Weekly（11-13，4,268.2 吨），`ETF_FLOW_1M_TONNES` 仍用月频。
+- **SQLite 并发写导致整轮采集失败（真故障）**：单写者数据库在「已有读事务再升级写锁」时不看 `busy_timeout`，直接抛 `database is locked`（日志累计 712 行）。新增 `app/platform/writelock.py`（`write_lock()` 超时 240 秒），调度器每个采集任务与黄金手动刷新都在锁内串行执行。
+- **海外利率滞后一个交易日（真故障）**：SOFR 于美东 08:00、EFFR 于 09:00 才发布前一日值，而 `collect_rates` 每 6 小时一采。改为**每 1 小时**（`init_db.JOBS_DEFAULT` 与 `LEGACY_JOB_LABELS` 同步把旧标签 "every 6h" 刷新掉）。
+- **NDX 报价与日线差 11%（真故障）**：东财 `100.NDX` 返回的其实是纳斯达克综合指数（盘中 24817.5 / 涨跌 −1.27% ⇒ 昨收≈25137，与腾讯 `.IXIC` 昨收 25136.27 吻合；腾讯 `.NDX` 才是纳斯达克100）。新增 `TENCENT_QUOTE_PREFERRED={"NDX": "usNDX"}`，`collect_quotes` 对该标的首选腾讯并跳过东财循环。
+- **质检不再被全表最大值掩盖**：原「国内期货日线」「美债利率」两条用 `max()` 全表判断，任何单序列断更都发现不了。改为逐标的「日线行情」（阈值 5 天）与逐序列「宏观序列」（日 5 / 周 10 / 月 70 / 季 150 天，月季频留出官方发布滞后），detail 直接列出 `SYM:日期(N天)`。`/api/system/data-quality` 只展示最近一次运行的条目，已下线的检查项不再长期挂页。
+- **序列频率口径**：`FR10Y`（ECB 法国 10 年，月度）原先按日频入库，质检永远判陈旧；`MACRO_SERIES_META` 声明 `freq="m"`，`store.upsert_macro` 新增 `freq` 参数并在元数据漂移时自动纠正。
+- **前端「时点」语义**：Topbar「数据已同步 HH:mm」→「刷新于 HH:mm」（原来那个时间是浏览器轮询时间）；`HistoryModal` 标注「最新一点：N 天前」并说明海外标的最新点是最近成交日；利率卡片与黄金因子行显示各自 `as_of`（超频标黄）；`useFormat.freshness` 增加交易时段判断，非交易时段显示「已收盘」而不是误报「旧数据」。
+- **质检口径的两个小毛病**：个别新闻源给出「未来」时间戳时 detail 会写「距今-1天」（改为负年龄按 0 天计）；`scripts/_common.ps1` 的 netstat 兜底把端口上的 `TIME_WAIT`/`ESTABLISHED` 连接当成监听者，导致 `stop.ps1` 刚停完就 `start.ps1` 会报「端口被进程 N (unknown) 占用」而拒绝启动（改为只认 `LISTENING` 行；注意该文件必须以 **UTF-8 BOM** 保存，否则 Windows PowerShell 5.1 会按 ANSI 读中文注释而整份脚本语法错误）。
+- 新增 `tests/test_macro_freq.py`、`tests/test_writelock.py`、`tests/test_quote_preferred.py`，`pytest tests -q` → **153 passed**。
+- 验证：`collect_daily_bars` 回填 55,598 根（`tencent_daily=3`、`sina_fx_daily=2`、`tencent_fallback=3`、`eastmoney_daily_failed=3`、无错误）；35 个标的实时报价 `stale_sec` 全部在 1–6 分钟内；`check_data_quality` 8 项 0 失败；`/api/system/data-quality` **7/7 通过**；`/api/market/bars` 除 ECB 6 个汇率与 USDCNH（上游当日参考汇率未发布）外全部到 2026-11-16；采集日志出现新分支 `groups: {cn_futures:12, overseas:9, fx:7, tencent_preferred:1, cn_equity:4}`；NDX 报价改为腾讯 27,512.65（昨收 27,943.74，与日线一致）。
+- 文档：[05 数据源与接口清单](docs/05-数据源与接口清单.md) 增补 7.4（优先级链与上游证据）与 7.5（哪些是故障、哪些是周末/官方未发布的正常滞后）。
+
+### 修复（总览行情「好几分钟不动」：采集 60 秒 + 未变化去重 + 保留期，2026-11-16）
+
+- 根因：报价任务 `collect_quotes` 每 **300 秒**采集一次，而总览页每 **15 秒**轮询一次 —— 同一个数字被重复渲染 20 次，看起来像「美元指数没有实时更新」；数据链路与接口本身正常（`/api/market/snapshot` 的 DXY `stale_sec` 一直在刷新，新浪 `DINIW` 与东财分时交叉验证一致）。同时系统状态页的任务标签写着 "every 60s (trading hours)"，与实际 300 秒触发不符。
+- `collect_quotes` 触发器 `IntervalTrigger(seconds=300)` → **60 秒**（东财 `trends2` 分时本身是 1 分钟粒度，60 秒即与源分辨率对齐）。
+- `store.upsert_quotes` 新增**未变化去重**（`QUOTE_DEDUPE_SEC=240`）：价格/量/来源/延迟档都没变时最多每 240 秒落一行，避免 36 标的 × 1440 分钟 ≈ 5 万行/天的写放大，同时保证每个标的最新行不超过 4 分钟（`stale_sec` 不会越过「旧数据」阈值）。
+- 新增行情**保留期** `EPIC_QUOTES_RETENTION_DAYS`（默认 30 天，`0`=关闭），由每日维护任务 `check_data_quality` 调 `store.prune_quotes` 清理（分钟级快照 30 天约 86 万行，不设限每年 ~1GB）。
+- `init_db.JOBS_DEFAULT["collect_quotes"]` 改为 "every 60s"，`seed_jobs` 通过 `LEGACY_JOB_LABELS` 把旧标签 "every 5m" / "every 60s (trading hours)" 刷新掉（保留用户对 `enabled` 的开关）。
+- 新增 `tests/test_quote_cadence.py`（去重、窗口外刷新、`prune_quotes`、保留期默认值、标签刷新、调度间隔 = 60 秒），全量 **145 passed**。
+- 验证：重启后 DXY 在 `quotes` 中由每 5 分钟一行变为每分钟一行（13:54 → 13:56 → 13:58 → 13:59），`/api/market/snapshot` 的 `stale_sec` 稳定在 60–130 秒，`collect_quotes` 每轮耗时 6–9 秒、`skipped` 计数即被去重跳过的不变行情。
+
+### 修复（东方财富数据源恢复与多通道兜底，2026-11-16）
+
+- 根因：东财 `push2.eastmoney.com` / `push2his.eastmoney.com` 的 AAAA 边缘节点在 TLS 握手后直接断连（`RemoteProtocolError` / curl 56），且 IPv4 边缘对非 Schannel TLS 栈（httpx 的 OpenSSL）在 TLS 之后丢弃请求；`stock/get`（实时快照）与 `kline/get`（日线）被单独拦截，`trends2/get`（分时）与 `datacenter-web` 仍可用。
+- `HttpClient` 统一强制 IPv4（`httpx.HTTPTransport(local_address="0.0.0.0")`）；遇 `RemoteProtocolError` 自动改用系统 `curl.exe`（Windows 走 Schannel）重试，并记住该 host 后续直连，返回仍包装成 `httpx.Response`，调用方无感。
+- 东财报价：`eastmoney.fetch_quote` 在快照接口失败时回落 `trends2/get` 分时末点（`preClose` 作昨收，`delay_sec=60`），并加 5 分钟熔断避免每个标的都先去撞被拦接口；腾讯财经（`qt.gtimg.cn`）作为 A 股/指数/港股报价最后兜底。
+- 东财日线被拦时用腾讯日线（`web.ifzq.gtimg.cn`，qfq，320 根）兜底 A 股与恒生；美股指数腾讯无历史，等东财 K 线恢复。
+- 健康语义修正：新浪/东财/腾讯各自按自己那部分结果记录，日线任务不再覆盖东财健康（由 5 分钟一次的报价任务判定），避免健康页状态来回闪。
+- 新增 `tests/test_provider_fallbacks.py`（trends 解析、熔断、腾讯报价/日线解析）与 `tests/test_http_curl_fallback.py`（curl 兜底与状态拆分），全量 **139 passed**。
+- 数据：已回填 2026-11-16 沪深 300/洛阳钼业/恒生日线（腾讯），EM 系报价恢复 5 分钟级更新，「东方财富」健康恢复为正常。
+
 ### 变更（黄金原手动指标数据源接入，2026-11-15）
 
 - 原 7 项手动指标中 5 项接入免费自动采集，黄金 provider 由 5 个增至 10 个（全部 ok）：

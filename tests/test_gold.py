@@ -115,6 +115,16 @@ def test_wgc_etf_provider_sums_regions(monkeypatch):
     payload = {
         "chartData": {
             "data": {
+                # 持仓总量按周度序列取（上游每周更新）；月度序列只用来算月流量
+                "Weekly": {
+                    "tonnes": {
+                        "columns": ["Date", "North America", "Europe", "Asia", "Other", "Gold, US$/oz"],
+                        "set": [
+                            [1735689600000, 2000.0, 1400.0, 500.0, 70.0, 4000.0],
+                            [1738368000000, 2010.0, 1410.0, 505.0, 72.0, 4100.0],
+                        ],
+                    }
+                },
                 "Monthly": {
                     "tonnes": {
                         "columns": ["Date", "North America", "Europe", "Asia", "Other", "Gold, US$/oz"],
@@ -123,7 +133,7 @@ def test_wgc_etf_provider_sums_regions(monkeypatch):
                             [1738368000000, 2010.0, 1410.0, 505.0, 72.0, 4100.0],
                         ],
                     }
-                }
+                },
             }
         }
     }
@@ -136,6 +146,41 @@ def test_wgc_etf_provider_sums_regions(monkeypatch):
     assert len(holdings) == 2
     assert holdings[-1]["value"] == 2010.0 + 1410.0 + 505.0 + 72.0
     assert flows and flows[-1]["value"] == pytest.approx(27.0)
+
+
+def test_wgc_etf_holdings_prefer_weekly_series(monkeypatch):
+    """持仓总量必须取周度序列：月度序列会永远滞后一个月（2026-11 的真实故障）。"""
+    payload = {
+        "chartData": {
+            "data": {
+                "Weekly": {
+                    "tonnes": {
+                        "set": [
+                            [1763424000000, 2100.0, 1500.0, 540.0, 80.0, 4100.0],
+                        ]
+                    }
+                },
+                "Monthly": {
+                    "tonnes": {
+                        "set": [
+                            [1761868800000, 2000.0, 1400.0, 500.0, 70.0, 4000.0],
+                            [1764547200000, 2050.0, 1450.0, 520.0, 75.0, 4050.0],
+                        ]
+                    }
+                },
+            }
+        }
+    }
+    _FakeClient.responses = {"holdings-chart2": _FakeResponse(payload=payload)}
+    monkeypatch.setattr(providers, "HttpClient", _FakeClient)
+    result = providers.fetch_wgc_etf()
+    assert result.ok, result.error
+    holdings = [record for record in result.records if record["code"] == "ETF_GLOBAL_TONNES"]
+    assert len(holdings) == 1
+    assert holdings[0]["value"] == 2100.0 + 1500.0 + 540.0 + 80.0
+    # 月流量仍按月频口径：4095 - 3970 = 125
+    flows = [record for record in result.records if record["code"] == "ETF_FLOW_1M_TONNES"]
+    assert flows and flows[-1]["value"] == pytest.approx(125.0)
 
 
 def test_cftc_provider_ignores_micro_gold(monkeypatch):

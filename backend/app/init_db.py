@@ -91,15 +91,16 @@ def seed_instruments() -> int:
 
 JOBS_DEFAULT: dict[str, str] = {
     "heartbeat": "every 60s",
-    "collect_quotes": "every 5m",
+    "collect_quotes": "every 60s",
     "collect_news": "every 3m",
     "collect_news_slow": "08:15",
-    "collect_rates": "every 6h",
+    "collect_rates": "every 1h",
     "collect_calendar": "every 6h",
     "collect_positions": "15:45",
     "collect_gold": "16:40",
     "collect_bodies": "every 10m",
     "collect_daily_bars": "15:40 / 06:30",
+    "backfill_history": "周日 09:00",
     "extract_claims": "every 15m",
     "extract_events": "every 30m",
     "extract_claims_llm": "every 20m (需 LLM Key)",
@@ -117,6 +118,14 @@ JOBS_DEFAULT: dict[str, str] = {
 }
 
 
+# Label text that no longer matches the live trigger, refreshed on startup so the
+# 系统状态 page does not advertise a schedule the scheduler does not use.
+LEGACY_JOB_LABELS: dict[str, set[str]] = {
+    "collect_quotes": {"every 5m", "every 60s (trading hours)"},
+    "collect_rates": {"every 6h"},
+}
+
+
 def seed_jobs() -> int:
     """Seed the full built-in job registry (idempotent; never overrides user flags)."""
     created = 0
@@ -129,6 +138,9 @@ def seed_jobs() -> int:
             if exists is not None:
                 # Keep operator-toggled enabled flag; refresh stale/blank labels.
                 if not exists.cron or exists.cron == "manual" and name != "brief_manual":
+                    exists.cron = cron
+                elif exists.cron in LEGACY_JOB_LABELS.get(name, ()):
+                    # Labels that no longer describe the actual trigger schedule.
                     exists.cron = cron
                 continue
             session.add(Job(name=name, cron=cron, enabled=True))

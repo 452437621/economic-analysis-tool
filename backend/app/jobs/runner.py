@@ -25,6 +25,7 @@ from app.knowledge import events as event_mod
 from app.decision.theses import generate_theses
 from app.gold.runner import collect_gold
 from app.ingest import pipeline
+from app.ingest.backfill import run_backfill
 from app.models.base import utcnow
 from app.models.core import Job, JobRun
 from app.narrative import brief as brief_mod
@@ -43,6 +44,7 @@ STALE_RUN_MINUTES = 90
 JOBS = {
     "collect_quotes": pipeline.collect_quotes,
     "collect_daily_bars": pipeline.collect_daily_bars,
+    "backfill_history": run_backfill,
     "collect_rates": pipeline.collect_rates,
     "collect_calendar": pipeline.collect_calendar,
     "collect_positions": pipeline.collect_positions,

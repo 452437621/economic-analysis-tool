@@ -5,9 +5,9 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
@@ -29,6 +29,23 @@ from app.platform.config import settings
 logger = logging.getLogger(__name__)
 
 _CHUNK = 200
+
+# 行情按分钟采集：值没变化时最多每 240 秒落一行，避免闭市/休市期间每分钟
+# 重复写入同一串数字（每天 36 标的 × 1440 分钟 ≈ 5 万行）。
+QUOTE_DEDUPE_SEC = 240
+
+# 参与去重比较的字段：价格/成交量变了就要落新行，source 或延迟档位变了也要落。
+_QUOTE_VALUE_FIELDS = (
+    "price",
+    "prev_close",
+    "open",
+    "high",
+    "low",
+    "volume",
+    "open_interest",
+    "bid",
+    "ask",
+)
 
 _TRANSIENT_SQLITE_ERRORS = (
     "unable to open database file",
@@ -134,38 +151,92 @@ def upsert_bars(
     return len(rows)
 
 
+def _latest_quote_rows(session: Session, instrument_ids: list[str]) -> dict[str, QuoteRow]:
+    """Newest stored quote per instrument (one query, index seek per instrument)."""
+    if not instrument_ids:
+        return {}
+    newest = (
+        select(QuoteRow.instrument_id, func.max(QuoteRow.ts_utc).label("ts_utc"))
+        .where(QuoteRow.instrument_id.in_(instrument_ids))
+        .group_by(QuoteRow.instrument_id)
+        .subquery()
+    )
+    rows = session.scalars(
+        select(QuoteRow).join(
+            newest,
+            and_(
+                QuoteRow.instrument_id == newest.c.instrument_id,
+                QuoteRow.ts_utc == newest.c.ts_utc,
+            ),
+        )
+    ).all()
+    return {row.instrument_id: row for row in rows}
+
+
+def _is_unchanged(previous: QuoteRow, row: dict, now: datetime, dedupe_sec: int) -> bool:
+    """True when re-storing ``row`` would only duplicate ``previous``."""
+    if dedupe_sec <= 0:
+        return False
+    if previous.source_id != row["source_id"] or previous.delay_sec != row["delay_sec"]:
+        return False
+    if any(getattr(previous, field) != row[field] for field in _QUOTE_VALUE_FIELDS):
+        return False
+    previous_ts = previous.ts_utc
+    if previous_ts.tzinfo is None:
+        previous_ts = previous_ts.replace(tzinfo=timezone.utc)
+    return (now - previous_ts).total_seconds() < dedupe_sec
+
+
 def upsert_quotes(
     session: Session,
     quotes: list[Quote],
     symbol_to_id: dict[str, str],
     source_id: str | None,
+    *,
+    dedupe_sec: int = QUOTE_DEDUPE_SEC,
 ) -> int:
-    rows = []
+    """Store quote snapshots, one row per instrument per source minute.
+
+    Unchanged values are refreshed at most every ``dedupe_sec`` seconds so a
+    one-minute collection cadence does not bloat the table (the readers only
+    ever need the newest row per instrument).
+    """
+    now = datetime.now(timezone.utc)
+    resolved: list[tuple[str, dict]] = []
     for quote in quotes:
         instrument_id = symbol_to_id.get(quote.symbol)
         if not instrument_id:
             logger.warning("quote skipped, instrument not found: %s", quote.symbol)
             continue
         ts = quote.ts.astimezone(timezone.utc).replace(second=0, microsecond=0)
-        rows.append(
-            {
-                "id": new_id(),
-                "instrument_id": instrument_id,
-                "ts_utc": ts,
-                "price": quote.price,
-                "prev_close": quote.prev_close,
-                "change_pct": quote.change_pct,
-                "open": quote.open,
-                "high": quote.high,
-                "low": quote.low,
-                "volume": quote.volume,
-                "open_interest": quote.open_interest,
-                "bid": quote.bid,
-                "ask": quote.ask,
-                "source_id": source_id,
-                "delay_sec": quote.delay_sec,
-            }
-        )
+        row = {
+            "id": new_id(),
+            "instrument_id": instrument_id,
+            "ts_utc": ts,
+            "price": quote.price,
+            "prev_close": quote.prev_close,
+            "change_pct": quote.change_pct,
+            "open": quote.open,
+            "high": quote.high,
+            "low": quote.low,
+            "volume": quote.volume,
+            "open_interest": quote.open_interest,
+            "bid": quote.bid,
+            "ask": quote.ask,
+            "source_id": source_id,
+            "delay_sec": quote.delay_sec,
+        }
+        resolved.append((instrument_id, row))
+
+    latest = _latest_quote_rows(session, [instrument_id for instrument_id, _ in resolved])
+    by_instrument: dict[str, dict] = {}
+    for instrument_id, row in resolved:
+        previous = latest.get(instrument_id)
+        if previous is not None and _is_unchanged(previous, row, now, dedupe_sec):
+            continue
+        by_instrument[instrument_id] = row
+
+    rows = list(by_instrument.values())
     if not rows:
         return 0
     stmt = sqlite_insert(QuoteRow).values(rows)
@@ -212,6 +283,10 @@ def ensure_series(
         )
         session.add(series)
         session.flush()
+    elif freq and series.freq != freq:
+        # 频率是元数据而不是观测值：月频序列必须先纠正频率，否则质检会把它当"停更的日频序列"告警
+        series.freq = freq
+        session.flush()
     return series
 
 
@@ -224,11 +299,12 @@ def upsert_macro(
     name: str | None = None,
     unit: str | None = None,
     country: str | None = None,
+    freq: str | None = None,
 ) -> int:
     if not points:
         return 0
     series = ensure_series(
-        session, code, name=name, unit=unit, country=country, source_id=source_id
+        session, code, name=name, unit=unit, freq=freq, country=country, source_id=source_id
     )
     rows = [
         {
@@ -312,7 +388,21 @@ def record_health(
     )
 
 
-def count_rows(session: Session, model) -> int:  # noqa: ANN001
-    from sqlalchemy import func
+def prune_quotes(session: Session, keep_days: int | None = None) -> int:
+    """Drop intraday quote rows older than the retention window.
 
+    Only the newest row per instrument is ever read (snapshot/watchlist/alerts),
+    so minute-level history is bounded to keep the SQLite file from growing
+    without limit. ``keep_days=0`` disables the prune.
+    """
+    days = settings.quotes_retention_days if keep_days is None else keep_days
+    if days <= 0:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    result = session.execute(delete(QuoteRow).where(QuoteRow.ts_utc < cutoff))
+    session.commit()
+    return int(result.rowcount or 0)
+
+
+def count_rows(session: Session, model) -> int:  # noqa: ANN001
     return int(session.scalar(select(func.count()).select_from(model)) or 0)
