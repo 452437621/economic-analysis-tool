@@ -4,7 +4,7 @@
       <div class="pipe-page-title">
         <div class="page-eyebrow">研究分析 · 玻璃盒</div>
         <h1 class="page-h1">
-          透明管线 · 数据如何生成结论
+          分析过程 · 数据如何生成结论
           <span class="page-sub">从采集到结论的每一步都可追溯：节点状态、输入特征、规则命中、反证与失效条件</span>
         </h1>
         <span class="gen-at">（生成于 {{ generatedLabel }}）</span>

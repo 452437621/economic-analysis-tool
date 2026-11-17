@@ -110,7 +110,7 @@
         </span>
         <span class="mono alr-run">run {{ runIdShort }}</span>
         <span class="dim">全部规则来自 config/cycle.yaml</span>
-        <RouterLink class="alr-link" to="/pipeline">在透明管线查看运行记录</RouterLink>
+        <RouterLink class="alr-link" to="/pipeline">在分析过程查看运行记录</RouterLink>
       </footer>
     </template>
   </div>

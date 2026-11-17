@@ -233,7 +233,7 @@
 
       <div class="card-foot">
         <span class="mono">run {{ payload.run_id.slice(0, 8) }} · method {{ payload.method_id }}</span>
-        <RouterLink class="ldg-link" to="/pipeline">在透明管线查看本次运行的每一步 →</RouterLink>
+        <RouterLink class="ldg-link" to="/pipeline">在分析过程查看本次运行的每一步 →</RouterLink>
         <span>阈值与规则维护在 backend/app/ledger/principles.py；修改后点「立即核对」</span>
       </div>
     </template>

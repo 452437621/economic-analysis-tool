@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+### 变更（菜单扁平化为两级、数据健康并入顶栏，2026-11-18）
+- **侧栏只保留两级菜单**（`frontend/src/layouts/Sidebar.vue`）：今日（总览 / 简报 / 交易）、市场（市场行情 / 利率与流动性）、专题（黄金研判 / 交易信号）、证据（分析引擎 / 分析过程 / 论点与证据）、周期（周期罗盘 / 世界长河 / 原则库）、预警（预警台 / 预测台账）、系统（系统状态）；取消「研判」一级与全部三级小标题，`NavSection` / `sectionsOf()` 与 `.nav-sub` 一并删除。
+- **页面与分组更名**（`frontend/src/router/index.ts`）：「透明管线」改为「分析过程」，面包屑分组按新结构标注（证据 / 周期 / 预警 / 专题），「简报与日志」统一为「简报」；`PipelineView.vue` 页头与 `AlertsView.vue`、`LedgerView.vue` 的跳转文案同步改为「分析过程」。
+- **数据健康并入右上角**（`frontend/src/layouts/Topbar.vue`）：「数据采集」pill 改为可点击展开面板，内含数据健康百分比与进度条、序列覆盖、最近同步、后端 API、行情标的、调度器与版本；右侧 pill 仍显示系统当前时间 `yyyy-MM-dd HH:mm:ss`。侧栏底部只保留版本行（`EPIC v2.0.0 · 本地实例`），删除重复的健康卡与 `.sf-status / .sf-rows / .sf-row` 样式（`frontend/src/styles/app.css`）。
+- **验证**：`vue-tsc --noEmit` 0 error；`npm run build` 成功；`scripts/lint.py` PASSED（0 errors, 0 warnings）；headless Chrome 逐路由核对面包屑（今日 / 市场 / 专题 / 证据 / 周期 / 预警 / 系统）与页面名，侧栏三级小标题数量为 0，数据面板输出「健康 95.8% · 序列覆盖 21/22 · 行情标的 35 个 · 调度器 运行中」。
+
 ### 新增（交易模块、世界长河按原型 1:1 重绘、顶栏双 pill，2026-11-17）
 
 - **「交易日志」升级为独立「交易」模块**：新增 `trade_records` 表（`backend/app/models/v2.py`）与 `backend/app/api/trades.py` 七个端点——`GET /api/trades`（关键词 / 品种类型 / 方向 / 状态 / 日期区间筛选 + 分页）、`GET /api/trades/{id}`、`POST /api/trades`、`PATCH /api/trades/{id}`、`DELETE /api/trades/{id}`、`GET /api/trades/summary`（笔数/胜率/累计盈亏/盈亏比/手续费/平均盈亏）、`GET /api/trades/stats`（按品种类型与按月分组）。字段覆盖参考表 `商品期货交易计划与执行分析系统.xlsx` 的计划与复盘链路：品种/名称/类型（期货·股票·期权·外汇·加密）/方向/状态（计划·挂单·持仓·已平仓·已取消）/策略/计划数量/实际数量/开仓价/平仓价/止损价/止盈价/保证金/杠杆/手续费/盈亏/收益率/风险金额/盈亏比/预计胜率/盈亏归因/计划说明/复盘结论/标签；盈亏、收益率、盈亏比由服务端按开平仓价与数量计算，避免前后端口径漂移（预计胜率表单按 `%` 录入、库内统一存 0–1 小数）。

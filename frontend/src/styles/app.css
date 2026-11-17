@@ -168,11 +168,7 @@ body.is-compact .overview-row .card-body { padding: 8px 11px; }
 .nav-badge.hot { color: var(--up-color); border-color: color-mix(in srgb, var(--up) 34%, transparent); background: color-mix(in srgb, var(--up) 12%, transparent); }
 .nav-badge.dot-only { min-width: 6px; width: 6px; height: 6px; padding: 0; border: 0; background: var(--warn); }
 .sidebar-foot { flex: none; padding: 10px 12px 12px; border-top: 1px solid var(--border); }
-.sf-status { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted); }
-.sf-rows { margin-top: 6px; display: grid; gap: 3px; font-size: 10px; color: var(--dim); }
-.sf-row { display: flex; justify-content: space-between; gap: 8px; }
-.sf-row b { font-weight: 500; color: var(--muted); font-family: var(--mono); font-size: 10px; }
-.sf-version { margin-top: 8px; padding-top: 7px; border-top: 1px dashed var(--border); font-size: 9.5px; color: var(--dim); font-family: var(--mono); }
+.sf-version { font-size: 9.5px; color: var(--dim); font-family: var(--mono); }
 
 /* ---------- 顶栏 ---------- */
 .topbar {
