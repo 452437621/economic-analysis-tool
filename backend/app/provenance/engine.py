@@ -24,7 +24,7 @@ import json
 import logging
 import time
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator
 
 from sqlalchemy import select
@@ -52,6 +52,42 @@ def aware(value: datetime | None) -> datetime | None:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value
+
+
+INTERRUPTED_REASON = {
+    "code": "run.interrupted",
+    "message": "进程中断，运行未收尾（已被看门狗标记）",
+    "severity": "warn",
+}
+
+
+def reconcile_stale_analysis_runs(
+    session: Session, *, stale_minutes: int = 60, all: bool = False
+) -> int:
+    """把中断后残留的 ``running`` 分析运行收尾为 ``interrupted``（调用方负责 commit）。
+
+    与 ``jobs.runner.reconcile_stale_runs``（只收尾 ``job_runs``）互补：分析运行由
+    ``RunRecorder`` 自己写 ``analysis_runs``，进程被杀时 ``finish()`` 不会执行，
+    该行就会永远停在 ``running``，「分析过程」页因此挂一条永不结束的幽灵运行。
+
+    参数：
+    - ``stale_minutes``：``started_at`` 早于「现在 - 该分钟数」才算僵尸（默认 60）。
+    - ``all``：忽略时间，收尾所有 ``running`` 行（仅用于进程启动时全面对账）。
+    """
+    stmt = select(AnalysisRun).where(AnalysisRun.status == "running")
+    if not all:
+        stmt = stmt.where(AnalysisRun.started_at < utcnow() - timedelta(minutes=stale_minutes))
+    rows = session.scalars(stmt).all()
+    now = utcnow()
+    for row in rows:
+        row.status = "interrupted"
+        row.finished_at = now
+        row.degraded = True
+        # JSON 列必须整体重新赋值才能被 SQLAlchemy 识别为变更（原地 append 不会被追踪）。
+        row.degraded_reasons = [*(row.degraded_reasons or []), dict(INTERRUPTED_REASON)]
+    if rows:
+        logger.warning("reconciled %s stale analysis runs", len(rows))
+    return len(rows)
 
 
 def canonical_json(value: Any) -> str:
@@ -143,6 +179,9 @@ class RunRecorder:
 
     # -- lifecycle -----------------------------------------------------
     def start(self) -> AnalysisRun:
+        # 先收尾僵尸运行，避免同一 kind 在「分析过程」页叠着一条永不结束的幽灵运行。
+        # 调用方统一 commit，这里的改动随本次运行一起落库。
+        reconcile_stale_analysis_runs(self.session, stale_minutes=60)
         self.run = AnalysisRun(
             id=new_id(),
             kind=self.kind,

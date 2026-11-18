@@ -354,10 +354,18 @@ def _register_collectors() -> None:
     )
     # 每周日盘前补全历史缺口 + 订正上游写坏的行情（与日线入库上限的调整配套）。
     # 放在周日 09:00：早于 weekly_review（10:00），先修数据再出周报。
+    # 首次启动回补结构性宏观序列（IMF/财政部/世界银行），之后每日 08:05 更新。
     scheduler.add_job(
-        _collector("backfill_history"),
-        trigger=CronTrigger(day_of_week="sun", hour=9, minute=0, timezone=CST),
-        id="backfill_history",
+        _collector("collect_macro"),
+        trigger=DateTrigger(run_date=now + timedelta(seconds=40)),
+        id="collect_macro_bootstrap",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        _collector("collect_macro"),
+        trigger=CronTrigger(hour=8, minute=5, timezone=CST),
+        id="collect_macro",
         replace_existing=True,
         max_instances=1,
         coalesce=True,

@@ -206,6 +206,9 @@ manual:
     scale: "100: ≥160%；75: 130–140%；50: 100–110%；25: 70–90%"
     source: 美国财政部 Debt to the Penny（2026-11-13 联邦债务 40.617 万亿美元）/ BEA 名义 GDP 约 30.6 万亿
     url: https://fiscaldata.treasury.gov/datasets/debt-to-the-penny/
+    # 实时序列优先：DB 有新鲜读数时由 cycle/structural.py 覆盖 value/score_value，YAML 仅兜底
+    bands: [[70, 25], [100, 50], [130, 75], [160, 100]]
+    live_series: [US_DEBT_GDP, US_FED_DEBT, WB_US_GDP]
   - id: us_interest_revenue
     name: 联邦利息支出/财政收入
     score: DMI
@@ -218,6 +221,8 @@ manual:
     scale: "100: ≥35%；75: 25–30%；50: 15–20%；25: <10%"
     source: CBO《The Budget and Economic Outlook》与财政部月度报表（FY2026 利息支出约 1.2 万亿、收入约 5.0 万亿）
     url: https://www.cbo.gov/publication/61189
+    bands: [[10, 25], [17.5, 50], [27.5, 75], [35, 100]]
+    live_series: [US_MTS_INTEREST, US_MTS_RECEIPTS, US_INTEREST_GDP, US_GOV_REVENUE_GDP]
   - id: us_deficit_gdp
     name: 联邦赤字/GDP
     score: DMI
@@ -230,6 +235,8 @@ manual:
     scale: "100: ≥10%；75: 6–8%；50: 3–4%；25: <2%"
     source: CBO 2026 财年预算展望（赤字 1.9 万亿、约占 GDP 5.8%）
     url: https://www.cbo.gov/publication/61189
+    bands: [[2, 25], [3.5, 50], [7, 75], [10, 100]]
+    live_series: [US_NET_LENDING_GDP, US_MTS_OUTLAYS, US_MTS_RECEIPTS, WB_US_GDP]
   - id: us_reserve_share
     name: 美元全球外汇储备份额
     score: DMI
@@ -242,6 +249,10 @@ manual:
     scale: "100: <45%；75: 55–60%；50: 65–70%；25: ≥75%（含 1999 年 71% 的历史对照）"
     source: IMF COFER 2026Q2（美元 56.70%，2026Q1 57.13%，2025Q4 56.42%）
     url: https://data.imf.org/regular.aspx?key=41175
+    # 储备份额越低越差：bands 的阈值升序、分值降序
+    bands: [[45, 100], [57.5, 75], [67.5, 50], [75, 25]]
+    higher_is_worse: false
+    live_series: [US_RESERVE_SHARE]
   - id: us_r_minus_g
     name: 实际利率 − 实际增长（r−g）
     score: DMI
@@ -254,6 +265,8 @@ manual:
     scale: "100: ≥3pp；75: 1–2pp；50: 0 附近；25: <−2pp"
     source: 10Y 实际利率 2.92% − IMF/CBO 美国潜在增速约 2.0%（推导值，E1）
     url: https://fred.stlouisfed.org/series/DFII10
+    bands: [[-2, 25], [0, 50], [1.5, 75], [3, 100]]
+    live_series: [US10Y_REAL, US_GDP_GROWTH]
   - id: cn_debt_gdp
     name: 中国非金融部门债务/GDP
     score: DMI
@@ -266,6 +279,8 @@ manual:
     scale: "100: ≥330%；75: 290–320%；50: 230–260%；25: <200%"
     source: BIS 信贷缺口与 IIF 全球债务监测（2026H1 中国非金融部门约 305%）
     url: https://www.bis.org/statistics/totcredit.htm
+    bands: [[200, 25], [245, 50], [305, 75], [330, 100]]
+    live_series: [CN_DEBT_GDP]
   - id: cn_interest_revenue
     name: 中国利息支出/广义财政收入
     score: DMI
@@ -278,6 +293,8 @@ manual:
     scale: "100: ≥30%；75: 20–25%；50: 12–18%；25: <8%"
     source: 财政部预算执行报告与社融存量推算（估算值，E3，口径与国际口径不可直接比较）
     url: https://www.mof.gov.cn/
+    bands: [[8, 25], [15, 50], [22.5, 75], [30, 100]]
+    live_series: [CN_INTEREST_GDP, CN_GOV_REVENUE_GDP]
   - id: us_polarization
     name: 美国政治极化
     score: ICI

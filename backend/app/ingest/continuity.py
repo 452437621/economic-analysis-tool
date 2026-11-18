@@ -354,7 +354,8 @@ def macro_findings(session: Session, *, dataset: str = "宏观序列") -> list[F
 
     # 日频序列允许的最长空档：美国/中国长假 + 发布滞后，取 12 天；
     # 周/月/季频按频率放大（周 21 天、月 70 天、季 150 天）。
-    limits = {"d": 12, "w": 21, "m": 70, "q": 150}
+    # 年频取 800 天：世界银行/IMF 年度值可滞后 18~24 个月，400 天会把上游未发布误判为断更。
+    limits = {"d": 12, "w": 21, "m": 70, "q": 150, "y": 800}
     for code, dates in dates_by_symbol.items():
         limit = limits.get(freq_by_code[code], 12)
         subset = {code: dates}

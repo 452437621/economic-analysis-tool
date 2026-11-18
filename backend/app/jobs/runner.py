@@ -110,6 +110,7 @@ JOBS = {
     "collect_daily_bars": pipeline.collect_daily_bars,
     "backfill_history": run_backfill,
     "collect_rates": pipeline.collect_rates,
+    "collect_macro": pipeline.collect_macro,
     "collect_calendar": pipeline.collect_calendar,
     "collect_positions": pipeline.collect_positions,
     "collect_news": pipeline.collect_news,

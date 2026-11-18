@@ -7,6 +7,7 @@ from app.provenance.engine import (
     canonical_json,
     derive_id,
     latest_derivations,
+    reconcile_stale_analysis_runs,
     record_observations,
     resolve_method_code_sha,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "ensure_methods",
     "latest_derivations",
     "method_map",
+    "reconcile_stale_analysis_runs",
     "record_observations",
     "resolve_method_code_sha",
 ]

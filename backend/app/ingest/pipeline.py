@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, func, select
 
 from app.ingest import bars_quality, continuity, store
-from app.ingest.contracts import Bar, Quote
+from app.ingest.contracts import Bar, MacroPoint, Quote
 from app.ingest.http import HttpClient
 from app.ingest.providers import (
     czce,
@@ -20,6 +20,7 @@ from app.ingest.providers import (
     eastmoney_yield,
     ecb,
     frankfurter,
+    imf_datamapper,
     jgb,
     nyfed,
     rss,
@@ -28,6 +29,8 @@ from app.ingest.providers import (
     sina_positions,
     tencent,
     treasury,
+    treasury_fiscal,
+    worldbank,
 )
 from app.ingest.providers.html_extract import extract_main_text
 from app.ingest.symbols import (
@@ -95,6 +98,19 @@ SOURCE_NYFED = dict(
 SOURCE_FRANKFURTER = dict(
     name="Frankfurter(ECB参考汇率)", kind="market", tier="S2", reliability=0.9, base_url="https://api.frankfurter.app"
 )
+SOURCE_IMF = dict(
+    name="IMF DataMapper", kind="official", tier="S1", reliability=0.9, base_url="https://www.imf.org"
+)
+SOURCE_WORLDBANK = dict(
+    name="世界银行", kind="official", tier="S1", reliability=0.9, base_url="https://data.worldbank.org"
+)
+SOURCE_TREASURY_FISCAL = dict(
+    name="美国财政部FiscalData",
+    kind="official",
+    tier="S1",
+    reliability=0.95,
+    base_url="https://fiscaldata.treasury.gov",
+)
 
 NEWS_FEEDS = [
     dict(name="美联储", url="https://www.federalreserve.gov/feeds/press_all.xml", kind="rss", tier="S1"),
@@ -132,6 +148,107 @@ MACRO_SERIES_META: dict[str, dict] = {
     "SOFR": {"name": "担保隔夜融资利率(SOFR)", "unit": "%", "country": "US"},
     "EFFR": {"name": "联邦基金有效利率(EFFR)", "unit": "%", "country": "US"},
     "SOFR_EFFR": {"name": "SOFR-EFFR 利差", "unit": "pp", "country": "US"},
+    # ── 结构性宏观序列（IMF WEO 年频）───────────────────────────────
+    "US_DEBT_GDP": {"name": "美国联邦债务/GDP（IMF）", "unit": "%", "country": "US", "freq": "y"},
+    "US_NET_LENDING_GDP": {
+        "name": "美国净贷出/借入占GDP（IMF，负=赤字）",
+        "unit": "%",
+        "country": "US",
+        "freq": "y",
+    },
+    "US_GDP_GROWTH": {"name": "美国实际GDP增速（IMF）", "unit": "%", "country": "US", "freq": "y"},
+    "US_INFLATION": {"name": "美国CPI通胀（IMF）", "unit": "%", "country": "US", "freq": "y"},
+    "US_UNEMPLOYMENT": {"name": "美国失业率（IMF）", "unit": "%", "country": "US", "freq": "y"},
+    "US_GOV_REVENUE_GDP": {
+        "name": "美国政府收入/GDP（IMF）",
+        "unit": "%",
+        "country": "US",
+        "freq": "y",
+    },
+    "US_GOV_EXPENSE_GDP": {
+        "name": "美国政府支出/GDP（IMF）",
+        "unit": "%",
+        "country": "US",
+        "freq": "y",
+    },
+    "CN_DEBT_GDP": {"name": "中国政府债务/GDP（IMF）", "unit": "%", "country": "CN", "freq": "y"},
+    "CN_NET_LENDING_GDP": {
+        "name": "中国净贷出/借入占GDP（IMF，负=赤字）",
+        "unit": "%",
+        "country": "CN",
+        "freq": "y",
+    },
+    "CN_GDP_GROWTH": {"name": "中国实际GDP增速（IMF）", "unit": "%", "country": "CN", "freq": "y"},
+    "CN_INFLATION": {"name": "中国CPI通胀（IMF）", "unit": "%", "country": "CN", "freq": "y"},
+    "CN_UNEMPLOYMENT": {"name": "中国失业率（IMF）", "unit": "%", "country": "CN", "freq": "y"},
+    "CN_GOV_REVENUE_GDP": {
+        "name": "中国政府收入/GDP（IMF）",
+        "unit": "%",
+        "country": "CN",
+        "freq": "y",
+    },
+    "CN_GOV_EXPENSE_GDP": {
+        "name": "中国政府支出/GDP（IMF）",
+        "unit": "%",
+        "country": "CN",
+        "freq": "y",
+    },
+    # ── 美国财政部 Fiscal Data（日频债务 + 月频收支）─────────────────
+    "US_FED_DEBT": {"name": "美国联邦债务总额（日频）", "unit": "USD", "country": "US", "freq": "d"},
+    "US_MTS_INTEREST": {"name": "美国联邦净利息支出（月度）", "unit": "USD", "country": "US", "freq": "m"},
+    "US_MTS_RECEIPTS": {"name": "美国联邦财政收入（月度）", "unit": "USD", "country": "US", "freq": "m"},
+    "US_MTS_OUTLAYS": {"name": "美国联邦财政支出（月度）", "unit": "USD", "country": "US", "freq": "m"},
+    "US_MTS_DEFICIT": {
+        "name": "美国联邦财政赤字（月度，支出−收入）",
+        "unit": "USD",
+        "country": "US",
+        "freq": "m",
+    },
+    # ── 世界银行兜底（IMF 不可达时的年频替代）───────────────────────
+    "WB_US_GDP": {"name": "美国名义GDP（世界银行）", "unit": "USD", "country": "US", "freq": "y"},
+    "WB_US_CPI": {"name": "美国CPI通胀（世界银行）", "unit": "%", "country": "US", "freq": "y"},
+    "WB_US_UNEMPLOYMENT": {"name": "美国失业率（世界银行）", "unit": "%", "country": "US", "freq": "y"},
+    "WB_US_DEBT_GDP": {
+        "name": "美国中央政府债务/GDP（世界银行）",
+        "unit": "%",
+        "country": "US",
+        "freq": "y",
+    },
+    "WB_CN_GDP": {"name": "中国名义GDP（世界银行）", "unit": "USD", "country": "CN", "freq": "y"},
+    "WB_CN_CPI": {"name": "中国CPI通胀（世界银行）", "unit": "%", "country": "CN", "freq": "y"},
+    "WB_CN_UNEMPLOYMENT": {"name": "中国失业率（世界银行）", "unit": "%", "country": "CN", "freq": "y"},
+    "WB_CN_DEBT_GDP": {
+        "name": "中国政府债务/GDP（世界银行）",
+        "unit": "%",
+        "country": "CN",
+        "freq": "y",
+    },
+}
+
+# IMF WEO 指标 → 序列 code（键为 DataMapper 的指标名，ISO3 为国家代码）。
+IMF_ANNUAL_SERIES: dict[str, dict[str, str]] = {
+    "GGXWDG_NGDP": {"USA": "US_DEBT_GDP", "CHN": "CN_DEBT_GDP"},
+    "GGXCNL_NGDP": {"USA": "US_NET_LENDING_GDP", "CHN": "CN_NET_LENDING_GDP"},
+    "NGDP_RPCH": {"USA": "US_GDP_GROWTH", "CHN": "CN_GDP_GROWTH"},
+    "PCPIPCH": {"USA": "US_INFLATION", "CHN": "CN_INFLATION"},
+    "LUR": {"USA": "US_UNEMPLOYMENT", "CHN": "CN_UNEMPLOYMENT"},
+    "GGR_NGDP": {"USA": "US_GOV_REVENUE_GDP", "CHN": "CN_GOV_REVENUE_GDP"},
+    "GGX_NGDP": {"USA": "US_GOV_EXPENSE_GDP", "CHN": "CN_GOV_EXPENSE_GDP"},
+}
+
+# 世界银行指标 → 序列 code（年频兜底）。
+WORLDBANK_ANNUAL_SERIES: dict[str, dict[str, str]] = {
+    "NY.GDP.MKTP.CD": {"USA": "WB_US_GDP", "CHN": "WB_CN_GDP"},
+    "FP.CPI.TOTL.ZG": {"USA": "WB_US_CPI", "CHN": "WB_CN_CPI"},
+    "SL.UEM.TOTL.ZS": {"USA": "WB_US_UNEMPLOYMENT", "CHN": "WB_CN_UNEMPLOYMENT"},
+    "GC.DOD.TOTL.GD.ZS": {"USA": "WB_US_DEBT_GDP", "CHN": "WB_CN_DEBT_GDP"},
+}
+
+# MTS table 9 的 line_code_nbr → 序列 code（表里两行都叫 "Total"，必须按行号区分）。
+MTS_LINE_SERIES: dict[str, str] = {
+    "120": "US_MTS_RECEIPTS",
+    "320": "US_MTS_INTEREST",
+    "340": "US_MTS_OUTLAYS",
 }
 
 
@@ -687,6 +804,203 @@ def collect_rates() -> dict:
     return stats
 
 
+def _to_float(value) -> float | None:
+    """Fiscal Data / World Bank 的金额是字符串，且空值可能是 "null"。"""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace(",", "")
+    if not text or text.lower() in {"null", "none", "nan", "-"}:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _parse_day(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _month_end(day: datetime) -> datetime:
+    """返回该日所在月份的月末 UTC 零点（月频观测的时间戳口径）。"""
+    first = day.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    next_month = (first + timedelta(days=32)).replace(day=1)
+    return next_month - timedelta(days=1)
+
+
+def _annual_points(code: str, years: dict[str, float]) -> list[MacroPoint]:
+    """年频观测按 12-31 落库；WEO 的预测年份（> 当前年）不落库。"""
+    current = datetime.now(timezone.utc).year
+    points: list[MacroPoint] = []
+    for year, value in years.items():
+        try:
+            number = int(str(year)[:4])
+        except (TypeError, ValueError):
+            continue
+        if number > current:
+            continue
+        points.append(
+            MacroPoint(code=code, ts=datetime(number, 12, 31, tzinfo=timezone.utc), value=float(value))
+        )
+    return points
+
+
+def _imf_years(data: dict[str, dict[str, float]], iso3: str) -> dict[str, float]:
+    """IMF 返回键可能是 ISO3（USA）或两位代码（US），两种都接受。"""
+    for key in (iso3.upper(), iso3[:2].upper()):
+        if key in data:
+            return data[key]
+    return {}
+
+
+def _store_macro_points(session, code: str, points: list[MacroPoint], source_id: str, stats: dict) -> int:
+    """按 (series_id, ts_utc) 幂等 upsert；同一时间点重复出现时保留最后一条。"""
+    if not points:
+        return 0
+    unique: dict[datetime, float] = {}
+    for point in points:
+        unique[point.ts] = point.value
+    ordered = [MacroPoint(code=code, ts=ts, value=value) for ts, value in sorted(unique.items())]
+    meta = MACRO_SERIES_META.get(code, {})
+    n = store.upsert_macro(
+        session,
+        code,
+        ordered,
+        source_id=source_id,
+        name=meta.get("name"),
+        unit=meta.get("unit"),
+        country=meta.get("country"),
+        freq=meta.get("freq"),
+    )
+    if n:
+        stats["obs"] += n
+        stats["series"] += 1
+    return n
+
+
+def collect_macro() -> dict:
+    """Collect structural macro series: IMF WEO, Treasury Fiscal Data, World Bank.
+
+    这是「数据缺失补数据源」的结构性读数来源：IMF 提供债务/GDP、赤字、增速等
+    年频序列；财政部提供日频债务与月频收支（可算利息/收入比与赤字率）；世界银行
+    作 IMF 不可达时的年频兜底。任一源失败只记 degraded，不影响其它源。
+    """
+    started = time.perf_counter()
+    stats: dict = {"series": 0, "obs": 0, "degraded_reasons": []}
+
+    with SessionLocal() as session:
+        # 1) IMF WEO 年频（7 个指标 × 美国/中国）
+        imf_source = store.get_source(session, **SOURCE_IMF)
+        imf_errors: list[str] = []
+        imf_ok = False
+        for indicator, code_by_country in IMF_ANNUAL_SERIES.items():
+            try:
+                data = imf_datamapper.fetch(indicator, list(code_by_country))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("imf datamapper %s failed: %s", indicator, exc)
+                imf_errors.append(f"imf {indicator}: {exc}")
+                continue
+            imf_ok = True
+            for iso3, code in code_by_country.items():
+                points = _annual_points(code, _imf_years(data, iso3))
+                if not points:
+                    stats["degraded_reasons"].append(f"imf {indicator}/{iso3}: 无观测值")
+                    continue
+                _store_macro_points(session, code, points, imf_source.id, stats)
+        if imf_ok:
+            store.record_health(session, imf_source.id, ok=True)
+        else:
+            store.record_health(
+                session, imf_source.id, ok=False, error="; ".join(imf_errors[-3:]) or "no data"
+            )
+            stats["degraded_reasons"].extend(imf_errors)
+
+        # 2) 美国财政部 Fiscal Data：日频债务 + 月频收支/利息
+        treasury_source = store.get_source(session, **SOURCE_TREASURY_FISCAL)
+        try:
+            debt_points: list[MacroPoint] = []
+            for row in treasury_fiscal.fetch_debt_to_penny(limit=90):
+                ts = _parse_day(row.get("record_date"))
+                value = _to_float(row.get("tot_pub_debt_out_amt"))
+                if ts is None or value is None:
+                    continue
+                debt_points.append(MacroPoint(code="US_FED_DEBT", ts=ts, value=value))
+            _store_macro_points(session, "US_FED_DEBT", debt_points, treasury_source.id, stats)
+
+            by_month: dict[str, dict[str, float]] = {}
+            for row in treasury_fiscal.fetch_mts(table=9, page_size=600):
+                code = MTS_LINE_SERIES.get(str(row.get("line_code_nbr") or "").strip())
+                month = str(row.get("record_date") or "")[:7]
+                value = _to_float(row.get("current_month_rcpt_outly_amt"))
+                if code is None or len(month) != 7 or value is None:
+                    continue
+                by_month.setdefault(month, {})[code] = value
+            monthly: dict[str, dict[str, float]] = {}
+            for month, values in by_month.items():
+                receipts = values.get("US_MTS_RECEIPTS")
+                outlays = values.get("US_MTS_OUTLAYS")
+                interest = values.get("US_MTS_INTEREST")
+                if receipts is not None:
+                    monthly.setdefault("US_MTS_RECEIPTS", {})[month] = receipts
+                if outlays is not None:
+                    monthly.setdefault("US_MTS_OUTLAYS", {})[month] = outlays
+                if interest is not None:
+                    monthly.setdefault("US_MTS_INTEREST", {})[month] = interest
+                if receipts is not None and outlays is not None:
+                    monthly.setdefault("US_MTS_DEFICIT", {})[month] = outlays - receipts
+            for code, by_ts in monthly.items():
+                points = []
+                for month, value in by_ts.items():
+                    day = _parse_day(f"{month}-01")
+                    if day is not None:
+                        points.append(MacroPoint(code=code, ts=_month_end(day), value=value))
+                _store_macro_points(session, code, points, treasury_source.id, stats)
+            store.record_health(session, treasury_source.id, ok=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("treasury fiscal data failed")
+            store.record_health(session, treasury_source.id, ok=False, error=str(exc))
+            stats["degraded_reasons"].append(f"treasury_fiscal: {exc}")
+
+        # 3) 世界银行年频兜底（IMF 403/不可达时仍能给出债务与增长口径）
+        wb_source = store.get_source(session, **SOURCE_WORLDBANK)
+        wb_errors: list[str] = []
+        wb_ok = False
+        for indicator, code_by_country in WORLDBANK_ANNUAL_SERIES.items():
+            for iso3, code in code_by_country.items():
+                try:
+                    years = worldbank.fetch(indicator, iso3)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("worldbank %s/%s failed: %s", indicator, iso3, exc)
+                    wb_errors.append(f"worldbank {indicator}/{iso3}: {exc}")
+                    continue
+                wb_ok = True
+                points = _annual_points(code, years)
+                if not points:
+                    stats["degraded_reasons"].append(f"worldbank {indicator}/{iso3}: 无观测值")
+                    continue
+                _store_macro_points(session, code, points, wb_source.id, stats)
+        if wb_ok:
+            store.record_health(session, wb_source.id, ok=True)
+        else:
+            store.record_health(
+                session, wb_source.id, ok=False, error="; ".join(wb_errors[-3:]) or "no data"
+            )
+            stats["degraded_reasons"].extend(wb_errors)
+
+        session.commit()
+
+    stats["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
+    logger.info("collect_macro: %s", stats)
+    return stats
+
+
 def collect_positions() -> dict:
     """Fetch SHFE + CZCE member position rankings (top-20 long/short)."""
     started = time.perf_counter()
@@ -1114,10 +1428,12 @@ def check_data_quality() -> dict:
             if stale:
                 stats["failed"] += 1
 
-        # 宏观序列：按序列频率给阈值（日频 5 天 / 周频 10 天 / 月频 70 天 / 季频 150 天），
+        # 宏观序列：按序列频率给阈值（日频 5 天 / 周频 10 天 / 月频 70 天 / 季频 150 天 / 年频 800 天），
         # 逐条检查——全表最大值会把"日债停在 10-30"这类单序列断更完全掩盖。
         # 月/季频阈值要留出官方发布滞后（如 ECB 法国10年 11-01 的观测要到 12 月初才发布）。
-        freq_days = {"d": 5, "w": 10, "m": 70, "q": 150}
+        # 年频阈值取 800 天：世界银行/IMF 的年度值可能滞后 18~24 个月（如 WB 美国 CPI 目前
+        # 最新只到 2024 年度，2025 年度值尚未发布），400 天窗口会把"上游还没发布"误判为断更。
+        freq_days = {"d": 5, "w": 10, "m": 70, "q": 150, "y": 800}
         macro_rows = session.execute(
             select(MacroSeries.code, MacroSeries.freq, func.max(MacroObs.ts_utc))
             .outerjoin(MacroObs, MacroObs.series_id == MacroSeries.id)

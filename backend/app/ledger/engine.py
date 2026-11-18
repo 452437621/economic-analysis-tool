@@ -17,6 +17,9 @@ from app.ledger.principles import CATEGORY_LABELS, PRINCIPLES
 from app.models.base import new_id
 from app.models.core import AnalyticsResult, Instrument, MacroObs, MacroSeries, MarketBar
 from app.models.v2 import (
+    AnalysisRun,
+    AnalysisStep,
+    Derivation,
     Forecast,
     ForecastOutcome,
     Principle,
@@ -238,6 +241,233 @@ def check_principles(
 # ── 预测台账 ─────────────────────────────────────────────────────────
 
 
+# 自动登记的预测范围（其余 FORECAST_CODES 仅手工登记时出现）。
+AUTO_FORECAST_CODES = (
+    "cycle.dmi",
+    "cycle.ici",
+    "cycle.eci",
+    "cycle.growth",
+    "cycle.inflation",
+    "cycle.liquidity",
+    "gold.score",
+    "xauusd",
+    "us10y",
+)
+AUTO_FORECAST_HORIZONS = (30, 90)
+
+# 方向判定：把窗口内首末日度观测的斜率线性折算成「60 天变化幅度」，再与阈值比较。
+SLOPE_WINDOW_DAYS = 60
+# 历史跨度不足 5 天不判方向（几小时的噪声不足以支撑 30/90 天前瞻，判 flat 更诚实）。
+SLOPE_MIN_SPAN_DAYS = 5
+# 60 天变化幅度阈值：分数类用「分」，收益率用 bp（百分点），价格类用相对幅度。
+SLOPE_THRESHOLDS: dict[str, float] = {
+    "cycle.dmi": 2.0,
+    "cycle.ici": 2.0,
+    "cycle.eci": 2.0,
+    "cycle.growth": 2.0,
+    "cycle.inflation": 2.0,
+    "cycle.liquidity": 2.0,
+    "gold.score": 2.0,
+    "xauusd": 0.015,
+    "us10y": 0.10,
+}
+RELATIVE_SLOPE_CODES = frozenset({"xauusd"})
+# 概率标定：|Δ60| 达到阈值的 3 倍时方向判断给到最高置信度 0.85。
+PROBABILITY_FULL_RATIO = 3.0
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _composite_history(session: Session, name: str, cutoff: datetime) -> list[tuple]:
+    """周期合成分的本地历史：analysis_steps 的 composite_scores + derivations 快照。"""
+    points: list[tuple] = []
+    rows = session.execute(
+        select(AnalysisStep.started_at, AnalysisStep.outputs)
+        .join(AnalysisRun, AnalysisRun.id == AnalysisStep.run_id)
+        .where(AnalysisRun.kind == "cycle", AnalysisStep.name == "composite_scores")
+        .where(AnalysisStep.started_at >= cutoff)
+    ).all()
+    for started, outputs in rows:
+        value = outputs.get(name) if isinstance(outputs, dict) else None
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and started is not None:
+            points.append((started, float(value)))
+    snapshots = session.execute(
+        select(Derivation.asof, Derivation.value)
+        .where(Derivation.code == "cycle.state.world", Derivation.asof >= cutoff)
+    ).all()
+    for asof, payload in snapshots:
+        composite = ((payload or {}).get("composites") or {}).get(name)
+        value = composite.get("value") if isinstance(composite, dict) else composite
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and asof is not None:
+            points.append((asof, float(value)))
+    return points
+
+
+def _history_points(session: Session, code: str, cutoff: datetime) -> list[tuple]:
+    """取该 code 在窗口内的本地历史点 [(时间, 值)]，与 ``actual_value`` 的口径一致。"""
+    if code.startswith("cycle."):
+        return _composite_history(session, code.split(".", 1)[1].upper(), cutoff)
+    if code == "gold.score":
+        rows = session.execute(
+            select(AnalyticsResult.asof, AnalyticsResult.payload)
+            .where(AnalyticsResult.kind == "gold", AnalyticsResult.asof >= cutoff)
+            .order_by(AnalyticsResult.asof)
+        ).all()
+        return [
+            (asof, float(payload["score"]))
+            for asof, payload in rows
+            if isinstance(payload, dict)
+            and isinstance(payload.get("score"), (int, float))
+            and not isinstance(payload.get("score"), bool)
+        ]
+    if code in {"xauusd", "usdcnh"}:
+        rows = session.execute(
+            select(MarketBar.ts_utc, MarketBar.close)
+            .join(Instrument, Instrument.id == MarketBar.instrument_id)
+            .where(Instrument.symbol == code.upper())
+            .where(MarketBar.timeframe == "1d", MarketBar.ts_utc >= cutoff)
+            .order_by(MarketBar.ts_utc)
+        ).all()
+        return [(ts, float(close)) for ts, close in rows if close is not None]
+    if code in {"us10y", "us30y", "cn10y"}:
+        rows = session.execute(
+            select(MacroObs.ts_utc, MacroObs.value)
+            .join(MacroSeries, MacroSeries.id == MacroObs.series_id)
+            .where(MacroSeries.code == code.upper(), MacroObs.ts_utc >= cutoff)
+            .order_by(MacroObs.ts_utc)
+        ).all()
+        return [(ts, float(value)) for ts, value in rows if value is not None]
+    return []
+
+
+def _slope_60d(session: Session, code: str, today: date) -> float | None:
+    """窗口内首末日度值的斜率，线性折算成 60 天变化幅度；历史不足返回 None。"""
+    cutoff = datetime.combine(
+        today - timedelta(days=SLOPE_WINDOW_DAYS), datetime.min.time(), tzinfo=timezone.utc
+    )
+    points = sorted(_history_points(session, code, cutoff), key=lambda item: _as_utc(item[0]))
+    daily: dict[date, float] = {}
+    for ts, value in points:
+        daily[_as_utc(ts).date()] = value  # 同日多条取最后一条（points 已按时间升序）
+    ordered = sorted(daily.items())
+    if len(ordered) < 2:
+        return None
+    span = (ordered[-1][0] - ordered[0][0]).days
+    if span < SLOPE_MIN_SPAN_DAYS:
+        return None
+    return (ordered[-1][1] - ordered[0][1]) * SLOPE_WINDOW_DAYS / span
+
+
+def _classify_direction(
+    code: str, change_60d: float | None, baseline: float
+) -> tuple[str, float]:
+    """确定式方向 + 概率（0.5–0.85，无随机数）。
+
+    - 归一化幅度 = |Δ60|（价格类再除以当前值换成相对幅度）；
+    - 幅度 > 阈值 → up/down，概率 ``0.5 + 0.35 * min(1, 幅度/(阈值×3))``；
+    - 否则 flat，概率 ``0.5 + 0.35 * (1 - min(1, 幅度/阈值))``（越平越确信）；
+    - 历史不足（``change_60d is None``）→ flat，概率 0.5（不给虚假置信度）。
+    """
+    if change_60d is None:
+        return "flat", 0.5
+    threshold = SLOPE_THRESHOLDS[code]
+    magnitude = abs(change_60d)
+    if code in RELATIVE_SLOPE_CODES and baseline:
+        magnitude = magnitude / abs(baseline)
+    if magnitude > threshold:
+        ratio = min(1.0, magnitude / (threshold * PROBABILITY_FULL_RATIO))
+        direction = "up" if change_60d > 0 else "down"
+        return direction, round(0.5 + 0.35 * ratio, 4)
+    ratio = min(1.0, magnitude / threshold)
+    return "flat", round(0.5 + 0.35 * (1.0 - ratio), 4)
+
+
+def _open_forecast_exists(session: Session, code: str, subject: str, target: date) -> bool:
+    start = datetime.combine(target, datetime.min.time(), tzinfo=timezone.utc)
+    end = start + timedelta(days=1)
+    found = session.scalar(
+        select(Forecast.id)
+        .where(
+            Forecast.code == code,
+            Forecast.subject == subject,
+            Forecast.status == "open",
+            Forecast.target_date >= start,
+            Forecast.target_date < end,
+        )
+        .limit(1)
+    )
+    return found is not None
+
+
+def auto_register_forecasts(
+    session: Session,
+    state_value: dict | None,
+    *,
+    run_id: str | None = None,
+    today: date | None = None,
+) -> int:
+    """从最新周期快照自动登记 30/90 天前瞻预测，返回新增条数（幂等）。
+
+    方向规则（简单、可解释、无随机数）：
+    1. 对每个 code 取最近 60 天本地历史：周期合成分来自 ``analysis_steps`` 的
+       ``composite_scores`` 输出与 ``cycle.state.world`` 历史快照，黄金评分来自
+       ``analytics_results``，价格/收益率来自 ``market_bars`` / ``macro_obs``；
+    2. 每个 UTC 日只保留最后一条，用首末两日的差值 ÷ 跨度天数得到日均斜率，
+       再乘 60 折算成「60 天变化幅度」；历史跨度 < 5 天视为样本不足，判 ``flat``；
+    3. 阈值见 ``SLOPE_THRESHOLDS``（分数 ±2 分、US10Y ±10bp、XAUUSD ±1.5%）：
+       幅度超阈值按符号判 ``up``/``down``，否则 ``flat``；
+    4. 概率见 ``_classify_direction``（0.5–0.85 的确定式映射）；
+    5. ``point`` 按日均斜率线性外推到 30/90 天，``baseline_value`` 填当前值。
+
+    幂等键为 ``code + subject + target_date``：已有同目标日的 open 预测就跳过，
+    所以一天内多次运行只新增一轮。
+
+    旧版 ``predictions`` 表不桥接：它只有 thesis/plan/概率/期限，没有 code、方向、
+    目标日与基线，语义对不上 v2 ``Forecast``；且 v1 的 ``score_predictions`` 仍在
+    结算它，硬塞会让同一判断被计两次。
+    """
+    if not state_value:
+        return 0
+    today = today or date.today()
+    metrics = build_metrics(state_value, None)
+    added = 0
+    for code in AUTO_FORECAST_CODES:
+        baseline = actual_value(session, code, metrics)
+        if baseline is None:
+            continue
+        change_60d = _slope_60d(session, code, today)
+        direction, probability = _classify_direction(code, change_60d, baseline)
+        slope_per_day = (change_60d or 0.0) / SLOPE_WINDOW_DAYS
+        for horizon in AUTO_FORECAST_HORIZONS:
+            target = today + timedelta(days=horizon)
+            if _open_forecast_exists(session, code, "all", target):
+                continue
+            register_forecast(
+                session,
+                code=code,
+                direction=direction,
+                horizon_days=horizon,
+                probability=probability,
+                point=round(baseline + slope_per_day * horizon, 4),
+                baseline_value=round(baseline, 4),
+                target_date=target,
+                run_id=run_id,
+                notes=(
+                    f"自动登记：60 天斜率折算 {change_60d:+.2f}"
+                    if change_60d is not None
+                    else "自动登记：历史跨度不足，方向判 flat"
+                )
+                + f"，{DIRECTION_LABELS[direction]}，概率 {probability:.2f}",
+            )
+            added += 1
+    session.flush()
+    return added
+
+
 def register_forecast(
     session: Session,
     *,
@@ -250,12 +480,18 @@ def register_forecast(
     subject: str = "all",
     notes: str | None = None,
     run_id: str | None = None,
+    target_date: date | None = None,
 ) -> Forecast:
     if code not in FORECAST_CODES:
         raise ValueError(f"unsupported forecast code: {code}")
     if direction not in DIRECTION_LABELS:
         raise ValueError(f"unsupported direction: {direction}")
     now = datetime.now(timezone.utc)
+    target = (
+        datetime.combine(target_date, datetime.min.time(), tzinfo=timezone.utc)
+        if target_date is not None
+        else now + timedelta(days=max(1, int(horizon_days)))
+    )
     row = Forecast(
         id=new_id(),
         run_id=run_id,
@@ -264,7 +500,7 @@ def register_forecast(
         direction=direction,
         horizon_days=max(1, min(int(horizon_days), 365)),
         made_at=now,
-        target_date=now + timedelta(days=max(1, int(horizon_days))),
+        target_date=target,
         point=point,
         probability=probability,
         baseline_value=baseline_value,
@@ -281,9 +517,9 @@ def _latest_market_value(session: Session, code: str) -> float | None:
     row = session.execute(
         select(MarketBar.close)
         .join(Instrument, Instrument.id == MarketBar.instrument_id)
-        .where(Instrument.code == code.upper())
+        .where(Instrument.symbol == code.upper())
         .where(MarketBar.timeframe == "1d")
-        .order_by(MarketBar.ts.desc())
+        .order_by(MarketBar.ts_utc.desc())
         .limit(1)
     ).scalar_one_or_none()
     return float(row) if row is not None else None
@@ -304,7 +540,7 @@ def _latest_gold_score(session: Session) -> float | None:
     row = session.execute(
         select(AnalyticsResult)
         .where(AnalyticsResult.kind == "gold")
-        .order_by(AnalyticsResult.ts.desc())
+        .order_by(AnalyticsResult.asof.desc())
         .limit(1)
     ).scalar_one_or_none()
     if row is None or not isinstance(row.payload, dict):
@@ -449,6 +685,12 @@ def run_ledger(session: Session, today: date | None = None) -> dict[str, Any]:
             counts["total"] = len(checks)
             step.outputs = counts
 
+        with rec.step(
+            "register_forecasts", kind="compute", inputs={"today": today.isoformat()}
+        ) as step:
+            added = auto_register_forecasts(session, state_value, run_id=rec.run.id, today=today)
+            step.outputs = {"added": added, "horizons": list(AUTO_FORECAST_HORIZONS)}
+
         with rec.step("score_forecasts", kind="compute", inputs={"today": today.isoformat()}) as step:
             scored = score_forecasts(session, metrics, today=today, run_id=rec.run.id)
             step.outputs = {"resolved": scored["resolved"], "pending": scored["pending"]}
@@ -525,10 +767,14 @@ def run_ledger(session: Session, today: date | None = None) -> dict[str, Any]:
             )
             rec.derive(
                 code="ledger.forecasts",
-                claim=f"未结预测 {len(open_rows)} 条，最近到期 {next_due.isoformat() if next_due else '—'}",
+                claim=(
+                    f"未结预测 {len(open_rows)} 条（本轮自动登记新增 {added} 条），"
+                    f"最近到期 {next_due.isoformat() if next_due else '—'}"
+                ),
                 value={
                     "open": len(open_rows),
                     "resolved": calibration["n"],
+                    "added": added,
                     "next_due": next_due.isoformat() if next_due else None,
                     "open_items": [
                         {
@@ -545,7 +791,11 @@ def run_ledger(session: Session, today: date | None = None) -> dict[str, Any]:
                 inputs=[{"code": "forecasts", "asof": asof.isoformat()}],
                 asof=asof_dt,
             )
-            step.outputs = {"principles": len(checks), "calibration_n": calibration["n"]}
+            step.outputs = {
+                "principles": len(checks),
+                "calibration_n": calibration["n"],
+                "forecasts_added": added,
+            }
 
         counter = session.scalars(select(Forecast)).all()
         rec.finish(
@@ -554,6 +804,7 @@ def run_ledger(session: Session, today: date | None = None) -> dict[str, Any]:
                 "hits": counts["hit"],
                 "forecasts": len(counter),
                 "open": len(open_rows),
+                "forecasts_added": added,
             }
         )
         session.commit()

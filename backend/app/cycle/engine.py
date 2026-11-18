@@ -280,7 +280,7 @@ def run_cycle(session: Session, today: date | None = None) -> dict:
             step.outputs = {"columns": len(panel.columns), "first": panel.first, "last": panel.last}
 
         with rec.step("read_indicators", kind="transform") as step:
-            readings = build_readings(panel, cfg)
+            readings = build_readings(panel, cfg, session=session)
             by_id = _reading_map(readings)
             recorded = record_observations(
                 session,
@@ -350,7 +350,7 @@ def run_cycle(session: Session, today: date | None = None) -> dict:
             }
 
         with rec.step("sustainability", kind="compute") as step:
-            sustain = sustainability(cfg)
+            sustain = sustainability(cfg, session=session)
             step.outputs = {"mode": sustain.get("mode")}
 
         with rec.step("world_order", kind="compute") as step:

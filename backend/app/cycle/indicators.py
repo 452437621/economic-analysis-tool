@@ -11,6 +11,8 @@ import pandas as pd
 
 from app.cycle.config import EVIDENCE_WEIGHT, load_config, stale_days
 from app.cycle.market import Panel, indicator_series, zscore
+from app.cycle.structural import resolve as resolve_structural
+from app.cycle.structural import score_from_bands
 
 MARKET_EVIDENCE = "E1"
 
@@ -120,9 +122,53 @@ def _market_readings(panel: Panel, specs: list[dict], norm: dict) -> list[Readin
     return out
 
 
-def _manual_readings(items: list[dict]) -> list[Reading]:
+def _live_manual_reading(item: dict, session) -> Reading | None:
+    """Build a reading from a fresh DB series; ``None`` means "fall back to YAML"."""
+    resolved = resolve_structural(item["id"], session)
+    if not resolved.get("live") or resolved.get("value") is None:
+        return None
+    observed = resolved.get("asof")
+    observed_date: date | None = None
+    if observed:
+        try:
+            observed_date = date.fromisoformat(str(observed)[:10])
+        except ValueError:
+            observed_date = None
+    days = stale_days(observed_date)
+    try:
+        score_value = score_from_bands(float(resolved["value"]), item.get("bands"))
+    except (TypeError, ValueError):
+        score_value = float(item["score_value"])
+    return Reading(
+        id=item["id"],
+        name=item["name"],
+        score=item["score"],
+        weight=float(item.get("weight", 0)),
+        direction=1.0,
+        value=float(resolved["value"]),
+        unit=resolved.get("unit") or item.get("unit"),
+        asof=str(observed) if observed else None,
+        z=None,
+        score_value=score_value,
+        evidence=str(resolved.get("evidence", "E2")),
+        source=str(resolved.get("source", "")),
+        layer="结构性/实时序列",
+        why=str(item.get("scale", "")),
+        caveat=f"实时序列读数（asof {observed}），来源：{resolved.get('source', '')}；YAML 仅为兜底",
+        stale_days=days,
+        degraded=False,
+        degrade_reason=None,
+    )
+
+
+def _manual_readings(items: list[dict], session=None) -> list[Reading]:
     out: list[Reading] = []
     for item in items:
+        if session is not None:
+            live = _live_manual_reading(item, session)
+            if live is not None:
+                out.append(live)
+                continue
         observed = item.get("asof")
         if hasattr(observed, "date"):
             observed = observed.date()
@@ -152,11 +198,11 @@ def _manual_readings(items: list[dict]) -> list[Reading]:
     return out
 
 
-def build_readings(panel: Panel, config: dict | None = None) -> list[Reading]:
+def build_readings(panel: Panel, config: dict | None = None, session=None) -> list[Reading]:
     cfg = config or load_config()
     norm = cfg.get("normalization") or {}
     readings = _market_readings(panel, list(cfg.get("indicators") or []), norm)
-    readings.extend(_manual_readings(list(cfg.get("manual") or [])))
+    readings.extend(_manual_readings(list(cfg.get("manual") or []), session=session))
     return readings
 
 

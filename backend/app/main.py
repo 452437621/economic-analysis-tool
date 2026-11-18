@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
@@ -29,7 +30,7 @@ from app.api import (
     watchlist,
 )
 from app.platform.config import ROOT_DIR, settings
-from app.platform.db import init_db
+from app.platform.db import SessionLocal, init_db
 from app.platform.logging import setup_logging
 from app.platform.scheduler import start_scheduler, stop_scheduler
 
@@ -51,11 +52,41 @@ async def lifespan(app: FastAPI):
     from app.jobs.runner import reconcile_stale_runs
 
     reconcile_stale_runs(all_jobs=True)
+    # 同理收尾中断的分析运行（analysis_runs 由 RunRecorder 自己写，jobs 对账管不到）。
+    from app.provenance import reconcile_stale_analysis_runs
+
+    with SessionLocal() as session:
+        interrupted = reconcile_stale_analysis_runs(session, all=True)
+        session.commit()
+    if interrupted:
+        logger.warning("marked %s interrupted analysis runs", interrupted)
     start_scheduler()
+    if settings.env != "test":
+        # 停机期间错过的定点作业在启动 60 秒后补跑（同步任务丢线程池，别阻塞事件循环）。
+        app.state.catch_up_task = asyncio.create_task(_catch_up_after_startup())
     try:
         yield
     finally:
+        task = getattr(app.state, "catch_up_task", None)
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
         stop_scheduler()
+
+
+async def _catch_up_after_startup() -> None:
+    """启动 60 秒后补跑错过的定点作业；失败只记日志，不影响服务。"""
+    await asyncio.sleep(60)
+    from app.jobs.catchup import catch_up_jobs
+
+    try:
+        caught = await asyncio.to_thread(catch_up_jobs)
+    except Exception:  # noqa: BLE001 - 补跑失败不能拖垮应用启动
+        logger.exception("catch-up jobs failed")
+        return
+    if caught:
+        logger.info("caught up missed jobs: %s", ", ".join(caught))
 
 
 app = FastAPI(

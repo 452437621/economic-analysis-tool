@@ -95,6 +95,7 @@ JOBS_DEFAULT: dict[str, str] = {
     "collect_news": "every 3m",
     "collect_news_slow": "08:15",
     "collect_rates": "every 1h",
+    "collect_macro": "08:05",
     "collect_calendar": "every 6h",
     "collect_positions": "15:45",
     "collect_gold": "16:40",
