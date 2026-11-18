@@ -94,15 +94,21 @@ def health(session: Session = Depends(get_session)) -> dict:
 @router.get("/jobs")
 def list_jobs(session: Session = Depends(get_session)) -> dict:
     rows = session.scalars(select(Job).order_by(Job.name)).all()
+    # 每个任务的累计调度次数（执行历史条数），系统状态页点击次数弹框看明细。
+    run_counts = dict(
+        session.execute(select(JobRun.job_name, func.count()).group_by(JobRun.job_name)).all()
+    )
     return {
         "data": [
             {
                 "name": row.name,
                 "cron": row.cron,
+                "description": row.description,
                 "enabled": row.enabled,
                 "last_status": row.last_status,
                 "last_run_at": row.last_run_at.isoformat() if row.last_run_at else None,
                 "last_error": row.last_error,
+                "run_count": int(run_counts.get(row.name, 0)),
             }
             for row in rows
         ]
@@ -110,21 +116,34 @@ def list_jobs(session: Session = Depends(get_session)) -> dict:
 
 
 @router.get("/job-runs")
-def list_job_runs(limit: int = 20, session: Session = Depends(get_session)) -> dict:
+def list_job_runs(
+    limit: int = 20,
+    job_name: str | None = None,
+    session: Session = Depends(get_session),
+) -> dict:
     limit = max(1, min(limit, 200))
-    rows = session.scalars(select(JobRun).order_by(JobRun.started_at.desc()).limit(limit)).all()
-    return {
-        "data": [
+    stmt = select(JobRun)
+    if job_name:
+        stmt = stmt.where(JobRun.job_name == job_name)
+    stmt = stmt.order_by(JobRun.started_at.desc()).limit(limit)
+    rows = session.scalars(stmt).all()
+    data = []
+    for row in rows:
+        duration_ms = None
+        if row.started_at and row.finished_at:
+            duration_ms = max(0, int((row.finished_at - row.started_at).total_seconds() * 1000))
+        data.append(
             {
+                "id": row.id,
                 "job_name": row.job_name,
                 "status": row.status,
                 "started_at": row.started_at.isoformat() if row.started_at else None,
                 "finished_at": row.finished_at.isoformat() if row.finished_at else None,
+                "duration_ms": duration_ms,
                 "detail": row.detail,
             }
-            for row in rows
-        ]
-    }
+        )
+    return {"data": data}
 
 
 @router.get("/meta")

@@ -563,7 +563,8 @@ const onTrackClick = (event: MouseEvent) => {
 }
 .hst-canvas {
   position: relative;
-  min-width: 880px;
+  /* 时间轴按容器宽度自适应，不再用 880px 硬宽逼出横向滚动条；容器变窄时按比例压缩。 */
+  min-width: min(880px, 100%);
   padding-left: 92px;
 }
 .hst-plot {

@@ -57,7 +57,7 @@
             </div>
             <div class="alr-cal-country">{{ item.country ?? "—" }}</div>
             <div class="alr-cal-event">
-              <div class="alr-cal-name">{{ item.name }}</div>
+              <div class="alr-cal-name"><ZhText :text="item.name" inline /></div>
               <div class="alr-cal-region">{{ item.category ?? "—" }}</div>
             </div>
             <div class="alr-cal-star"><span class="alr-stars">{{ stars(item.importance) }}</span></div>
@@ -94,7 +94,7 @@
           >
             <span class="mono alr-pol-date">{{ shortDate(event.date) }}</span>
             <span class="alr-pol-stars">{{ stars(event.importance) }}</span>
-            <span class="alr-pol-name">{{ event.name }}</span>
+            <span class="alr-pol-name"><ZhText :text="event.name" inline /></span>
             <span class="alr-pol-days mono">{{ daysText(event.days) }}</span>
             <span class="alr-pol-note">{{ event.note }}</span>
           </div>
@@ -120,6 +120,7 @@ import { fmtTime, stars } from "@/composables/useFormat";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import SkeletonBlock from "@/components/ui/SkeletonBlock.vue";
+import ZhText from "@/components/ui/ZhText.vue";
 
 interface MarketCalendarItem {
   id?: string | number | null;
@@ -335,7 +336,9 @@ function openMarket(): void {
 .alr-cal-head,
 .alr-cal-row {
   display: grid;
-  grid-template-columns: 84px 48px minmax(0, 1fr) 48px 68px 68px 68px;
+  grid-template-columns:
+    minmax(0, 84px) minmax(0, 48px) minmax(0, 1fr) minmax(0, 48px)
+    minmax(0, 68px) minmax(0, 68px) minmax(0, 68px);
   gap: 10px;
   align-items: center;
   padding: 0 13px;
@@ -391,6 +394,7 @@ function openMarket(): void {
 }
 
 .alr-cal-country {
+  min-width: 0;
   font-size: 10px;
   color: var(--muted);
   white-space: nowrap;
@@ -546,6 +550,7 @@ function openMarket(): void {
 
 .alr-pol-name,
 .alr-pol-note {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -570,7 +575,9 @@ function openMarket(): void {
 @media (max-width: 1100px) {
   .alr-cal-head,
   .alr-cal-row {
-    grid-template-columns: 74px 42px minmax(0, 1fr) 40px 58px 58px 58px;
+    grid-template-columns:
+      minmax(0, 74px) minmax(0, 42px) minmax(0, 1fr) minmax(0, 40px)
+      minmax(0, 58px) minmax(0, 58px) minmax(0, 58px);
     gap: 7px;
     padding: 0 10px;
   }
@@ -587,7 +594,9 @@ function openMarket(): void {
 @media (max-width: 760px) {
   .alr-cal-head,
   .alr-cal-row {
-    grid-template-columns: 68px 36px minmax(0, 1fr) 34px 52px 52px 52px;
+    grid-template-columns:
+      minmax(0, 68px) minmax(0, 36px) minmax(0, 1fr) minmax(0, 34px)
+      minmax(0, 52px) minmax(0, 52px) minmax(0, 52px);
     gap: 5px;
     padding: 0 9px;
   }

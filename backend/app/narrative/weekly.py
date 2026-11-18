@@ -16,12 +16,31 @@ from app.models.core import (
     Signal,
     TradePlan,
 )
+from app.narrative.brief import (
+    _latest_news,
+    _zh_map,
+    event_lines,
+    news_lines,
+    position_rows,
+    position_table_lines,
+    recent_event_rows,
+)
 from app.platform.db import SessionLocal
 
 KIND = "weekly"
 
 
-def build_weekly_markdown(stats: dict, start, end, journal: str | None = None) -> str:
+def build_weekly_markdown(
+    stats: dict,
+    start,
+    end,
+    journal: str | None = None,
+    *,
+    positions: list[dict] | None = None,
+    events: list[dict] | None = None,
+    news: list[dict] | None = None,
+    zh_map: dict[str, str] | None = None,
+) -> str:
     lines = [
         f"# {end.isoformat()} 周度复盘（{start.isoformat()} ~ {end.isoformat()}）",
         "",
@@ -39,14 +58,20 @@ def build_weekly_markdown(stats: dict, start, end, journal: str | None = None) -
         lines.append(
             f"- {mover['symbol']}：20 日 {mover['change_20d']:+.2f}%，趋势 {mover.get('trend', '—')}"
         )
-    lines += ["", "## 3. 人工记录"]
+    lines += ["", "## 3. 会员持仓（关注品种：净占比头尾各 3）"]
+    lines.extend(position_table_lines(positions or []))
+    lines += ["", "## 4. 事件驱动（近 7 天）"]
+    lines.extend(event_lines(events or [], zh_map))
+    lines += ["", "## 5. 新闻与政策（官方来源）"]
+    lines.extend(news_lines(news or [], zh_map))
+    lines += ["", "## 6. 人工记录"]
     if journal:
         lines.append(journal.strip())
     else:
         lines.append("（本周无人工日志；可在看板「交易日志」区填写。）")
     lines += [
         "",
-        "## 4. 下周校准清单",
+        "## 7. 下周校准清单",
         "- 核对系统主线与人工判断的差异，记录原因。",
         "- 检查告警误报/漏报，调整阈值。",
         "- 复核计划采纳率与执行纪律。",
@@ -123,6 +148,15 @@ def generate_weekly(now: datetime | None = None) -> dict:
             select(JournalEntry).where(JournalEntry.entry_date >= start).order_by(JournalEntry.entry_date.desc()).limit(1)
         )
 
+        # 与日报共用取数/渲染逻辑；周报路径不调 LLM，只命中种子/运行期缓存。
+        positions = position_rows(session)
+        events = recent_event_rows(session, now, days=7, limit=10)
+        news = _latest_news(session)
+        zh_map = _zh_map(
+            [row["title"] for row in events] + [item["title"] for item in news if item.get("title")],
+            allow_llm=False,
+        )
+
         stats = {
             "briefs": briefs,
             "signals": signals,
@@ -139,7 +173,16 @@ def generate_weekly(now: datetime | None = None) -> dict:
             "wind_score": wind.get("score"),
             "movers": movers[:6],
         }
-        markdown = build_weekly_markdown(stats, start, end, journal_row.content if journal_row else None)
+        markdown = build_weekly_markdown(
+            stats,
+            start,
+            end,
+            journal_row.content if journal_row else None,
+            positions=positions,
+            events=events,
+            news=news,
+            zh_map=zh_map,
+        )
         session.execute(delete(Brief).where(Brief.kind == KIND, Brief.trade_date == end))
         brief = Brief(kind=KIND, trade_date=end, markdown=markdown, meta=stats)
         session.add(brief)

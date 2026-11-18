@@ -25,6 +25,7 @@ import type {
   GoldSeriesResponse,
   Health,
   JobRow,
+  JobRunRow,
   JournalEntry,
   JournalEntryItem,
   JournalInput,
@@ -83,6 +84,10 @@ import type {
 /* 系统 */
 export const getHealth = () => getJson<Health>("/api/system/health");
 export const getJobs = () => getJson<{ data: JobRow[] }>("/api/system/jobs");
+export const getJobRuns = (jobName: string, limit = 50) =>
+  getJson<{ data: JobRunRow[] }>(
+    `/api/system/job-runs?job_name=${encodeURIComponent(jobName)}&limit=${limit}`,
+  );
 export const getSources = () => getJson<{ data: SourceHealth[] }>("/api/system/sources");
 export const getQuality = () => getJson<QualityResponse>("/api/system/data-quality");
 export const getAcceptance = () => getJson<Acceptance>("/api/system/acceptance");

@@ -19,13 +19,6 @@
           <svg class="ic"><use href="#i-calendar" /></svg>
           数据日 {{ dataDate }}
         </span>
-        <span
-          class="badge badge--sm"
-          :class="triggeredCount > 0 ? 'badge--up' : 'badge--live'"
-          :title="`已触发 ${triggeredCount} 条 / 共 ${ruleTotal} 条规则`"
-        >
-          已触发 {{ triggeredCount }}/{{ ruleTotal }}
-        </span>
         <button class="btn btn--sm btn--primary" type="button" :disabled="running" @click="recalc">
           <svg class="ic" :class="{ spin: running }"><use href="#i-refresh" /></svg>
           {{ running ? "重算中…" : "立即重算" }}
@@ -80,36 +73,36 @@
             <span class="kpi-flag badge badge--sm badge--warn">{{ share(counts.unknown) }}</span>
           </div>
           <div class="kpi-value">{{ counts.unknown }}<small>条未知</small></div>
-          <div class="kpi-sub">本轮快照 · 缺失指标不默认未触发</div>
+          <div class="kpi-sub">本轮快照 · 指标缺失记为未知</div>
         </div>
       </div>
 
-      <div class="alr-grid">
-        <section class="alr-block alr-block--table" aria-label="预警表">
-          <AlertTable :alerts="alertRows" :loading="stateLoading" />
-        </section>
-
-        <section class="alr-block alr-block--rules" aria-label="阈值编辑器">
-          <ThresholdEditor
-            :rules="rules"
-            :current="alertRows"
-            :loading="configLoading"
-            @saved="onSaved"
-          />
-        </section>
-      </div>
+      <section class="alr-block" aria-label="预警表与阈值编辑">
+        <AlertTable
+          :alerts="alertRows"
+          :rules="rules"
+          :loading="stateLoading"
+          :config-loading="configLoading"
+          @saved="onSaved"
+        />
+      </section>
 
       <section class="alr-block" aria-label="财经日历">
         <MarketCalendar :political="politicalCalendar" />
       </section>
 
+      <div v-if="degradedReasons.length" class="alr-degraded">
+        <strong>降级说明</strong>
+        <span v-for="reason in degradedReasons.slice(0, 6)" :key="reason.code">{{ reason.message }}</span>
+      </div>
+
       <footer class="alr-foot">
         <span class="alr-foot-note">
           <svg class="ic"><use href="#i-shield-check" /></svg>
-          缺失指标记为未知，不默认未触发；触发 ≠ 预测，需人工复核。
+          缺失指标记为未知，不默认未触发；触发只读，需人工复核。
         </span>
         <span class="mono alr-run">run {{ runIdShort }}</span>
-        <span class="dim">全部规则来自 config/cycle.yaml</span>
+        <RouterLink class="alr-link" to="/ledger">据此登记预测 →</RouterLink>
         <RouterLink class="alr-link" to="/pipeline">在分析过程查看运行记录</RouterLink>
       </footer>
     </template>
@@ -123,7 +116,6 @@ import { getCycleConfig, getCycleState, runCycle } from "@/api/endpoints";
 import type { CycleAlert, CycleAlertRule, CycleCalendarEntry, CycleConfigResponse, CycleStateResponse } from "@/api/types";
 import AlertTable from "@/components/alerts/AlertTable.vue";
 import MarketCalendar from "@/components/alerts/MarketCalendar.vue";
-import ThresholdEditor from "@/components/alerts/ThresholdEditor.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import SkeletonBlock from "@/components/ui/SkeletonBlock.vue";
@@ -169,7 +161,6 @@ const ruleTotal = computed(() => {
   if (total > 0) return total;
   return rules.value.length || 12;
 });
-const triggeredCount = computed(() => alerts.value?.triggered ?? 0);
 
 const dataDate = computed(() => {
   const iso = payload.value?.asof;
@@ -183,6 +174,9 @@ const generatedLabel = computed(() => {
 });
 
 const runIdShort = computed(() => payload.value?.run_id?.slice(0, 8) ?? "—");
+
+/** 后端降级原因（周期链路缺数据时返回），用于页脚上方提示。 */
+const degradedReasons = computed(() => payload.value?.degraded_reasons ?? []);
 
 function share(value: number): string {
   const total = totalRules.value;
@@ -278,18 +272,18 @@ async function onSaved(): Promise<void> {
   margin-top: 10px;
 }
 
-/* 预警表 + 阈值编辑器并排：贴近设计稿左右两栏，窄屏再降为单列。 */
-.alr-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
+.alr-degraded {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   margin-top: 10px;
-}
-
-.alr-grid .alr-block {
-  margin-top: 0;
-  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  color: var(--warn);
+  font-size: 10.5px;
+  line-height: 1.5;
 }
 
 .alr-foot {
@@ -333,9 +327,6 @@ async function onSaved(): Promise<void> {
 @media (max-width: 1240px) {
   .alr-actions {
     gap: 5px;
-  }
-  .alr-grid {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 

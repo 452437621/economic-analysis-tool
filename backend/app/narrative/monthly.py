@@ -17,12 +17,30 @@ from app.models.core import (
     Signal,
     TradePlan,
 )
+from app.narrative.brief import (
+    _latest_news,
+    _zh_map,
+    event_lines,
+    news_lines,
+    position_rows,
+    position_table_lines,
+    recent_event_rows,
+)
 from app.platform.db import SessionLocal
 
 KIND = "monthly"
 
 
-def build_monthly_markdown(stats: dict, start: date, end: date) -> str:
+def build_monthly_markdown(
+    stats: dict,
+    start: date,
+    end: date,
+    *,
+    positions: list[dict] | None = None,
+    events: list[dict] | None = None,
+    news: list[dict] | None = None,
+    zh_map: dict[str, str] | None = None,
+) -> str:
     lines = [
         f"# {end.year} 年 {end.month} 月复盘（{start.isoformat()} ~ {end.isoformat()}）",
         "",
@@ -41,9 +59,15 @@ def build_monthly_markdown(stats: dict, start: date, end: date) -> str:
         lines.append(
             f"- {mover['symbol']}：20 日 {mover['change_20d']:+.2f}%，趋势 {mover.get('trend', '—')}"
         )
+    lines += ["", "## 3. 会员持仓（关注品种：净占比头尾各 3）"]
+    lines.extend(position_table_lines(positions or []))
+    lines += ["", "## 4. 事件驱动（本月）"]
+    lines.extend(event_lines(events or [], zh_map))
+    lines += ["", "## 5. 新闻与政策（官方来源）"]
+    lines.extend(news_lines(news or [], zh_map))
     lines += [
         "",
-        "## 3. 本月校准清单",
+        "## 6. 本月校准清单",
         "- 对照周报，检查反复出现的判断偏差。",
         "- 复核论点命中率、计划采纳率与执行纪律。",
         "- 调整来源权重、周期参数、信号阈值、告警阈值。",
@@ -117,6 +141,16 @@ def generate_monthly(now: datetime | None = None) -> dict:
         ]
         movers.sort(key=lambda item: abs(item["change_20d"]), reverse=True)
 
+        # 与日报共用取数/渲染逻辑；月报路径不调 LLM，只命中种子/运行期缓存。
+        positions = position_rows(session)
+        month_days = (end_dt - start_dt).days + 1
+        events = recent_event_rows(session, now, days=month_days, limit=10)
+        news = _latest_news(session)
+        zh_map = _zh_map(
+            [row["title"] for row in events] + [item["title"] for item in news if item.get("title")],
+            allow_llm=False,
+        )
+
         from app.decision.thesis_review import review_theses
 
         thesis_review = review_theses()
@@ -138,7 +172,15 @@ def generate_monthly(now: datetime | None = None) -> dict:
             "wind_score": wind.get("score"),
             "movers": movers[:8],
         }
-        markdown = build_monthly_markdown(stats, start, end)
+        markdown = build_monthly_markdown(
+            stats,
+            start,
+            end,
+            positions=positions,
+            events=events,
+            news=news,
+            zh_map=zh_map,
+        )
         session.execute(delete(Brief).where(Brief.kind == KIND, Brief.trade_date == end))
         brief = Brief(kind=KIND, trade_date=end, markdown=markdown, meta=stats)
         session.add(brief)

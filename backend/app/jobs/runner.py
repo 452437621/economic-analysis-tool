@@ -15,7 +15,7 @@ import sys
 import time
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.alerts import scan_alerts
 from app.analytics.runner import run_analytics
@@ -159,6 +159,34 @@ def reconcile_stale_runs(*, all_jobs: bool = False, stale_minutes: int = STALE_R
             session.commit()
             logger.warning("reconciled %s stale job runs", len(rows))
     return len(rows)
+
+
+def prune_job_runs(keep_per_job: int = 200) -> int:
+    """Trim execution history so heartbeat-style jobs cannot bloat ``job_runs``.
+
+    Every job keeps its newest ``keep_per_job`` runs; older rows are dropped.
+    Called hourly from the heartbeat (SQLite window functions, 3.25+).
+    """
+    if keep_per_job < 1:
+        return 0
+    with SessionLocal() as session:
+        result = session.execute(
+            text(
+                "DELETE FROM job_runs WHERE id IN ("
+                "  SELECT id FROM ("
+                "    SELECT id, ROW_NUMBER() OVER ("
+                "      PARTITION BY job_name ORDER BY started_at DESC, id DESC"
+                "    ) AS rn FROM job_runs"
+                "  ) WHERE rn > :keep"
+                ")"
+            ),
+            {"keep": keep_per_job},
+        )
+        session.commit()
+        deleted = int(result.rowcount or 0)
+    if deleted:
+        logger.info("pruned %s old job runs", deleted)
+    return deleted
 
 
 def run_job(name: str) -> dict:

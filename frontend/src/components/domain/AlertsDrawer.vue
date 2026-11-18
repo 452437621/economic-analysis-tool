@@ -15,10 +15,10 @@
       <div v-for="alert in alerts.items" :key="alert.id" class="alert-row">
         <span class="sev" :class="severityClass(alert.level)"></span>
         <div>
-          <div class="alert-text">{{ alert.title }}</div>
+          <div class="alert-text"><ZhText :text="alert.title" /></div>
           <div class="alert-meta">
             <span>{{ kindLabel(alert.kind) }}</span>
-            <span v-if="alert.message">{{ alert.message }}</span>
+            <span v-if="alert.message"><ZhText :text="alert.message" inline /></span>
           </div>
         </div>
         <div class="alert-actions">
@@ -50,6 +50,7 @@
 import Drawer from "@/components/ui/Drawer.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
+import ZhText from "@/components/ui/ZhText.vue";
 import { useAlertsStore } from "@/stores/alerts";
 import { useToast } from "@/stores/toast";
 import { fmtTime } from "@/composables/useFormat";

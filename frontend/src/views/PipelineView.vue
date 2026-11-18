@@ -10,6 +10,8 @@
         <span class="gen-at">（生成于 {{ generatedLabel }}）</span>
       </div>
       <div class="page-actions pipe-page-actions">
+        <RouterLink class="btn btn--sm btn--ghost" to="/analysis">查看分析结论 →</RouterLink>
+        <RouterLink class="btn btn--sm btn--ghost" to="/theses">分析依据 →</RouterLink>
         <span class="badge badge--sm" :class="runBadgeClass(lastRun?.status)">{{ runStatusText(lastRun?.status) }}</span>
         <button class="btn btn--sm" type="button" :disabled="pageLoading" @click="refreshAll">
           <svg class="ic" :class="{ spin: pageLoading }"><use href="#i-refresh" /></svg>刷新
@@ -1220,15 +1222,18 @@ void loadCycleMeta();
 .pipe-deriv-table td {
   white-space: nowrap;
 }
+.pipe-deriv-table td.pipe-claim-cell,
+.pipe-deriv-table td.pipe-code-cell {
+  white-space: normal;
+}
 .pipe-claim-cell {
-  white-space: normal !important;
-  min-width: 220px;
-  max-width: 420px;
+  min-width: 0;
+  max-width: none;
   padding: 5px 10px !important;
   line-height: 1.45;
 }
 .pipe-code-cell {
-  max-width: 220px;
+  max-width: none;
   overflow: hidden;
   text-overflow: ellipsis;
 }

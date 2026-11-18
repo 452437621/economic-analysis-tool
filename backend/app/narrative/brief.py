@@ -170,6 +170,157 @@ def _latest_news(session: Session, limit: int = 10) -> list[dict]:
     ]
 
 
+def position_rows(session: Session) -> list[dict]:
+    """最新一期会员持仓（上期所/郑商所），日报/周报/月报共用。
+
+    字段与 ``PositionSnapshot`` 对齐；没有数据时返回空列表。
+    """
+    latest = session.scalar(select(func.max(PositionSnapshot.trade_date)))
+    if latest is None:
+        return []
+    return [
+        {
+            "trade_date": latest,
+            "product": row.product,
+            "name": row.name,
+            "net_pos": row.net_pos,
+            "net_ratio": row.net_ratio,
+            "long_pos": row.long_pos,
+            "short_pos": row.short_pos,
+        }
+        for row in session.scalars(
+            select(PositionSnapshot).where(PositionSnapshot.trade_date == latest)
+        ).all()
+    ]
+
+
+def pick_position_rows(rows: list[dict], per_side: int = 3) -> list[dict]:
+    """按净占比排序取头尾各 ``per_side`` 个品种（同品种只保留一次）。"""
+    ranked = sorted(
+        (row for row in rows if row.get("net_ratio") is not None),
+        key=lambda row: row["net_ratio"],
+        reverse=True,
+    )
+    picks = ranked[:per_side] + ranked[-per_side:] if len(ranked) > per_side else ranked
+    seen: set[str] = set()
+    picked: list[dict] = []
+    for row in picks:
+        product = row["product"]
+        if product in seen:
+            continue
+        seen.add(product)
+        picked.append(row)
+    return picked
+
+
+POSITION_TABLE_HEADER = "| 品种 | 多头(手) | 空头(手) | 净持仓(手) | 净占比 |"
+
+
+def position_table_lines(rows: list[dict]) -> list[str]:
+    """会员持仓 Markdown pipe 表格，表脚保留数据日期；无数据时返回缺口提示。"""
+    picks = pick_position_rows(rows)
+    if not picks:
+        return ["- 暂无会员持仓数据"]
+    lines = [POSITION_TABLE_HEADER, "|---|---|---|---|---|"]
+    for row in picks:
+        name = _md_cell(row["name"])
+        long_pos = _md_cell(f"{row['long_pos']:,}")
+        short_pos = _md_cell(f"{row['short_pos']:,}")
+        net_pos = _md_cell(f"{row['net_pos']:+,}")
+        ratio = "—" if row["net_ratio"] is None else _md_cell(f"{row['net_ratio'] * 100:+.1f}%")
+        lines.append(f"| **{name}** | {long_pos} | {short_pos} | {net_pos} | {ratio} |")
+    trade_date = picks[0]["trade_date"]
+    lines.append("")
+    lines.append(f"- 数据日期：{trade_date.isoformat()}（上期所/郑商所）")
+    return lines
+
+
+def recent_event_rows(
+    session: Session,
+    now: datetime | None = None,
+    *,
+    days: int = 3,
+    limit: int = 5,
+) -> list[dict]:
+    """最近事件 + 关联品种，日报/周报/月报共用（周/月报传更大的 days/limit）。"""
+    now = now or datetime.now(timezone.utc)
+    events = session.scalars(
+        select(Event)
+        .where(Event.event_date >= now.replace(tzinfo=None) - timedelta(days=days))
+        .order_by(Event.event_date.desc())
+        .limit(limit)
+    ).all()
+    if not events:
+        return []
+    link_rows = session.execute(
+        select(EventInstrument.event_id, Instrument.symbol)
+        .join(Instrument, Instrument.id == EventInstrument.instrument_id)
+        .where(EventInstrument.event_id.in_([row.id for row in events]))
+    ).all()
+    symbols_by_event: dict[str, list[str]] = {}
+    for event_id, symbol in link_rows:
+        symbols_by_event.setdefault(event_id, []).append(symbol)
+    return [
+        {
+            "id": row.id,
+            "type": row.type,
+            "title": row.title or "",
+            "event_date": row.event_date,
+            "symbols": symbols_by_event.get(row.id, []),
+        }
+        for row in events
+    ]
+
+
+def _zh_map(texts: list[str], allow_llm: bool = True) -> dict[str, str]:
+    """批量取中文对照；翻译层任何异常都退化成空映射。"""
+    try:
+        from app.narrative.zh import zh_pairs
+
+        return zh_pairs(texts, allow_llm=allow_llm)
+    except Exception:  # pragma: no cover - 翻译缺失不能影响简报生成
+        return {}
+
+
+def _zh_suffix(text: str, zh_map: dict[str, str] | None) -> str:
+    """英文标题后的「（中文：…）」；已是中文或没有译文时返回空串。"""
+    if not zh_map or not isinstance(text, str):
+        return ""
+    zh = (zh_map.get(text) or "").strip()
+    if not zh or zh == text.strip():
+        return ""
+    return f"（中文：{zh}）"
+
+
+def event_lines(events: list[dict], zh_map: dict[str, str] | None = None) -> list[str]:
+    """「事件驱动」节的 bullet 行（英文标题后带中文对照）。"""
+    if not events:
+        return ["- 暂无规则识别事件"]
+    lines = []
+    for row in events:
+        title = row.get("title") or ""
+        symbols = "/".join(row.get("symbols") or []) or "—"
+        lines.append(
+            f"- [{row.get('type') or '—'}] {title[:90]}{_zh_suffix(title, zh_map)}（关联 {symbols}）"
+        )
+    return lines
+
+
+def news_lines(news: list[dict], zh_map: dict[str, str] | None = None) -> list[str]:
+    """「新闻与政策」节的 bullet 行；保留 ``[D:xxx]`` 证据标记在中文对照之后。"""
+    if not news:
+        return ["- 暂无最新新闻"]
+    lines = []
+    for item in news:
+        title = item.get("title") or ""
+        published = (item.get("published_at") or "")[:16].replace("T", " ")
+        lines.append(
+            f"- [{item.get('source') or '未知来源'}] {title}{_zh_suffix(title, zh_map)}"
+            f"（{published}）`[D:{item.get('id')}]`"
+        )
+    return lines
+
+
 def _freshness(session: Session) -> list[dict]:
     """One row per dataset — the newest check only.
 
@@ -244,26 +395,13 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
         select(AnalyticsResult).where(AnalyticsResult.kind == "regime").order_by(AnalyticsResult.asof.desc())
     ).all():
         regime_map.setdefault(row.subject, row.payload or {})
-    latest_position_date = session.scalar(select(func.max(PositionSnapshot.trade_date)))
-    position_rows = []
-    if latest_position_date is not None:
-        position_rows = [
-            {"product": row.product, "name": row.name, "net_ratio": row.net_ratio}
-            for row in session.scalars(
-                select(PositionSnapshot).where(PositionSnapshot.trade_date == latest_position_date)
-            ).all()
-        ]
-    recent_events = session.scalars(
-        select(Event)
-        .where(Event.event_date >= now.replace(tzinfo=None) - timedelta(days=7))
-        .order_by(Event.event_date.desc())
-        .limit(10)
-    ).all()
+    positions = position_rows(session)
+    driver_events = recent_event_rows(session, now, days=7, limit=10)
     driver_list = rank_drivers(
         wind=wind_row.payload if wind_row else None,
         indicators=indicator_map,
-        positions=position_rows,
-        events=[{"type": row.type, "title": row.title} for row in recent_events],
+        positions=positions,
+        events=[{"type": row["type"], "title": row["title"]} for row in driver_events],
         regimes=regime_map,
     )
 
@@ -334,62 +472,21 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
     )
     lines.append("")
 
-    lines.append("## 4. 会员持仓（Top20，净持仓 = 多 − 空）")
-    latest_position_date = session.scalar(select(func.max(PositionSnapshot.trade_date)))
-    positions = []
-    if latest_position_date is not None:
-        positions = session.scalars(
-            select(PositionSnapshot).where(PositionSnapshot.trade_date == latest_position_date)
-        ).all()
-    if positions:
-        ranked = sorted(
-            (row for row in positions if row.net_ratio is not None),
-            key=lambda row: row.net_ratio,
-            reverse=True,
-        )
-        picks = ranked[:3] + ranked[-3:] if len(ranked) > 3 else ranked
-        seen = set()
-        for row in picks:
-            if row.product in seen:
-                continue
-            seen.add(row.product)
-            lines.append(
-                f"- {row.name}：净持仓 {row.net_pos:+,} 手，净占比 {row.net_ratio * 100:+.1f}%"
-                f"（多 {row.long_pos:,} / 空 {row.short_pos:,}）"
-            )
-        lines.append(f"- 数据日期：{latest_position_date.isoformat()}（上期所/郑商所）")
-    else:
-        lines.append("- 暂无会员持仓数据")
+    lines.append("## 4. 关注品种（净占比头尾各 3；净持仓 = 多 − 空）")
+    lines.extend(position_table_lines(positions))
     lines.append("")
 
     lines.append("## 5. 事件驱动（近 3 天）")
-    recent_events = session.scalars(
-        select(Event)
-        .where(Event.event_date >= now.replace(tzinfo=None) - timedelta(days=3))
-        .order_by(Event.event_date.desc())
-        .limit(5)
-    ).all()
-    if recent_events:
-        event_ids = [row.id for row in recent_events]
-        link_rows = session.execute(
-            select(EventInstrument.event_id, Instrument.symbol)
-            .join(Instrument, Instrument.id == EventInstrument.instrument_id)
-            .where(EventInstrument.event_id.in_(event_ids))
-        ).all()
-        symbols_by_event: dict[str, list[str]] = {}
-        for event_id, symbol in link_rows:
-            symbols_by_event.setdefault(event_id, []).append(symbol)
-        for row in recent_events:
-            symbols = "/".join(symbols_by_event.get(row.id, [])) or "—"
-            lines.append(f"- [{row.type}] {row.title[:90]}（关联 {symbols}）")
-    else:
-        lines.append("- 暂无规则识别事件")
+    recent = recent_event_rows(session, now, days=3, limit=5)
+    section_zh = _zh_map(
+        [row["title"] for row in recent] + [item["title"] for item in news if item.get("title")],
+        allow_llm=True,
+    )
+    lines.extend(event_lines(recent, section_zh))
     lines.append("")
 
     lines.append("## 6. 新闻与政策（官方来源）")
-    for item in news:
-        doc_id = item["id"]
-        lines.append(f"- [{item['source']}] {item['title']}（{item['published_at'][:16].replace('T', ' ')}）`[D:{doc_id}]`")
+    lines.extend(news_lines(news, section_zh))
     lines.append("")
 
     lines.append("## 7. 数据与信息缺口")

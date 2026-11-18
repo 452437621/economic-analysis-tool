@@ -119,6 +119,29 @@ def test_calendar_filters_and_meta():
             assert row["importance"] >= 2
 
 
+def test_jobs_expose_description_and_run_history():
+    with TestClient(app) as client:
+        rows = client.get("/api/system/jobs").json()["data"]
+        assert rows
+        by_name = {row["name"]: row for row in rows}
+        for row in rows:
+            assert "description" in row
+            assert isinstance(row["run_count"], int)
+            assert row["run_count"] >= 0
+        assert by_name["collect_quotes"]["description"]
+
+        runs = client.get("/api/system/job-runs?job_name=collect_quotes&limit=5").json()
+        assert isinstance(runs["data"], list)
+        for run in runs["data"]:
+            assert run["job_name"] == "collect_quotes"
+            assert "duration_ms" in run
+            assert "id" in run
+
+        # 不传 job_name 时保持全任务最近记录（旧契约不变）。
+        latest = client.get("/api/system/job-runs?limit=5").json()
+        assert isinstance(latest["data"], list)
+
+
 def test_position_products_endpoint():
     with TestClient(app) as client:
         payload = client.get("/api/positions/products").json()

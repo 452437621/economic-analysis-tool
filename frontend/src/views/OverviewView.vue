@@ -346,16 +346,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import Sparkline from "@/components/ui/Sparkline.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import WatchlistManager from "@/components/domain/WatchlistManager.vue";
 import { usePolling } from "@/composables/usePolling";
+import { useZhTranslate } from "@/composables/useZhTranslate";
 import { fmtDateTime, fmtInt, fmtMacro, fmtPct, fmtPrice, fmtSigned, fmtTime, stars, trendClass } from "@/composables/useFormat";
 import { SNAPSHOT_CATEGORIES } from "@/utils/market";
-import { briefPrintUrl, getCycleConfig, getCycleState, getOverview, getSystemCoverage, translateTexts } from "@/api/endpoints";
+import { briefPrintUrl, getCycleConfig, getCycleState, getOverview, getSystemCoverage } from "@/api/endpoints";
 import type { Brief, CoverageResponse, CycleConfigResponse, CycleStateResponse, SnapshotItem, WatchlistItem } from "@/api/types";
 import { usePrefsStore } from "@/stores/prefs";
 import { useHealthStore } from "@/stores/health";
@@ -395,73 +396,17 @@ const overviewGeneratedLabel = computed(() =>
 const alertItems = computed(() => overview.value?.alerts?.items ?? []);
 const alertUnread = computed(() => overview.value?.alerts?.unread ?? 0);
 
-/* ---------- 告警英文内容中文对照（复用 /api/knowledge/translate） ---------- */
-const ZH_TEXT_LIMIT = 1200;
-const ZH_QUOTE_CHARS = /^["'“”‘’「」『』《》]+|["'“”‘’「」『』《》]+$/g;
-const ZH_CJK = /[\u3400-\u4dbf\u4e00-\u9fff]/;
+/* ---------- 告警英文内容中文对照（统一走 composables/useZhTranslate） ---------- */
+const alertZhTexts = computed<string[]>(() =>
+  alertItems.value
+    .slice(0, 4)
+    .flatMap((alert) => [alert.title, alert.message ?? ""]),
+);
 
-const ZH_LABEL_PREFIX = /^(?:事件|新闻|公告|数据)[：:]\s*/;
-
-function zhKey(text: string | null | undefined): string {
-  const body = String(text ?? "").replace(/\s+/g, " ").trim().replace(ZH_LABEL_PREFIX, "");
-  return body.replace(ZH_QUOTE_CHARS, "").trim().slice(0, ZH_TEXT_LIMIT);
-}
-
-function isChineseText(text: string): boolean {
-  const body = text.replace(/\s+/g, "");
-  if (!body) return false;
-  const hits = body.match(ZH_CJK)?.length ?? 0;
-  return hits / body.length >= 0.3;
-}
-
-const alertZhByHash = ref<Map<string, string>>(new Map());
-const alertZhHashByText = new Map<string, string>();
-const alertZhAttempted = new Set<string>();
-
-function alertZhFor(text: string | null | undefined): string | null {
-  const key = zhKey(text);
-  if (!key) return null;
-  const hash = alertZhHashByText.get(key);
-  if (!hash) return null;
-  const zh = alertZhByHash.value.get(hash) ?? null;
-  if (!zh || zhKey(zh) === key) return null;
-  return zh;
-}
+const { zhFor: alertZhFor } = useZhTranslate(alertZhTexts);
 
 const alertTitleZh = (alert: { title: string }) => alertZhFor(alert.title);
 const alertMessageZh = (alert: { message?: string | null }) => alertZhFor(alert.message);
-
-async function ensureAlertZh(): Promise<void> {
-  const pending: string[] = [];
-  const queued = new Set<string>();
-  for (const alert of alertItems.value.slice(0, 4)) {
-    for (const raw of [alert.title, alert.message]) {
-      const key = zhKey(raw);
-      if (!key || queued.has(key) || alertZhHashByText.has(key) || alertZhAttempted.has(key)) continue;
-      if (isChineseText(key)) continue;
-      queued.add(key);
-      pending.push(key);
-    }
-  }
-  if (!pending.length) return;
-  try {
-    const response = await translateTexts(pending);
-    const next = new Map(alertZhByHash.value);
-    for (const item of response.items) {
-      const key = zhKey(item.text);
-      if (key) alertZhHashByText.set(key, item.hash);
-      if (item.zh) next.set(item.hash, item.zh);
-      alertZhAttempted.add(key || item.hash);
-    }
-    alertZhByHash.value = next;
-  } catch {
-    // 翻译接口失败时保持英文原文，不打扰用户。
-  }
-}
-
-watch(alertItems, () => {
-  void ensureAlertZh();
-}, { immediate: true });
 const calendar = computed(() => overview.value?.calendar ?? []);
 const jobsInfo = computed(
   () => overview.value?.jobs ?? { total: 0, failed: 0, scheduler_running: false, next_run: null },

@@ -50,10 +50,23 @@ export interface Health {
 export interface JobRow {
   name: string;
   cron: string;
+  description: string | null;
   enabled: boolean;
   last_status: string | null;
   last_run_at: string | null;
   last_error: string | null;
+  run_count: number;
+}
+
+/** 任务执行历史（/api/system/job-runs）。 */
+export interface JobRunRow {
+  id: string;
+  job_name: string;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number | null;
+  detail: string | null;
 }
 
 export interface SourceHealth {

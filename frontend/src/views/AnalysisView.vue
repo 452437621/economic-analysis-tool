@@ -81,8 +81,9 @@
       </div>
     </section>
 
-    <!-- 引擎透明度：方法注册表 · 最新运行 · 证据等级 · 数据质量（独立于行情分析区块） -->
-    <section class="card table-card ana-block">
+    <!-- 引擎透明度：方法注册表（摘要）· 最新运行 · 证据等级 · 数据质量
+         完整清单统一收在「分析过程」页，这里只保留读结论所需的摘要与入口，避免整表重复。 -->
+    <section class="card ana-block">
       <div class="card-head">
         <span class="card-title">方法注册表</span>
         <span class="badge badge--sm">{{ methodTotal }} 个方法</span>
@@ -92,7 +93,7 @@
         </div>
       </div>
       <div v-if="methodsLoading && !methods" class="card-body">
-        <SkeletonBlock :rows="4" :cells="5" :height="12" :gap="9" />
+        <SkeletonBlock :rows="2" :cells="3" :height="12" :gap="9" />
       </div>
       <ErrorState v-else-if="methodsError && !methods" :error="methodsError" @retry="refreshMethods" />
       <div v-else-if="!methodRows.length" class="card-body">
@@ -101,44 +102,33 @@
           hint="后端 /api/v2/methods 没有返回任何方法：先确认后端已启动并注册了方法表，再点右上角「刷新」重试。"
         />
       </div>
-      <div v-else class="table-wrap">
-        <table class="data-table ana-method-table">
-          <thead>
-            <tr>
-              <th style="width: 214px">方法</th>
-              <th style="width: 80px">类型</th>
-              <th style="width: 56px">版本</th>
-              <th style="width: 92px">代码指纹</th>
-              <th>说明</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="method in methodRows" :key="method.method_id">
-              <td>
-                <div class="ana-method-name">{{ method.name }}</div>
-                <div class="ana-method-id mono">{{ method.method_id }}</div>
-              </td>
-              <td><span class="badge badge--sm">{{ methodKindText(method.kind) }}</span></td>
-              <td class="mono dim">{{ method.version || "—" }}</td>
-              <td class="mono ana-sha" :title="method.code_sha || '未记录代码指纹'">{{ shaText(method.code_sha) }}</td>
-              <td class="ana-method-desc" :title="method.description || ''">{{ method.description || "未填写说明" }}</td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-else class="card-body ana-method-summary">
+        <span class="ams-item">
+          <span class="ams-label">方法构成</span>
+          <b>{{ methodKindSummary }}</b>
+        </span>
+        <span class="ams-item">
+          <span class="ams-label">代码指纹</span>
+          <b class="mono" :title="methodShaTitle">{{ methodShaSummary }}</b>
+        </span>
+        <span class="ams-item">
+          <span class="ams-label">最近运行</span>
+          <b>{{ runs.length ? runStatusText(runs[0].status) : "—" }}</b>
+        </span>
       </div>
       <div class="card-foot">
         <svg class="ic"><use href="#i-info" /></svg>
-        <span>代码指纹（code_sha）与运行记录里的 method_id 一起定位「这个结论由哪段代码、哪个版本算出」。</span>
+        <span>完整方法清单（类型 / 版本 / 代码指纹 / 说明）见「分析过程 → 方法注册表」。</span>
       </div>
     </section>
 
     <div class="ana-engine-grid">
-      <!-- 最新运行结论 -->
+      <!-- 最新运行结论：只展示最近一次，完整运行序列与步骤链在「分析过程」 -->
       <section class="card table-card">
         <div class="card-head">
           <span class="card-title">最新运行结论</span>
-          <span class="badge badge--sm">{{ runs.length }} 次</span>
-          <div class="card-actions"><span class="card-sub">按开始时间倒序 · 最近 {{ RUN_LIMIT }} 次</span></div>
+          <span class="badge badge--sm">{{ runs.length }} 次记录</span>
+          <div class="card-actions"><span class="card-sub">按开始时间倒序 · 只展示最近一次</span></div>
         </div>
         <div v-if="runsLoading && !runs" class="card-body">
           <SkeletonBlock :rows="4" :cells="2" :height="12" :gap="9" />
@@ -150,31 +140,30 @@
             hint="玻璃盒每次运行都会落一条 run。先运行一次分析 / 周期 / 台账任务，或等下一次调度，再点「刷新」。"
           />
         </div>
-        <ul v-else class="ana-run-list">
-          <li v-for="run in runs" :key="run.id" class="ana-run">
-            <div class="ana-run-top">
-              <span class="badge badge--sm" :class="runStatusClass(run.status)">{{ runStatusText(run.status) }}</span>
-              <span class="mono ana-run-kind">{{ run.kind }} / {{ run.subject }}</span>
-              <span class="dim ana-run-time">{{ fmtTime(run.started_at, true) }}</span>
-            </div>
-            <div class="ana-run-sub">
-              <span>方法 <b class="mono">{{ run.method_id || "—" }}</b></span>
-              <span>耗时 {{ run.duration_ms === null ? "—" : `${fmtInt(run.duration_ms)} ms` }}</span>
-              <span>数据日 {{ run.asof ? fmtDate(run.asof) : "—" }}</span>
-            </div>
-            <div v-if="summaryChips(run).length" class="ana-run-chips">
-              <span v-for="chip in summaryChips(run)" :key="chip">{{ chip }}</span>
-            </div>
-            <div
-              v-if="run.degraded_reasons.length"
-              class="ana-run-degraded"
-              :title="run.degraded_reasons.map((item) => `${item.code}: ${item.message}`).join(' · ')"
-            >
-              降级 {{ run.degraded_reasons.length }} 项：{{ run.degraded_reasons[0].code }}
-            </div>
-            <div v-else-if="run.error" class="ana-run-degraded" :title="run.error">失败：{{ run.error }}</div>
-          </li>
-        </ul>
+        <div v-else class="card-body ana-latest-run">
+          <div class="ana-run-top">
+            <span class="badge badge--sm" :class="runStatusClass(runs[0].status)">{{ runStatusText(runs[0].status) }}</span>
+            <span class="mono ana-run-kind">{{ runs[0].kind }} / {{ runs[0].subject }}</span>
+            <span class="dim ana-run-time">{{ fmtTime(runs[0].started_at, true) }}</span>
+          </div>
+          <div class="ana-run-sub">
+            <span>方法 <b class="mono">{{ runs[0].method_id || "—" }}</b></span>
+            <span>耗时 {{ runs[0].duration_ms === null ? "—" : `${fmtInt(runs[0].duration_ms)} ms` }}</span>
+            <span>数据日 {{ runs[0].asof ? fmtDate(runs[0].asof) : "—" }}</span>
+          </div>
+          <div v-if="summaryChips(runs[0]).length" class="ana-run-chips">
+            <span v-for="chip in summaryChips(runs[0])" :key="chip">{{ chip }}</span>
+          </div>
+          <div
+            v-if="runs[0].degraded_reasons.length"
+            class="ana-run-degraded"
+            :title="runs[0].degraded_reasons.map((item) => `${item.code}: ${item.message}`).join(' · ')"
+          >
+            降级 {{ runs[0].degraded_reasons.length }} 项：{{ runs[0].degraded_reasons[0].code }}
+          </div>
+          <div v-else-if="runs[0].error" class="ana-run-degraded" :title="runs[0].error">失败：{{ runs[0].error }}</div>
+          <RouterLink class="link-btn ana-run-more" to="/pipeline">查看全部运行与步骤链 →</RouterLink>
+        </div>
         <div class="card-foot">结论摘要只列本次运行产出的条目数；完整步骤与规则命中见「分析过程」。</div>
       </section>
 
@@ -207,74 +196,51 @@
             <div class="ana-grade-legend">
               E1 本地序列可回算 · E2 官方数据（含人工口径） · E3 估算 / 代理 · E4 人工研判；折算权重 1.0 / 0.95 / 0.90 / 0.75 / 0.50（见 config/cycle.yaml）。
             </div>
-            <div v-if="recentDerivations.length" class="ana-derivs">
-              <div v-for="item in recentDerivations" :key="item.id" class="ana-deriv">
-                <span class="badge badge--sm" :class="gradeClass(item.evidence_grade)">{{ item.evidence_grade }}</span>
-                <span class="ana-deriv-claim" :title="item.claim">{{ item.claim }}</span>
-                <span class="ana-deriv-meta mono">
-                  {{ item.code }} · 置信 {{ item.confidence === null ? "—" : fmtNumber(item.confidence, 2) }}
-                </span>
-              </div>
-            </div>
-            <div v-else class="ana-deriv-blank">取回的推导里没有可展示的结论（claim 为空）。</div>
+            <RouterLink class="link-btn ana-run-more" to="/pipeline">查看全部推导明细 →</RouterLink>
           </div>
           <div class="card-foot">证据等级衡量「这条结论能否回算」，不衡量它的重要性。</div>
         </template>
       </section>
     </div>
 
-    <!-- 数据质量 -->
-    <section class="card table-card ana-block">
+    <!-- 数据质量：权威页在「系统状态」，这里只给通过率与入口，避免同表重复渲染 -->
+    <section class="card ana-block">
       <div class="card-head">
         <span class="card-title">数据质量</span>
         <span class="badge badge--sm" :class="qualityPassedClass">{{ qualitySummaryText }}</span>
-        <div class="card-actions"><span class="card-sub">{{ qualityDateLabel }}</span></div>
+        <div class="card-actions">
+          <span class="card-sub">{{ qualityDateLabel }}</span>
+          <RouterLink class="link-btn" to="/system">系统状态 →</RouterLink>
+        </div>
       </div>
       <div v-if="qualityLoading && !quality" class="card-body">
-        <SkeletonBlock :rows="4" :cells="6" :height="12" :gap="9" />
+        <SkeletonBlock :rows="1" :cells="4" :height="12" :gap="9" />
       </div>
       <ErrorState v-else-if="qualityError && !quality" :error="qualityError" @retry="refreshQuality" />
-      <div v-else-if="!qualityRows.length" class="card-body">
+      <div v-else-if="!quality?.summary" class="card-body">
         <EmptyState
           text="尚无质检结果"
           hint="新鲜度 / 覆盖率 / 连续性 / 对账检查由定时作业写入；到「系统状态」确认作业是否跑过，再回来点「刷新」。"
         />
       </div>
-      <div v-else class="table-wrap">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th style="width: 176px">数据集</th>
-              <th style="width: 96px">检查类型</th>
-              <th class="num" style="width: 88px">期望</th>
-              <th class="num" style="width: 88px">实际</th>
-              <th class="num" style="width: 80px">偏差</th>
-              <th style="width: 70px">结果</th>
-              <th>明细</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in qualityRows" :key="`${row.kind}-${row.dataset}-${row.symbol ?? ''}`">
-              <td>
-                {{ row.dataset }}<span v-if="row.symbol" class="dim"> · {{ row.symbol }}</span>
-              </td>
-              <td class="dim">{{ qualityKindText(row.kind) }}</td>
-              <td class="num">{{ fmtNumber(row.expected, 2) }}</td>
-              <td class="num">{{ fmtNumber(row.actual, 2) }}</td>
-              <td class="num">{{ fmtNumber(row.deviation, 2) }}</td>
-              <td>
-                <span class="badge badge--sm" :class="row.passed ? 'badge--live' : 'badge--down'">
-                  {{ row.passed ? "通过" : "未通过" }}
-                </span>
-              </td>
-              <td class="ana-quality-detail" :title="row.detail || ''">{{ row.detail || "—" }}</td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-else class="card-body ana-quality-line">
+        <span class="aql-item">
+          <span class="aql-label">通过率</span>
+          <b :class="qualityPassedClass === 'badge--live' ? 'aql-pass' : 'aql-fail'">{{ qualitySummaryText }}</b>
+        </span>
+        <span class="aql-item">
+          <span class="aql-label">未通过</span>
+          <b>{{ qualityFailedText }}</b>
+        </span>
+        <span class="aql-item">
+          <span class="aql-label">检查于</span>
+          <b>{{ qualityDateLabel.replace("检查于 ", "") }}</b>
+        </span>
+        <span class="aql-note">逐项期望 / 实际 / 偏差与明细见「系统状态 → 数据质检」。</span>
       </div>
       <div class="card-foot">
         <svg class="ic"><use href="#i-info" /></svg>
-        <span>检查时间 {{ qualityDateLabel }} · 未通过项会在「预警台」告警，明细里写明偏差来源。</span>
+        <span>未通过项会在「预警台」告警，明细里写明偏差来源。</span>
       </div>
     </section>
 
@@ -292,7 +258,7 @@
       </section>
       <div class="analysis-mid">
         <section class="card table-card">
-          <div class="card-head"><span class="card-title">历史类比</span></div>
+          <div class="card-head"><span class="card-title">相似交易日</span></div>
           <div class="card-body"><SkeletonBlock :rows="5" :cells="5" :height="12" :gap="9" /></div>
         </section>
         <section class="card table-card">
@@ -361,9 +327,9 @@
           </div>
         </section>
 
-        <section class="card regime-card">
+        <section id="cycle-regime" class="card regime-card">
           <div class="card-head">
-            <span class="card-title">周期状态</span>
+            <span class="card-title">市场隐含周期象限</span>
             <span class="badge badge--sm badge--accent">市场隐含</span>
             <div class="card-actions"><span class="card-sub">增长 × 通胀象限 · 0–100 分位</span></div>
           </div>
@@ -392,7 +358,7 @@
               </RouterLink>
             </div>
           </div>
-          <EmptyState v-else text="周期数据缺失" hint="等待分析任务产出周期状态。" />
+          <EmptyState v-else text="周期数据缺失" hint="等待分析任务产出市场隐含象限。" />
         </section>
 
         <section class="card corr-card">
@@ -482,11 +448,11 @@
         </div>
       </section>
 
-      <!-- 历史类比 + 异动品种 -->
+      <!-- 相似交易日 + 异动品种 -->
       <div class="analysis-mid">
         <section class="card table-card">
           <div class="card-head">
-            <span class="card-title">历史类比</span>
+            <span class="card-title">相似交易日</span>
             <span class="badge badge--sm">{{ analogs?.matches.length ?? 0 }} 个相似日</span>
             <div class="card-actions">
               <span class="card-sub">当前 {{ analogs?.current_date ?? "—" }} · 20 日远期收益</span>
@@ -527,7 +493,7 @@
                 </tr>
               </tbody>
             </table>
-            <EmptyState v-if="!analogs?.matches.length" text="暂无历史类比" hint="等待分析任务产出相似日匹配。" />
+            <EmptyState v-if="!analogs?.matches.length" text="暂无相似交易日" hint="等待分析任务产出相似日匹配。" />
           </div>
           <div class="card-foot analog-foot">
             <svg class="ic"><use href="#i-info" /></svg>
@@ -684,12 +650,33 @@ const {
 const methodTotal = computed(() => methods.value?.total ?? 0);
 const methodRows = computed<V2Method[]>(() => methods.value?.items ?? []);
 const runs = computed<V2Run[]>(() => runsData.value?.items ?? []);
-const derivTotal = computed(() => derivations.value?.total ?? 0);
-const qualityRows = computed<QualityRow[]>(() => quality.value?.data ?? []);
 
-const recentDerivations = computed<V2Derivation[]>(() =>
-  (derivations.value?.items ?? []).filter((item) => item.claim).slice(0, 3),
-);
+/** 方法构成摘要：按类型计数，如「模型 3 · 流水线 2」 */
+const methodKindSummary = computed(() => {
+  const counts = new Map<string, number>();
+  for (const method of methodRows.value) {
+    const kind = methodKindText(method.kind);
+    counts.set(kind, (counts.get(kind) ?? 0) + 1);
+  }
+  if (!counts.size) return "—";
+  return [...counts.entries()].map(([kind, count]) => `${kind} ${count}`).join(" · ");
+});
+
+/** 代码指纹摘要：单方法直接显示前 8 位；多方法显示首个 + 「等 N 个」 */
+const methodShaSummary = computed(() => {
+  const shas = methodRows.value.map((method) => method.code_sha).filter((sha): sha is string => Boolean(sha));
+  if (!shas.length) return "未记录";
+  return shas.length > 1 ? `${shaText(shas[0])} 等 ${shas.length} 个` : shaText(shas[0]);
+});
+
+const methodShaTitle = computed(() => {
+  const rows = methodRows.value
+    .filter((method) => method.code_sha)
+    .map((method) => `${method.method_id}: ${method.code_sha}`);
+  return rows.length ? rows.join("\n") : "未记录代码指纹";
+});
+
+const derivTotal = computed(() => derivations.value?.total ?? 0);
 
 /** 证据等级计数（E1–E4 + 其它，只显示出现过的等级） */
 const gradeRows = computed(() => {
@@ -763,6 +750,12 @@ const qualitySummaryText = computed(() => {
   const summary = quality.value?.summary;
   if (!summary) return "— / — 通过";
   return `${summary.passed} / ${summary.total} 通过`;
+});
+
+const qualityFailedText = computed(() => {
+  const summary = quality.value?.summary;
+  if (!summary) return "— 项";
+  return `${summary.failed} 项`;
 });
 
 const qualityPassedClass = computed(() => {
@@ -1666,44 +1659,35 @@ function openHistory(symbol: string, name: string): void {
 .ana-engine-grid > .card > .card-foot {
   margin-top: auto;
 }
-.ana-method-table tbody td {
-  height: auto;
-  padding: 7px 10px;
-  vertical-align: top;
+.ana-method-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px 28px;
+  padding: 12px 13px;
 }
-.ana-method-name {
-  font-size: 12px;
-  font-weight: 600;
+.ams-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
-.ana-method-id {
-  margin-top: 1px;
-  font-size: 10px;
+.ams-label {
+  font-size: 9px;
   color: var(--dim);
+  letter-spacing: 0.2px;
 }
-.ana-sha {
-  color: var(--muted);
-  font-size: 10.5px;
-}
-.ana-method-desc {
-  display: -webkit-box;
+.ams-item b {
   overflow: hidden;
-  color: var(--dim);
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ams-item b.mono {
   font-size: 11px;
-  white-space: normal;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
 }
-.ana-run-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.ana-run {
-  padding: 9px 13px;
-  border-bottom: 1px solid var(--border);
-}
-.ana-run:last-child {
-  border-bottom: 0;
+.ana-latest-run {
+  padding: 10px 13px 11px;
 }
 .ana-run-top {
   display: flex;
@@ -1749,6 +1733,42 @@ function openHistory(symbol: string, name: string): void {
   margin-top: 5px;
   font-size: 10px;
   color: var(--warn);
+}
+.ana-run-more {
+  display: inline-block;
+  margin-top: 8px;
+}
+.ana-quality-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 30px;
+  padding: 12px 13px;
+}
+.aql-item {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+.aql-label {
+  font-size: 9px;
+  color: var(--dim);
+}
+.aql-item b {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 650;
+}
+.aql-pass {
+  color: var(--ok);
+}
+.aql-fail {
+  color: var(--warn);
+}
+.aql-note {
+  font-size: 10px;
+  color: var(--dim);
+  line-height: 1.5;
 }
 .ana-grades {
   display: flex;

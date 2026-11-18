@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -14,7 +15,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import select
 
 from app.models.base import utcnow
-from app.models.core import Job
+from app.models.core import Job, JobRun
 from app.platform.config import settings
 from app.platform.db import SessionLocal
 
@@ -25,15 +26,34 @@ scheduler = AsyncIOScheduler(timezone=CST)
 
 
 def _heartbeat_sync() -> None:
+    now = utcnow()
     with SessionLocal() as session:
         job = session.scalar(select(Job).where(Job.name == "heartbeat"))
         if job is None:
             job = Job(name="heartbeat", cron="every 60s", enabled=True)
             session.add(job)
         job.last_status = "ok"
-        job.last_run_at = utcnow()
+        job.last_run_at = now
         job.last_error = None
+        # 心跳本身也是一次调度：写 JobRun，让「调度次数 → 执行历史」对它同样可用；
+        # 每分钟一行由 prune_job_runs 每小时裁剪到每任务最近 200 条。
+        session.add(
+            JobRun(
+                job_name="heartbeat",
+                started_at=now,
+                finished_at=now,
+                status="ok",
+                detail=json.dumps({"beat": now.isoformat()}, ensure_ascii=False),
+            )
+        )
         session.commit()
+    if now.minute == 0:
+        try:
+            from app.jobs.runner import prune_job_runs
+
+            prune_job_runs()
+        except Exception:  # pragma: no cover - pruning must never kill the beat
+            logger.exception("job run pruning failed")
 
 
 async def heartbeat_job() -> None:

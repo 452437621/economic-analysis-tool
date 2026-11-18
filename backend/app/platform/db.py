@@ -109,10 +109,19 @@ def _migrate_calendar_event_values(conn) -> None:
         conn.execute(text(f"ALTER TABLE economic_events ADD COLUMN {name} {sql_type}"))
 
 
+def _migrate_jobs_description(conn) -> None:
+    """Add the operator-facing ``jobs.description`` column (系统状态 任务描述列)."""
+    columns = {row[1] for row in conn.execute(text("PRAGMA table_info(jobs)"))}
+    if not columns or "description" in columns:
+        return
+    conn.execute(text("ALTER TABLE jobs ADD COLUMN description TEXT"))
+
+
 MIGRATIONS = (
     ("watchlist.sort_order", _migrate_watchlist_sort_order),
     ("jobs.enable_legacy_scheduler_jobs", _migrate_enable_legacy_jobs),
     ("economic_events.forecast_values", _migrate_calendar_event_values),
+    ("jobs.description", _migrate_jobs_description),
 )
 
 

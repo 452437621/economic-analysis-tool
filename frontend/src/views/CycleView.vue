@@ -9,6 +9,9 @@
         </h1>
       </div>
       <div class="page-actions">
+        <RouterLink class="btn btn--sm btn--ghost" to="/analysis#cycle-regime">市场隐含象限</RouterLink>
+        <RouterLink class="btn btn--sm btn--ghost" to="/history">世界长河</RouterLink>
+        <RouterLink class="btn btn--sm btn--ghost" to="/alerts">周期规则预警</RouterLink>
         <span v-if="payload?.asof" class="badge badge--sm">数据日 {{ fmtDate(payload.asof) }}</span>
         <span v-if="payload?.status" class="badge badge--sm" :class="runTone(payload.status)">
           {{ runText(payload.status) }}
@@ -1712,7 +1715,7 @@ async function recalc(): Promise<void> {
 <style scoped>
 /* ── 页面骨架 ───────────────────────────────────────── */
 .cyc-root {
-  overflow-x: hidden;
+  min-width: 0;
 }
 /* 数据自身生成时点：小字跟随标题，不展示系统当前时间 */
 .cyc-generated {
@@ -2432,7 +2435,7 @@ async function recalc(): Promise<void> {
 }
 .cyc-trans-name {
   font-weight: 600;
-  white-space: nowrap;
+  white-space: normal;
 }
 .cyc-trans-id {
   font-size: 9px;
@@ -2447,10 +2450,12 @@ async function recalc(): Promise<void> {
 }
 .cyc-trans-source {
   display: inline-block;
-  max-width: 220px;
+  max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
   vertical-align: bottom;
   color: var(--muted);
   font-size: 10px;

@@ -522,8 +522,9 @@ html[data-theme="light"] .heat-tile.strong .ht-pct { color: var(--text); }
 .tool-note { font-size: 10px; color: var(--dim); display: flex; align-items: center; gap: 5px; }
 
 .table-card { overflow: hidden; }
-.table-wrap { overflow: auto; max-height: 411px; }
-.data-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+/* 数据表统一「纵滚不横滚」：列多时靠换行/截断压缩，不在 1440 宽视口里出现横向滚动条。 */
+.table-wrap { overflow-y: auto; overflow-x: hidden; max-height: 411px; }
+.data-table { width: 100%; table-layout: auto; border-collapse: separate; border-spacing: 0; }
 .data-table thead th {
   position: sticky; top: 0; z-index: 2; height: 31px; padding: 0 10px;
   background: var(--surface-2); color: var(--muted);
@@ -531,10 +532,16 @@ html[data-theme="light"] .heat-tile.strong .ht-pct { color: var(--text); }
   border-bottom: 1px solid var(--border);
 }
 .data-table thead th.num { text-align: right; }
-.data-table tbody td { height: var(--row-h); padding: 0 10px; border-bottom: 1px solid var(--border); font-size: 12px; white-space: nowrap; }
+.data-table tbody td { min-height: var(--row-h); padding: 5px 10px; border-bottom: 1px solid var(--border); font-size: 12px; line-height: 1.45; vertical-align: middle; white-space: normal; overflow-wrap: anywhere; }
 .data-table tbody tr:last-child td { border-bottom: 0; }
 .data-table tbody tr:hover td { background: color-mix(in srgb, var(--surface-2) 62%, transparent); }
-.data-table td.num { text-align: right; font-family: var(--mono); font-size: 12px; }
+.data-table td.num { text-align: right; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+/* 代号/时间/徽标等短字段不允许折行，长文本则走换行或两行截断。 */
+.data-table td.num, .data-table td.mono, .data-table td .badge, .data-table td .tm,
+.data-table td .sym, .data-table td.nowrap { white-space: nowrap; }
+.data-table td.cell-wrap { white-space: normal; }
+.data-table td.cell-wrap > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.data-table td.cell-clip { max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .data-table .sym { font-family: var(--mono); font-weight: 650; font-size: 11.5px; letter-spacing: .3px; }
 .data-table .nm { color: var(--text); font-size: 12px; }
 .data-table .src { font-size: 10.5px; color: var(--muted); }

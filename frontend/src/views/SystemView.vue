@@ -88,20 +88,53 @@
         </div>
       </div>
       <div class="card-body coverage-body">
-        <div class="cov-head">
-          <div class="cov-main">
-            <span class="cov-label">覆盖序列</span>
-            <span class="cov-value mono">{{ coverage?.series_covered ?? "—" }} / {{ coverage?.series_total ?? "—" }}</span>
+        <div class="cov-stats">
+          <div class="cov-stat">
+            <span class="cov-stat-label">序列覆盖</span>
+            <b class="cov-stat-value mono">
+              {{ coverage?.series_covered ?? "—" }}<small>/ {{ coverage?.series_total ?? "—" }}</small>
+            </b>
+            <span class="cov-stat-sub">最新观测仍在发布窗口内的宏观序列</span>
           </div>
-          <div class="cov-meta">
-            <span>序列覆盖 <b class="mono">{{ coverage?.series_covered ?? "—" }}/{{ coverage?.series_total ?? "—" }}</b></span>
-            <span>作业健康 <b class="mono">{{ coverage?.jobs_ok ?? "—" }}/{{ coverage?.jobs_total ?? "—" }}</b></span>
-            <span>最近同步 <b class="mono">{{ coverage?.last_sync ? fmtDateTime(coverage.last_sync) : "—" }}</b></span>
-            <span>计算时间 <b class="mono">{{ coverage?.as_of ? fmtDateTime(coverage.as_of) : "—" }}</b></span>
+          <div class="cov-stat">
+            <span class="cov-stat-label">作业健康</span>
+            <b class="cov-stat-value mono">
+              {{ coverage?.jobs_ok ?? "—" }}<small>/ {{ coverage?.jobs_total ?? "—" }}</small>
+            </b>
+            <span class="cov-stat-sub">最近一次运行状态为成功的调度任务</span>
+          </div>
+          <div class="cov-stat">
+            <span class="cov-stat-label">最近同步</span>
+            <b class="cov-stat-value">{{ coverage?.last_sync ? fmtDateTime(coverage.last_sync) : "—" }}</b>
+            <span class="cov-stat-sub">行情 / 宏观 / 日线三表的最新写入时间</span>
+          </div>
+          <div class="cov-stat">
+            <span class="cov-stat-label">数据时点</span>
+            <b class="cov-stat-value">{{ coverage?.as_of ? fmtDateTime(coverage.as_of) : "—" }}</b>
+            <span class="cov-stat-sub">本次健康度的计算时间</span>
           </div>
         </div>
-        <div class="cov-bar"><i :style="{ width: coveragePct + '%' }"></i></div>
-        <div class="cov-note">{{ coverage?.method ?? "健康度 = 60% × 序列覆盖率 + 40% × 作业健康率（最新观测 45 天内视为覆盖）" }}</div>
+
+        <div class="cov-meter">
+          <div class="cov-meter-head">
+            <span>整体健康度</span>
+            <b class="mono">{{ coverage ? coveragePct.toFixed(1) + "%" : "—" }}</b>
+          </div>
+          <div class="cov-bar"><i :style="{ width: coveragePct + '%' }"></i></div>
+          <div class="cov-meter-legend">
+            <span>0%</span>
+            <span>60% × 序列覆盖 + 40% × 作业健康</span>
+            <span>100%</span>
+          </div>
+        </div>
+
+        <div v-if="methodLines.length" class="cov-method">
+          <div class="cov-method-title">计算口径</div>
+          <ul class="cov-method-list">
+            <li v-for="(line, index) in methodLines" :key="index">{{ line }}</li>
+          </ul>
+        </div>
+
         <EmptyState
           v-if="!coverage"
           text="覆盖率接口未就绪"
@@ -113,7 +146,7 @@
     <section class="card" style="margin-top: 12px">
       <div class="card-head">
         <span class="card-title">任务调度</span>
-        <span class="card-sub">cron 定义 · 最近运行状态 · 超过 24h 未跑标黄，超过 72h 标红</span>
+        <span class="card-sub">任务目的 · cron 定义 · 最近运行 · 点击「调度次数」查看执行历史；超过 24h 未跑标黄，超过 72h 标红</span>
         <div class="card-actions">
           <span class="badge badge--sm" :class="neverRanJobs ? 'badge--warn' : 'badge--live'">
             {{ neverRanJobs }} 个未运行
@@ -127,41 +160,53 @@
       <div class="table-wrap sys-wrap">
         <SkeletonBlock v-if="!jobs.length && jobsLoading" :rows="5" />
         <ErrorState v-else-if="jobsError" :error="jobsError" @retry="loadJobs" />
-        <table v-else class="data-table">
+        <table v-else class="data-table sys-jobs">
           <thead>
             <tr>
-              <th>任务</th>
-              <th>计划</th>
-              <th>启用</th>
-              <th>最近状态</th>
-              <th>最近运行</th>
-              <th>时效</th>
-              <th>错误</th>
+              <th class="col-job">任务</th>
+              <th class="col-desc">任务描述</th>
+              <th class="col-cron">计划</th>
+              <th class="col-on">启用</th>
+              <th class="col-status">最近状态</th>
+              <th class="col-run">最近运行 / 时效</th>
+              <th class="col-count">调度次数</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="job in jobs" :key="job.name">
-              <td class="mono">{{ job.name }}</td>
-              <td class="mono">{{ job.cron }}</td>
-              <td>{{ job.enabled ? "是" : "否" }}</td>
-              <td>
-                <span class="badge badge--sm" :class="job.last_status === 'error' ? 'badge--warn' : 'badge--live'">
+              <td class="mono col-job">{{ job.name }}</td>
+              <td class="job-desc col-desc">{{ job.description ?? "—" }}</td>
+              <td class="mono col-cron">{{ job.cron }}</td>
+              <td class="col-on">{{ job.enabled ? "是" : "否" }}</td>
+              <td class="col-status">
+                <span
+                  class="badge badge--sm"
+                  :class="job.last_status === 'error' ? 'badge--warn' : 'badge--live'"
+                  :title="job.last_error ?? statusLabel(job.last_status)"
+                >
                   {{ statusLabel(job.last_status) }}
                 </span>
               </td>
-              <td class="muted">{{ fmtDateTime(job.last_run_at) }}</td>
-              <td>
-                <span
-                  v-if="jobStale(job).cls"
-                  class="badge badge--sm"
-                  :class="jobStale(job).cls"
-                  :title="jobStale(job).title"
-                >
-                  {{ jobStale(job).text }}
+              <td class="col-run">
+                <span class="run-cell">
+                  <span class="muted">{{ fmtDateTime(job.last_run_at) }}</span>
+                  <span
+                    v-if="jobStale(job).cls"
+                    class="badge badge--sm"
+                    :class="jobStale(job).cls"
+                    :title="jobStale(job).title"
+                  >
+                    {{ jobStale(job).text }}
+                  </span>
+                  <span v-else class="dim sys-age" :title="jobStale(job).title">{{ jobStale(job).text }}</span>
                 </span>
-                <span v-else class="dim sys-age" :title="jobStale(job).title">{{ jobStale(job).text }}</span>
               </td>
-              <td class="muted err-cell">{{ job.last_error ?? "—" }}</td>
+              <td class="col-count">
+                <button class="link-count" type="button" :title="`查看 ${job.name} 的执行历史`" @click="openHistory(job)">
+                  <b class="mono">{{ job.run_count }}</b>
+                  <span class="link-count-more">次 · 历史</span>
+                </button>
+              </td>
             </tr>
             <tr v-if="!jobs.length">
               <td colspan="7">
@@ -240,7 +285,13 @@
         <div class="table-wrap sys-wrap">
           <SkeletonBlock v-if="!quality && qualityLoading" :rows="5" />
           <ErrorState v-else-if="qualityError" :error="qualityError" @retry="loadQuality" />
-          <table v-else class="data-table">
+          <table v-else class="data-table sys-quality">
+            <colgroup>
+              <col class="q-dataset-col" />
+              <col class="q-kind-col" />
+              <col class="q-status-col" />
+              <col />
+            </colgroup>
             <thead>
               <tr>
                 <th>数据集</th>
@@ -251,14 +302,14 @@
             </thead>
             <tbody>
               <tr v-for="(row, index) in quality?.data ?? []" :key="`${row.dataset}-${index}`">
-                <td>{{ row.dataset }}</td>
-                <td class="muted">{{ row.kind }}</td>
+                <td class="q-dataset" :title="row.dataset">{{ row.dataset }}</td>
+                <td class="muted q-kind">{{ row.kind }}</td>
                 <td>
                   <span class="badge badge--sm" :class="row.passed ? 'badge--live' : 'badge--warn'">
                     {{ row.passed ? "通过" : "失败" }}
                   </span>
                 </td>
-                <td class="muted">{{ row.detail ?? "—" }}</td>
+                <td class="muted q-detail">{{ row.detail ?? "—" }}</td>
               </tr>
               <tr v-if="!(quality?.data ?? []).length">
                 <td colspan="4">
@@ -322,11 +373,55 @@
         </span>
       </div>
     </section>
+
+    <Drawer
+      :open="Boolean(historyJob)"
+      :title="historyJob ? `执行历史 · ${historyJob}` : '执行历史'"
+      :sub="historySub"
+      @close="closeHistory"
+    >
+      <SkeletonBlock v-if="historyLoading" :rows="6" />
+      <ErrorState v-else-if="historyError" :error="historyError" @retry="loadHistory" />
+      <EmptyState
+        v-else-if="!historyRuns.length"
+        text="暂无执行记录"
+        hint="任务第一次被调度（或手动触发）后，这里会按时间倒序显示每次运行的开始时间、状态、耗时和摘要。"
+      />
+      <div v-else class="table-wrap hist-wrap">
+        <table class="data-table hist-table">
+          <thead>
+            <tr>
+              <th>开始时间</th>
+              <th>状态</th>
+              <th class="num">耗时</th>
+              <th>摘要 / 错误</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="run in historyRuns" :key="run.id">
+              <td class="muted mono hist-time">{{ fmtDateTime(run.started_at) }}</td>
+              <td>
+                <span class="badge badge--sm" :class="runStatusClass(run.status)">
+                  {{ statusLabel(run.status) }}
+                </span>
+              </td>
+              <td class="num mono">{{ fmtDuration(run.duration_ms) }}</td>
+              <td class="muted hist-detail" :title="run.detail ?? ''">{{ summarizeRun(run) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <template #footer>
+        <span class="card-sub">共 {{ historyRuns.length }} 条 · 仅保留每个任务最近 200 次执行</span>
+        <button class="btn btn--sm btn--ghost" type="button" @click="loadHistory">刷新</button>
+      </template>
+    </Drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
+import Drawer from "@/components/ui/Drawer.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import SkeletonBlock from "@/components/ui/SkeletonBlock.vue";
@@ -334,12 +429,13 @@ import { usePolling } from "@/composables/usePolling";
 import { fmtDateTime, fmtInt } from "@/composables/useFormat";
 import {
   getAcceptance,
+  getJobRuns,
   getJobs,
   getQuality,
   getSources,
   getSystemCoverage,
 } from "@/api/endpoints";
-import type { CoverageResponse, JobRow } from "@/api/types";
+import type { CoverageResponse, JobRow, JobRunRow } from "@/api/types";
 import { getJson } from "@/api/client";
 import { useHealthStore } from "@/stores/health";
 
@@ -374,6 +470,14 @@ const {
   data: coverage,
 } = usePolling<CoverageResponse>(() => getSystemCoverage(), { interval: 60000 });
 const coveragePct = computed(() => coverage.value?.data_quality_pct ?? 0);
+/** 后端把口径写成一段长文本：按分号拆成逐条说明，避免堆成一坨。 */
+const methodLines = computed(() => {
+  const method = coverage.value?.method ?? "健康度 = 60% × 序列覆盖率 + 40% × 作业健康率（最新观测 45 天内视为覆盖）";
+  return method
+    .split(/[；;\n]/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+});
 
 const jobs = computed(() => jobsData.value?.data ?? []);
 const failedJobs = computed(() => jobs.value.filter((job) => job.last_status === "error").length);
@@ -443,6 +547,80 @@ const staleJobs = computed(
 );
 const neverRanJobs = computed(() => jobs.value.filter((job) => !job.last_run_at).length);
 
+/* ---------- 执行历史抽屉（点击「调度次数」打开） ---------- */
+const historyJob = ref<string | null>(null);
+const historyRuns = ref<JobRunRow[]>([]);
+const historyLoading = ref(false);
+const historyError = ref<Error | null>(null);
+
+const historySub = computed(() => {
+  if (!historyJob.value) return "";
+  const job = jobs.value.find((row) => row.name === historyJob.value);
+  if (!job) return "";
+  const cron = job.cron ? `计划 ${job.cron}` : "无计划";
+  return `${cron} · 累计 ${job.run_count} 次 · 最近 ${fmtDateTime(job.last_run_at)}`;
+});
+
+function openHistory(job: JobRow): void {
+  historyJob.value = job.name;
+  void loadHistory();
+}
+
+function closeHistory(): void {
+  historyJob.value = null;
+  historyRuns.value = [];
+  historyError.value = null;
+}
+
+async function loadHistory(): Promise<void> {
+  const name = historyJob.value;
+  if (!name) return;
+  historyLoading.value = true;
+  historyError.value = null;
+  try {
+    const payload = await getJobRuns(name, 50);
+    historyRuns.value = payload.data ?? [];
+  } catch (err) {
+    historyError.value = err instanceof Error ? err : new Error(String(err));
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
+function runStatusClass(status: string): string {
+  if (status === "error" || status === "interrupted") return "badge--warn";
+  if (status === "running") return "badge--live";
+  return "badge--live";
+}
+
+function fmtDuration(ms: number | null): string {
+  if (ms === null || Number.isNaN(ms)) return "—";
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60_000);
+  const seconds = Math.round((ms % 60_000) / 1000);
+  return `${minutes}m${seconds}s`;
+}
+
+/** JobRun.detail 是 JSON 摘要；压成一行可读文本，完整内容挂在 title 上。 */
+function summarizeRun(run: JobRunRow): string {
+  if (!run.detail) return "—";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(run.detail);
+  } catch {
+    return String(run.detail).slice(0, 160);
+  }
+  if (!parsed || typeof parsed !== "object") return String(parsed).slice(0, 160);
+  const record = parsed as Record<string, unknown>;
+  if (record.error) return `错误：${String(record.error)}`;
+  const pairs = Object.entries(record)
+    .filter(([, value]) => value !== null && value !== undefined && value !== "")
+    .map(([key, value]) => `${key}=${typeof value === "number" ? value : String(value)}`);
+  const text = pairs.join(" · ");
+  return text ? text.slice(0, 160) : "—";
+}
+
 function countLabel(key: string): string {
   const labels: Record<string, string> = {
     instruments: "标的",
@@ -504,12 +682,234 @@ onMounted(() => {
   gap: 10px;
   margin-top: 12px;
 }
-.err-cell {
-  max-width: 260px;
+
+/* ---------- 数据健康 · 序列覆盖：指标卡 + 进度条 + 逐条口径说明 ---------- */
+.coverage-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cov-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.cov-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.cov-stat-label {
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  color: var(--dim);
+}
+.cov-stat-value {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text);
+}
+.cov-stat-value small {
+  margin-left: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.cov-stat-sub {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.cov-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cov-meter-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.cov-meter-head b {
+  font-size: 13px;
+  color: var(--text);
+}
+.cov-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.cov-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+.cov-meter-legend {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9.5px;
+  color: var(--dim);
+}
+.cov-method {
+  padding: 9px 11px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+.cov-method-title {
+  margin-bottom: 5px;
+  font-size: 9.5px;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+}
+.cov-method-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 16px;
+}
+.cov-method-list li {
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* ---------- 任务调度：固定列宽，避免新增描述/次数列把表格撑出横向滚动 ---------- */
+.sys-jobs {
+  table-layout: fixed;
+}
+.sys-jobs .col-job {
+  width: 150px;
+}
+.sys-jobs .col-cron {
+  width: 118px;
+}
+.sys-jobs .col-on {
+  width: 44px;
+  text-align: center;
+}
+.sys-jobs .col-status {
+  width: 84px;
+}
+.sys-jobs .col-run {
+  width: 190px;
+}
+.sys-jobs .col-count {
+  width: 96px;
+  text-align: right;
+}
+.sys-jobs td.col-job {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.sys-jobs .job-desc {
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* ---------- 数据质检：数据集列加宽且不换行，明细列收窄自动换行 ---------- */
+.sys-quality {
+  table-layout: fixed;
+}
+.sys-quality .q-dataset-col {
+  width: 132px;
+}
+.sys-quality .q-kind-col {
+  width: 84px;
+}
+.sys-quality .q-status-col {
+  width: 72px;
+}
+.sys-quality .q-dataset {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sys-quality .q-kind,
+.sys-quality .q-detail {
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+.sys-quality .q-kind {
   white-space: nowrap;
 }
+.sys-quality .q-detail {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.run-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.link-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+.link-count:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.link-count b {
+  font-size: 11px;
+  color: var(--text);
+}
+.link-count-more {
+  font-size: 9.5px;
+  color: var(--dim);
+}
+
+/* ---------- 执行历史抽屉 ---------- */
+.hist-wrap {
+  max-height: none;
+}
+.hist-table {
+  table-layout: fixed;
+}
+.hist-table th:nth-child(1) {
+  width: 112px;
+}
+.hist-table th:nth-child(2) {
+  width: 64px;
+}
+.hist-table th:nth-child(3) {
+  width: 62px;
+}
+.hist-table .hist-time {
+  font-size: 10px;
+  white-space: nowrap;
+}
+.hist-table .hist-detail {
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .count-chip {
   display: inline-flex;
   align-items: center;
@@ -533,6 +933,9 @@ onMounted(() => {
 @media (max-width: 1240px) {
   .sys-grid {
     grid-template-columns: 1fr;
+  }
+  .cov-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

@@ -122,6 +122,40 @@ JOBS_DEFAULT: dict[str, str] = {
 }
 
 
+# 任务说明：系统状态页「任务描述」列直接读这里（随启动刷新，属于代码所有的文案）。
+JOB_DESCRIPTIONS: dict[str, str] = {
+    "heartbeat": "调度器心跳：每 60 秒确认后台调度进程存活，并记录最近心跳时间。",
+    "collect_quotes": "采集全市场最新快照行情（A股/美股/指数、外汇、商品、贵金属），供总览与研判读取实时价。",
+    "collect_news": "增量抓取财经新闻与公告索引，为事件抽取和简报提供语料。",
+    "collect_news_slow": "每日慢速深抓新闻：补采快讯遗漏的深度文章与更正内容。",
+    "collect_rates": "采集利率与流动性数据（美债/德债/日债收益率、SOFR/EFFR 等），每小时更新。",
+    "collect_macro": "采集结构性宏观序列（IMF/财政部/世界银行等），每日 08:05 刷新。",
+    "collect_calendar": "采集财经日历（议息、CPI、非农等重要事件），每 6 小时刷新未来窗口。",
+    "collect_positions": "采集期货/ETF 持仓与资金流（CFTC、ETF 份额等），每日 15:45 更新。",
+    "collect_gold": "采集黄金专项监控指标（WGC/LBMA/CFTC/东财）及派生指标，每日 16:40 更新。",
+    "collect_bodies": "抓取新闻/研报原文正文，供断言抽取与证据链引用。",
+    "collect_daily_bars": "采集日线历史行情（A股 15:40、美股 06:30），用于趋势判断与回测。",
+    "backfill_history": "每周日补全历史数据缺口并订正上游写坏的行情。",
+    "extract_claims": "从新闻正文抽取可验证断言（观点/预测/数据陈述）。",
+    "extract_events": "把断言归类为事件（政策/贸易/地缘/公司动作等）并关联原文。",
+    "extract_claims_llm": "用 LLM 增强断言抽取（需配置 API Key），每 20 分钟补跑未处理正文。",
+    "check_data_quality": "数据质检：检查新鲜度、覆盖率、连续性并写入质检结果。",
+    "analyze": "运行分析引擎，生成黄金、周期、定价等分析结论与信号。",
+    "cycle": "运行 EPIC-C 2.0 周期定位管线，输出长/短周期状态与历史类比。",
+    "decide": "生成交易决策与计划（方向、仓位、止损），写入交易计划表。",
+    "theses": "生成分析依据（论点/证据/反证/失效条件），供「分析依据」页展示。",
+    "scan_alerts": "扫描预警规则并生成告警（价格、指标、事件阈值）。",
+    "score_predictions": "对到期预测打分并更新命中/偏差统计。",
+    "ledger": "核对原则与到期预测，产出命中/接近/不成立/缺数据四态与校准分桶。",
+    "timeline": "重建 1500–2026 年表与当下坐标（数据即代码，周日 09:30 刷新）。",
+    "brief_premarket": "生成盘前日报（07:30）：隔夜市场、今日日历、持仓与关注点。",
+    "brief_postmarket": "生成盘后日报（21:00）：当日行情、事件驱动、持仓变化与明日展望。",
+    "weekly_review": "生成周报（周日 10:00）：本周复盘、下周展望与原则核对。",
+    "monthly_review": "生成月报（每月 1 日 10:00）：月度资产表现、周期位置与策略调整。",
+    "brief_manual": "手动触发的简报生成入口，不参与定时调度。",
+}
+
+
 # Label text that no longer matches the live trigger, refreshed on startup so the
 # 系统状态 page does not advertise a schedule the scheduler does not use.
 LEGACY_JOB_LABELS: dict[str, set[str]] = {
@@ -139,6 +173,7 @@ def seed_jobs() -> int:
             session.delete(legacy)
         for name, cron in JOBS_DEFAULT.items():
             exists = session.scalar(select(Job).where(Job.name == name))
+            description = JOB_DESCRIPTIONS.get(name)
             if exists is not None:
                 # Keep operator-toggled enabled flag; refresh stale/blank labels.
                 if not exists.cron or exists.cron == "manual" and name != "brief_manual":
@@ -146,8 +181,11 @@ def seed_jobs() -> int:
                 elif exists.cron in LEGACY_JOB_LABELS.get(name, ()):
                     # Labels that no longer describe the actual trigger schedule.
                     exists.cron = cron
+                if description and exists.description != description:
+                    # 任务说明是代码所有的文案：随启动刷新，保证与实现一致。
+                    exists.description = description
                 continue
-            session.add(Job(name=name, cron=cron, enabled=True))
+            session.add(Job(name=name, cron=cron, description=description, enabled=True))
             created += 1
         session.commit()
     return created

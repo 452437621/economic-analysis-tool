@@ -151,18 +151,17 @@
         <table v-else class="data-table trd-table">
           <thead>
             <tr>
-              <th style="width: 92px">交易日期</th>
-              <th style="width: 130px">品种</th>
-              <th style="width: 56px">类型</th>
-              <th style="width: 52px">方向</th>
-              <th style="width: 74px">状态</th>
-              <th style="width: 84px" class="num">数量（计划 / 实际）</th>
-              <th style="width: 82px" class="num">开仓价</th>
-              <th style="width: 82px" class="num">平仓价</th>
-              <th style="width: 108px" class="num">盈亏</th>
-              <th style="width: 62px" class="num">盈亏比</th>
-              <th style="width: 118px">策略</th>
-              <th style="width: 112px">操作</th>
+              <th style="width: 88px">交易日期</th>
+              <th style="width: 122px">品种</th>
+              <th style="width: 96px">类型 / 方向</th>
+              <th style="width: 70px">状态</th>
+              <th style="width: 80px" class="num">数量（计划 / 实际）</th>
+              <th style="width: 78px" class="num">开仓价</th>
+              <th style="width: 78px" class="num">平仓价</th>
+              <th style="width: 104px" class="num">盈亏</th>
+              <th style="width: 56px" class="num">盈亏比</th>
+              <th style="width: 104px">策略</th>
+              <th style="width: 110px">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -174,10 +173,8 @@
               </td>
               <td>
                 <span class="badge badge--sm">{{ assetLabel(row.asset_class) }}</span>
-              </td>
-              <td>
-                <span :class="row.direction === 'long' ? 'trd-long' : 'trd-short'">
-                  {{ row.direction === "long" ? "做多" : "做空" }}
+                <span :class="row.direction === 'long' ? 'trd-long trd-dir' : 'trd-short trd-dir'">
+                  {{ row.direction === "long" ? "多" : "空" }}
                 </span>
               </td>
               <td>
@@ -602,13 +599,18 @@ onBeforeUnmount(() => {
 }
 
 .trd-table {
-  /* 12 列压到一屏内：止损/止盈并入开仓价 tooltip，保证金/手续费/预计胜率并入盈亏 tooltip，
-     避免 1440 宽下横向滚动把「盈亏 / 操作」挤出可视区。 */
-  min-width: 1050px;
+  /* 列宽见模板 style：合计约 976px，1440 宽下不需要横向滚动。
+     止损/止盈并入开仓价 tooltip，保证金/手续费/预计胜率并入盈亏 tooltip。 */
 }
 
 .trd-name {
   margin-left: 6px;
+}
+
+.trd-dir {
+  margin-left: 5px;
+  font-size: 10px;
+  font-weight: 600;
 }
 
 .trd-sep {

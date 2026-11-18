@@ -148,7 +148,7 @@ class Document(Base, TimestampMixin):
     lang: Mapped[str | None] = mapped_column(String(8))
     sha256: Mapped[str | None] = mapped_column(String(64))
     raw_path: Mapped[str | None] = mapped_column(Text)
-    body_status: Mapped[str] = mapped_column(String(20), default="pending")  # pending/extracted/stored/skipped
+    body_status: Mapped[str] = mapped_column(String(20), default="pending")  # pending/extracted/no_body/stored/skipped/unsupported
     meta: Mapped[dict | None] = mapped_column(JSON)
 
 
@@ -314,6 +314,7 @@ class Job(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
     cron: Mapped[str | None] = mapped_column(String(80))
+    description: Mapped[str | None] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     last_status: Mapped[str | None] = mapped_column(String(16))
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

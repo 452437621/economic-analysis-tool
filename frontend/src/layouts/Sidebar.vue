@@ -68,14 +68,6 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "证据",
-    items: [
-      { to: "/analysis", label: "分析引擎", icon: "#i-cpu" },
-      { to: "/pipeline", label: "分析过程", icon: "#i-layers" },
-      { to: "/theses", label: "分析依据", icon: "#i-book" },
-    ],
-  },
-  {
     label: "周期",
     items: [
       { to: "/cycle", label: "周期罗盘", icon: "#i-target" },
@@ -88,6 +80,14 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/alerts", label: "预警台", icon: "#i-bell" },
       { to: "/ledger", label: "预测台账", icon: "#i-tasks" },
+    ],
+  },
+  {
+    label: "证据",
+    items: [
+      { to: "/analysis", label: "分析引擎", icon: "#i-cpu" },
+      { to: "/pipeline", label: "分析过程", icon: "#i-layers" },
+      { to: "/theses", label: "分析依据", icon: "#i-book" },
     ],
   },
   {

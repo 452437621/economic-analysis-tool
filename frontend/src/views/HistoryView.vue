@@ -107,11 +107,9 @@
             <table class="data-table hst-era-table">
               <thead>
                 <tr>
-                  <th>时期 / 国家</th>
-                  <th>崛起期</th>
+                  <th>时期 / 国家（起止）</th>
                   <th>黄金期</th>
                   <th>转折</th>
-                  <th>衰落</th>
                   <th>储备货币</th>
                   <th>当前阶段</th>
                 </tr>
@@ -126,13 +124,11 @@
                     </div>
                     <div class="hst-era-range mono">{{ era.rise }}–{{ era.decline }}</div>
                   </td>
-                  <td class="mono">{{ era.rise }}</td>
                   <td>
                     <span :class="{ 'hst-missing': !era.golden_age }">{{ fieldText(era.golden_age) }}</span>
                     <em v-if="era.peak" class="hst-era-note">峰值 {{ era.peak }}</em>
                   </td>
                   <td :class="{ 'hst-missing': !era.turning }">{{ fieldText(era.turning) }}</td>
-                  <td class="mono">{{ era.decline }}</td>
                   <td class="hst-era-reserve">{{ era.reserve }}</td>
                   <td :class="{ 'hst-missing': !era.current_stage }">{{ era.current_stage || "—" }}</td>
                 </tr>
@@ -447,10 +443,7 @@ const recalc = async () => {
   margin-top: 10px;
 }
 .hst-table-wrap {
-  overflow-x: auto;
-}
-.hst-era-table {
-  min-width: 760px;
+  overflow-x: hidden;
 }
 .hst-era-table thead th {
   white-space: nowrap;
@@ -502,7 +495,7 @@ const recalc = async () => {
   color: var(--dim);
 }
 .hst-dim-table {
-  min-width: 520px;
+  min-width: 0;
 }
 .hst-dim-head,
 .hst-dim-row {
