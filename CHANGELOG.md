@@ -6,6 +6,32 @@
 
 ## [Unreleased]
 
+### 改进（系统状态 · 数据质检列宽，2026-11-18）
+
+- `frontend/src/views/SystemView.vue`：「数据质检」表改为固定布局并加 `colgroup`——数据集列 132px 且 `white-space: nowrap`（超长省略并带 `title`），类型 / 状态列 84 / 72px 固定，明细列占剩余宽度并自动换行，长明细不再挤压数据集列。
+
+### 修复（证据抽屉 PDF 正文乱码，2026-11-18）
+
+- **症状**：日报「新闻与政策（官方来源）」的证据按钮点开后，抽屉正文与断言是 `%PDF-1.6` 开头的二进制乱码（如 ECB 演讲 PDF、日本央行统计 PDF）。
+- **根因**：`backend/app/ingest/pipeline.py` 的 `collect_bodies()` 把 `resp.text`（PDF 字节被当文本解码）直接交给 `extract_main_text()` 抽正文，没有 content-type / 二进制判断；乱码长度超过 80 字符即写入 `document_bodies`，`extract_claims()` 又从乱码里抽出断言。
+- **修复**：`ingest/providers/html_extract.py` 新增 `looks_like_binary()`（`%PDF` 开头、U+FFFD 或控制字符占比过高）并在 `extract_main_text()` 入口短路返回空串；`collect_bodies()` 对 `.pdf` URL / `content-type` 含 pdf 或 octet-stream / 疑似二进制的响应标记 `body_status="unsupported"`，不写正文（stats 增加 `unsupported`）；新增 `purge_binary_bodies()` 清理存量坏正文及其派生 `Claim` / `DocumentSpan`（实测清理 **77 条正文 / 219 条断言 / 219 条片段**，292 → 215 条正文）。
+- **前端兜底**：`components/domain/EvidenceDrawer.vue` 增加 `binaryDoc` 判断（`status=="unsupported"`、URL 以 `.pdf` 结尾、正文疑似二进制），命中时只显示「原文为 PDF / 二进制文件」提示与「打开原文」，不再渲染乱码正文与断言。
+- **验证**：新增 `tests/test_binary_body_guard.py` 3 条（二进制识别、抽正文短路、存量清理级联）；`pytest -q` → **350 passed**；`vue-tsc --noEmit` 0 error；`scripts/build.ps1` → 44 个资源；重启后实测 `/api/documents/0df7a6a1…` 返回 `status=unsupported`、`body=null`、`claims=0`。
+
+### 改进（可用性九项：菜单归类、页面去重、预警台账重排、任务可观测、表格禁横滚、中英对照，2026-11-18）
+
+- **菜单归类（需求 1）**：`frontend/src/layouts/Sidebar.vue` 的「证据」组（分析引擎 / 分析过程 / 分析依据）下移到「预警」组之后、系统之前，与信息架构文档一致。
+- **页面去重（需求 2）**：`AnalysisView.vue` 四块整表改为「摘要 + 下钻」——方法注册表 → 方法构成 / 代码指纹 / 最近运行三项摘要；最新运行 → 只展示最近一次 + 「查看全部运行与步骤链」；证据等级 → 只留分布 + 推导明细链接；数据质量 → 通过率 / 未通过 / 检查时点一行 + `/system` 链接；`ThesesView.vue` 的「论点复核」统计并入 KPI，只留最近 6 条记录；改名消歧「周期状态 → 市场隐含周期象限」「历史类比 → 相似交易日」。权威页与摘要页对照见新增的 `docs/26-页面交互与信息架构.md`。
+- **预警台与预测台账（需求 3）**：`components/alerts/AlertTable.vue` 重写为 9 列固定布局（状态 / 严重度 / 规则 / 指标 / 当前值 / 阈值输入 / 距离 / 观测日 / 展开），阈值可直接在行内编辑并保存（`PATCH /api/v2/cycle/config`），删除恒为空值的「胜率 / 置信度」列，触发行展开给出复核说明；`AlertsView.vue` 删除与表内重复的 `ThresholdEditor` 区块、页脚补 `/ledger` 与 `/pipeline` 跳转并渲染降级原因；`LedgerView.vue` 未结 / 已结合并为 7 列单表、按到期日升序、逾期高亮、表内滚动，重算失败给 toast，口径说明折叠，原则核对只留计数与链接。
+- **交互与业务梳理（需求 4）**：`PipelineView` / `CycleView` / `AnalysisView` 页头互链（分析结论、分析依据、市场隐含象限、世界长河、周期规则预警），`router/index.ts` 的 `scrollBehavior` 支持 `#anchor` 平滑定位；页面职责边界、业务数据流、交互惯例写入 `docs/26-页面交互与信息架构.md`。
+- **任务调度可观测（需求 5）**：`models/core.py` 的 `Job` 新增 `description` 列并配 light migration；`init_db.py` 新增 `JOB_DESCRIPTIONS`（29 个任务的用途说明）在 `seed_jobs()` 时回填；`/api/system/jobs` 新增 `description` 与 `run_count`，`/api/system/job-runs` 支持 `job_name` 过滤并返回 `id` / `duration_ms`；`scheduler.py` 心跳写 `JobRun` 且每小时 `prune_job_runs()` 保留每任务最近 200 条；`SystemView.vue` 任务表改为 7 列（任务 / 任务描述 / 计划 / 启用 / 最近状态 / 最近运行 + 时效 / 调度次数），点「调度次数」抽屉展示执行历史（开始时间 / 状态 / 耗时 / 摘要）。
+- **数据健康·序列覆盖（需求 6）**：`SystemView.vue` 由长文本段落改为四个指标块（序列覆盖 / 作业健康 / 最近同步 / 数据时点）+ 健康度进度条与图例 + 分行的计算口径列表（按 `；|;|\n` 拆分 `coverage.method`）。
+- **表格不再横向滚动（需求 7）**：`styles/app.css` 移除 `tbody td` 的全局 `white-space: nowrap`，`.table-wrap` 改为 `overflow-x: hidden`，新增 `td.cell-wrap` / `td.cell-clip`（仅数值、时间、代码、徽标保留 nowrap）；清理各页硬 `min-width`（Trades 12 → 11 列并合并类型/方向、History 周期表删两列重复、Ledger 7 列、AlertTable 9 列、Cycle/Pipeline/HistoryTimeline 去硬宽、MarketCalendar 网格改 `minmax(0, Npx)`）。
+- **简报（需求 8）**：`narrative/brief.py` 日报「会员持仓」改为 pipe 表格（品种 / 多头 / 空头 / 净持仓 / 净占比，头尾各 3），事件与新闻的英文标题后追加「（中文：…）」且中文在 `enhance_brief` 之前写入、`[D:xxx]` 证据标记保持完整；`weekly.py` / `monthly.py` 复用 `position_rows` / `recent_event_rows` / `news_lines`，补「会员持仓」「事件驱动」「新闻与政策」三节（周月报翻译 `allow_llm=False`，不阻塞定时任务）；新增 `narrative/zh.py`（`zh_pairs` 批量翻译）与 `prompts/brief_editor.v1.md` 的两条硬约束（保留中文对照括号、保持 pipe 表格）。
+- **全站中英对照（需求 9）**：新增 `composables/useZhTranslate.ts`（单例缓存、批量 ≤30、失败冷却静默重试）与 `components/ui/ZhText.vue`（中文为主、英文原文弱化、缺译提示），统一 `ThesesView` / `OverviewView` 两处重复的翻译逻辑，并接入财经日历、告警抽屉标题与正文、政治窗口、证据抽屉文档标题。
+- **验证**：`pytest` → **347 passed**；`vue-tsc --noEmit` 0 error；`scripts/build.ps1` → 44 个资源、1,623 KB；重启服务后实测 `/api/system/jobs` 29 条全部带 `description` 与 `run_count`、`/api/system/job-runs?job_name=collect_quotes` 返回 `duration_ms`、`/api/briefs/latest?kind=daily` 含持仓表格与「（中文：…）」、`/api/knowledge/translate` 中文原文直返 `seed`。
+- **已知边界**：当前环境未配置 `.env` / `DEEPSEEK_API_KEY`（`llm_enabled=false`），本地语料未收录的英文标题暂无中文对照，`ZhText` 会显示缺译提示；`/api/system/acceptance` 仍因世界银行年频序列（`WB_*`）滞后报 2 项失败，属数据源发布节奏问题；Windows 沙箱下 pytest 的 `tmp_path` 目录权限（`mkdir(mode=0o700)` 在沙箱内不可读）用工作区 `data/test/shim` 的 `sitecustomize` 规避，不进入仓库。
+
 ### 新增（全系统审计补齐：真实结构性数据源、流水线看门狗、预测台账自动化，2026-11-18）
 
 - **结构性宏观数据源接入（替换硬编码）**：新增 4 个 provider——`backend/app/ingest/providers/treasury_fiscal.py`（美国财政部 Fiscal Data：`debt_to_penny` 日频联邦债务、MTS table 9 月频收支）、`worldbank.py`（世界银行年频 GDP/CPI/失业率/债务）、`imf_datamapper.py`（IMF WEO 年频 7 指标 × 中/美，带浏览器 UA 与 `Referer/Origin`）与 `errors.py`（统一 `ProviderError`）。`backend/app/ingest/pipeline.py` 的 `MACRO_SERIES_META` 由 22 条扩到 49 条，新增 `collect_macro()`（三段独立降级，返回 `{series, obs, degraded_reasons, elapsed_ms}`）与 `_store_macro_points()`；新增作业 `collect_macro`（Cron 08:05 + 启动 40 秒 bootstrap）。实测 `collect_macro()` 写入 `{"series":12,"obs":505}`，`macro_series` 22 → 34 条（含 7 条年频），重复执行不产生重复观测。
