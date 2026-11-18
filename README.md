@@ -2,7 +2,7 @@
 
 > **Economic Positioning, Intelligence & Cycles** —— 本地运行、以证据为中心的个人宏观—市场—交易决策工作台。
 >
-> 状态：**V2.0.0 — 可审计的宏观研判台（2026-11-17）**：在 V1.3.0 黄金监控与综合研判之上新增透明化血缘（玻璃盒）、EPIC-C 2.0 周期引擎、1500–2026 世界长河、预测台账与原则库、交易台账；**16 个路由页面**、**V2.0 API 端点族 25+ 条**、**314 条 pytest**。数据快照（2026-11-15）：**35 标的**、约 **6.5 万根日线**、约 **2.2 万条宏观观测**、**2,500+ 财经日历**、**13 品种会员持仓（Top20 多空明细）**、约 **270 篇官方新闻 / 3,700+ 条断言**；**黄金监控 22 指标**（20 项自动采集 + 2 项手动录入，17 项参与评分，coverage 100%）；LLM 待 Key。
+> 状态：**V2.0.0 — 可审计的宏观研判台（2026-11-18）**：在 V1.3.0 黄金监控与综合研判之上新增透明化血缘（玻璃盒）、EPIC-C 2.0 周期引擎、1500–2026 世界长河、预测台账与原则库、交易台账；**16 个路由页面**、**V2.0 API 端点族 25+ 条**、**341 条 pytest**。数据快照（2026-11-18）：**35 标的**、约 **8.4 万根日线**、约 **2.6 万条宏观观测 / 34 条宏观序列**（利率汇率 + IMF WEO / 世界银行 / 美国财政部结构性序列）、**2,600+ 财经日历**、**13 品种会员持仓（Top20 多空明细）**、约 **290 篇官方新闻 / 4,000 条断言**；**黄金监控 22 指标**（20 项自动采集 + 2 项手动录入，17 项参与评分，coverage 100%）；周期引擎 7 条结构性读数中 3 条已由实时序列供给；LLM 待 Key。
 
 ![V1.1 总览](docs/assets/vue/vue-overview.png)
 
@@ -75,7 +75,7 @@ $env:PYTHONPATH = "backend"
 .\.venv\Scripts\python.exe -m app.jobs.runner --all
 
 # 质量门禁
-.\.venv\Scripts\python.exe -m pytest -q                       # 127 条测试
+.\.venv\Scripts\python.exe -m pytest -q                       # 341 条测试
 .\.venv\Scripts\python.exe scripts\lint.py                    # 静态检查
 powershell -ExecutionPolicy Bypass -File .\scripts\ci.ps1     # 前端构建 + lint + pytest + 运行时检查
 powershell -ExecutionPolicy Bypass -File .\scripts\selfcheck.ps1
@@ -173,6 +173,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 > **可用性修复与交易模块（2026-11-17）**：① 删除仅供内部约束用的「设计规范」页；② 「交易日志」升级为独立「交易」模块（`/api/trades` 七端点 + `/trades` 页面，按计划/挂单/持仓/已平仓管理股票与期货等品种，服务端算盈亏/收益率/盈亏比，支持按纪律字段复盘）；③ 修复 `/cycle` 点击重算白屏（`backend/app/api/cycle.py` 的 `_normalize_state()` 归一化旧推导，`band/phase_id/short_cycle/composites` 全部补默认值，前端再做一层防守渲染）；④ `/theses` 事件与新闻、总览告警增加中英对照（`POST /api/knowledge/translate` + `config/translations.zh.json` 224 条种子译文，未命中时可用 `DEEPSEEK_API_KEY` 兜底）；⑤ 研判菜单分四组（周期与位置 / 透明与证据 / 预警与台账 / 专题）；⑥ 世界长河按合并原型 1:1 重绘（`components/history/HistoryTimelineChart.vue`，储备份额带 + 四帝国泳道 + 事件形状与年份交替标注，画布随容器自适应、无横向滚动）；⑦ 全站时间口径统一：系统当前时间与数据采集时间合并到顶栏两个 pill（绿点 + 采集时间 + 健康 % / `yyyy-MM-dd HH:mm:ss`），数据生成时间统一显示为标题旁 `（生成于 …）`。共 314 条 pytest。
 > **菜单扁平化与数据健康上移（2026-11-18）**：菜单收敛为严格两级，取消「研判」一级与全部三级小标题，现为「今日（总览/简报/交易）、市场（市场行情/利率与流动性）、专题（黄金研判/交易信号）、证据（分析引擎/分析过程/论点与证据）、周期（周期罗盘/世界长河/原则库）、预警（预警台/预测台账）、系统（系统状态）」；「透明管线」更名为「分析过程」，「原则库」并入周期组、「论点与证据」并入证据组（后更名为「分析依据」）；左下角的数据健康卡（健康度、序列覆盖、最近同步、后端 API、行情标的、调度器）移入右上角，点击「数据采集」pill 展开面板查看，侧栏底部只保留版本行，避免与顶栏状态重复。
 
+> **全系统审计补齐（2026-11-18）**：① 结构性宏观不再靠 `config/cycle.yaml` 里的人工常数——新增 `collect_macro` 作业与 4 个数据源 provider（美国财政部 Fiscal Data、世界银行、IMF DataMapper、统一 `ProviderError`），`macro_series` 22 → 34 条（含 7 条年频），周期引擎 7 条结构性读数中 3 条转为实时（联邦债务/GDP 132.15%、赤字/GDP 6.86%、利息/财政收入 19.82%，证据等级 E2），其余显式回落并标注原因；② 流水线看门狗：`reconcile_stale_analysis_runs()` 收尾进程中断遗留的 `running` 运行（实测 2 条），启动时 `catch_up_jobs()` 补跑错过的定时作业（实测补跑 `brief_premarket` 成功）；③ 预测台账自动化：`auto_register_forecasts()` 每轮生成 9 指标 × 30/90 天预测（实测 18 条 open），并修掉 `_latest_market_value()` 的列名错误，Brier 等首批 2026-12-18 到期后自动有样本；④ 数据质检口径修正：年频序列新鲜度窗口 400 → 800 天（世界银行/IMF 年度值本就滞后 18~24 个月），重跑质检 **10 项 0 失败**；⑤ 前端补完「引擎透明度」「预测台账未结/已结」「任务时效列」「结构性读数表」等区块并补空态提示，删除无引用的 `TokensView.vue`；⑥ 侧栏去掉计数徽标并收窄到 196px。共 341 条 pytest。
+
 ---
 
 ## 文档索引
@@ -232,7 +234,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 | 静态检查 | `.\.venv\Scripts\python.exe scripts\lint.py` | 语法、AST 异味、未用导入、编码、Vue 源码结构与构建产物、外部 CDN、PowerShell BOM、文档链接、版本一致性、`.env.example` 完整性 |
 | 前端类型 | `cd frontend; npm.cmd run typecheck` | vue-tsc（构建时也会执行） |
 | 构建 | `scripts/build.ps1` | vue-tsc + vite build → `web/`；`ci.ps1` 与 CI 都会先构建 |
-| 测试 | `.\.venv\Scripts\python.exe -m pytest -q` | **127 条**：解析器、数据管道、分析、决策、API 冒烟（含写接口与 404）、降级、DevOps、前端源码/产物、黄金监控 |
+| 测试 | `.\.venv\Scripts\python.exe -m pytest -q` | **341 条**：解析器、数据管道、分析、决策、API 冒烟（含写接口与 404）、降级、DevOps、前端源码/产物、黄金监控、周期引擎与结构性读数、玻璃盒血缘、时间线、台账与预测自动登记、宏观数据源与作业补跑、交易台账 |
 | 本地门禁 | `scripts/ci.ps1` | 前端构建 → lint → pytest → 运行时 health/acceptance/quality；服务未启动时跳过运行时检查 |
 | CI | `.github/workflows/ci.yml` | Python 3.11/3.12 矩阵 + Node 22 前端构建 + 安装导入冒烟 |
 | 版本 | `backend/app/__init__.py` | **后端**单一来源，`pyproject.toml` 与 `/api/system/health` 必须一致（前端 `package.json` 版本独立维护） |
