@@ -6,7 +6,11 @@
 
     <SkeletonBlock v-if="evidence.loading" :rows="6" />
     <ErrorState v-else-if="evidence.error" :error="evidence.error" @retry="reload" />
-    <EmptyState v-else-if="!doc" text="暂无证据内容" />
+    <EmptyState
+      v-else-if="!doc"
+      text="暂无证据内容"
+      hint="这条结论没有关联原文证据：到「分析过程」查看推导来源，或确认采集 / 断言抽取作业已经跑过。"
+    />
 
     <template v-else>
       <div class="ev-source">

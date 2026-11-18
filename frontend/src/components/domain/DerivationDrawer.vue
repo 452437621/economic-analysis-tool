@@ -35,7 +35,11 @@
             <span v-if="step.detail" class="db-dim"> — {{ step.detail }}</span>
           </li>
         </ol>
-        <EmptyState v-else text="未登记推导步骤" />
+        <EmptyState
+          v-else
+          text="未登记推导步骤"
+          hint="方法实现没有输出 steps 时抽屉里就没有步骤：先看下方 inputs 与 caveats，它们记录了输入和已知局限。"
+        />
       </section>
 
       <!-- L3 规则命中 -->

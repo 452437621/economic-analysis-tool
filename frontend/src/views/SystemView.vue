@@ -102,17 +102,29 @@
         </div>
         <div class="cov-bar"><i :style="{ width: coveragePct + '%' }"></i></div>
         <div class="cov-note">{{ coverage?.method ?? "健康度 = 60% × 序列覆盖率 + 40% × 作业健康率（最新观测 45 天内视为覆盖）" }}</div>
-        <EmptyState v-if="!coverage" text="覆盖率接口未就绪" hint="等待 /api/system/coverage 返回数据。" />
+        <EmptyState
+          v-if="!coverage"
+          text="覆盖率接口未就绪"
+          hint="覆盖率由后台按「序列覆盖率 + 作业健康率」统计后写入 /api/system/coverage；接口没返回时先看「服务」卡是否正常，再点右上角「刷新」。"
+        />
       </div>
     </section>
 
     <section class="card" style="margin-top: 12px">
       <div class="card-head">
         <span class="card-title">任务调度</span>
-        <span class="card-sub">cron 定义 · 最近运行状态 · 失败任务自愈</span>
-        <div class="card-actions"><span class="card-sub">{{ jobs.length }} 项</span></div>
+        <span class="card-sub">cron 定义 · 最近运行状态 · 超过 24h 未跑标黄，超过 72h 标红</span>
+        <div class="card-actions">
+          <span class="badge badge--sm" :class="neverRanJobs ? 'badge--warn' : 'badge--live'">
+            {{ neverRanJobs }} 个未运行
+          </span>
+          <span class="badge badge--sm" :class="staleJobs ? 'badge--warn' : 'badge--live'">
+            {{ staleJobs }} 个超 24h
+          </span>
+          <span class="card-sub">{{ jobs.length }} 项</span>
+        </div>
       </div>
-      <div class="table-wrap">
+      <div class="table-wrap sys-wrap">
         <SkeletonBlock v-if="!jobs.length && jobsLoading" :rows="5" />
         <ErrorState v-else-if="jobsError" :error="jobsError" @retry="loadJobs" />
         <table v-else class="data-table">
@@ -123,6 +135,7 @@
               <th>启用</th>
               <th>最近状态</th>
               <th>最近运行</th>
+              <th>时效</th>
               <th>错误</th>
             </tr>
           </thead>
@@ -137,10 +150,26 @@
                 </span>
               </td>
               <td class="muted">{{ fmtDateTime(job.last_run_at) }}</td>
+              <td>
+                <span
+                  v-if="jobStale(job).cls"
+                  class="badge badge--sm"
+                  :class="jobStale(job).cls"
+                  :title="jobStale(job).title"
+                >
+                  {{ jobStale(job).text }}
+                </span>
+                <span v-else class="dim sys-age" :title="jobStale(job).title">{{ jobStale(job).text }}</span>
+              </td>
               <td class="muted err-cell">{{ job.last_error ?? "—" }}</td>
             </tr>
             <tr v-if="!jobs.length">
-              <td colspan="6"><EmptyState text="暂无任务" /></td>
+              <td colspan="7">
+                <EmptyState
+                  text="暂无调度任务"
+                  hint="后端 /api/system/jobs 没有返回任务：先确认「服务」卡里调度器正常，再看 backend 的 jobs 表是否为空（可用 scripts 里的种子脚本补齐）。"
+                />
+              </td>
             </tr>
           </tbody>
         </table>
@@ -154,7 +183,7 @@
           <span class="card-sub">官方优先 · 失败重试 · 最近检查</span>
           <div class="card-actions"><span class="card-sub">{{ sources.length }} 个来源</span></div>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap sys-wrap">
           <SkeletonBlock v-if="!sources.length && sourcesLoading" :rows="5" />
           <ErrorState v-else-if="sourcesError" :error="sourcesError" @retry="loadSources" />
           <table v-else class="data-table">
@@ -175,14 +204,23 @@
                 <td><span class="badge badge--sm">{{ source.tier ?? "—" }}</span></td>
                 <td class="num">{{ fmtInt(source.documents) }}</td>
                 <td>
-                  <span class="badge badge--sm" :class="source.last_ok === false ? 'badge--warn' : 'badge--live'">
+                  <span
+                    class="badge badge--sm"
+                    :class="source.last_ok === false ? 'badge--warn' : 'badge--live'"
+                    :title="source.last_error || (source.base_url ?? '')"
+                  >
                     {{ source.last_ok === true ? "正常" : source.last_ok === false ? "失败" : "未检查" }}
                   </span>
                 </td>
                 <td class="muted">{{ fmtDateTime(source.last_check) }}</td>
               </tr>
               <tr v-if="!sources.length">
-                <td colspan="6"><EmptyState text="暂无数据源" /></td>
+                <td colspan="6">
+                  <EmptyState
+                    text="暂无数据源记录"
+                    hint="数据源在 backend 的 sources 表里登记；空表说明采集器还没跑过，先运行一次采集任务再刷新。"
+                  />
+                </td>
               </tr>
             </tbody>
           </table>
@@ -199,7 +237,7 @@
             </span>
           </div>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap sys-wrap">
           <SkeletonBlock v-if="!quality && qualityLoading" :rows="5" />
           <ErrorState v-else-if="qualityError" :error="qualityError" @retry="loadQuality" />
           <table v-else class="data-table">
@@ -223,7 +261,12 @@
                 <td class="muted">{{ row.detail ?? "—" }}</td>
               </tr>
               <tr v-if="!(quality?.data ?? []).length">
-                <td colspan="4"><EmptyState text="暂无质检结果" /></td>
+                <td colspan="4">
+                  <EmptyState
+                    text="暂无质检结果"
+                    hint="质检数据由定时作业把新鲜度 / 覆盖率 / 连续性 / 对账结果写入 data_quality；作业跑过之后这里才有行。"
+                  />
+                </td>
               </tr>
             </tbody>
           </table>
@@ -234,14 +277,14 @@
     <section class="card" style="margin-top: 12px">
       <div class="card-head">
         <span class="card-title">验收自检（DoD）</span>
-        <span class="card-sub">scripts/check_acceptance.ps1 · 14 项</span>
+        <span class="card-sub">scripts/check_acceptance.ps1 · {{ acceptance?.checks.length ?? "—" }} 项</span>
         <div class="card-actions">
           <span class="badge badge--sm" :class="acceptance?.passed ? 'badge--live' : 'badge--warn'">
             {{ acceptance?.passed ? "全部通过" : "存在失败项" }}
           </span>
         </div>
       </div>
-      <div class="table-wrap">
+      <div class="table-wrap sys-wrap">
         <SkeletonBlock v-if="!acceptance && acceptanceLoading" :rows="5" />
         <ErrorState v-else-if="acceptanceError" :error="acceptanceError" @retry="loadAcceptance" />
         <table v-else class="data-table">
@@ -261,6 +304,14 @@
                 </span>
               </td>
               <td class="muted">{{ String(check.detail ?? "—") }}</td>
+            </tr>
+            <tr v-if="!(acceptance?.checks ?? []).length">
+              <td colspan="3">
+                <EmptyState
+                  text="尚未运行验收自检"
+                  hint="验收检查由 scripts/check_acceptance.ps1 产出并落库；跑到「服务」卡确认后端就绪后，在项目根执行该脚本再点刷新。"
+                />
+              </td>
             </tr>
           </tbody>
         </table>
@@ -288,7 +339,7 @@ import {
   getSources,
   getSystemCoverage,
 } from "@/api/endpoints";
-import type { CoverageResponse } from "@/api/types";
+import type { CoverageResponse, JobRow } from "@/api/types";
 import { getJson } from "@/api/client";
 import { useHealthStore } from "@/stores/health";
 
@@ -338,6 +389,59 @@ function statusLabel(status: string | null): string {
   const labels: Record<string, string> = { ok: "成功", error: "失败", running: "运行中", skipped: "跳过", interrupted: "中断" };
   return labels[status] ?? status;
 }
+
+/** 超过 24h 未跑标黄，超过 72h 标红（用户要求的作业时效约束） */
+const STALE_WARN_HOURS = 24;
+const STALE_DOWN_HOURS = 72;
+
+function runAgeHours(iso: string | null): number | null {
+  if (!iso) return null;
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return null;
+  return (Date.now() - ts) / 3_600_000;
+}
+
+interface StaleMark {
+  text: string;
+  cls: string;
+  title: string;
+}
+
+function jobStale(job: JobRow): StaleMark {
+  const hours = runAgeHours(job.last_run_at);
+  if (hours === null) {
+    return {
+      text: "从未运行",
+      cls: "badge--warn",
+      title: "没有最近运行记录：确认任务已启用（启用列为「是」），或手动触发一次对应作业。",
+    };
+  }
+  const since = `最近一次运行 ${fmtDateTime(job.last_run_at)}`;
+  if (hours >= STALE_DOWN_HOURS) {
+    return {
+      text: `停滞 ${Math.floor(hours / 24)} 天`,
+      cls: "badge--down",
+      title: `${since}，已 ${Math.floor(hours / 24)} 天未运行（阈值 72 小时）：检查调度器是否在跑、任务是否被禁用。`,
+    };
+  }
+  if (hours >= STALE_WARN_HOURS) {
+    return {
+      text: `${Math.round(hours)} 小时未跑`,
+      cls: "badge--warn",
+      title: `${since}，已 ${Math.round(hours)} 小时未运行（阈值 24 小时）：可能是调度间隔较长或上次运行失败。`,
+    };
+  }
+  return {
+    text: `${hours < 1 ? "刚刚" : `${hours.toFixed(1)}h 前`}`,
+    cls: "",
+    title: `${since}（${hours.toFixed(1)} 小时前）`,
+  };
+}
+
+const staleJobs = computed(
+  () => jobs.value.filter((job) => (runAgeHours(job.last_run_at) ?? Infinity) >= STALE_WARN_HOURS).length,
+);
+const neverRanJobs = computed(() => jobs.value.filter((job) => !job.last_run_at).length);
 
 function countLabel(key: string): string {
   const labels: Record<string, string> = {
@@ -389,6 +493,11 @@ onMounted(() => {
 .table-wrap {
   overflow-x: auto;
 }
+/* 系统状态页的表格全部展开：作业 28 条、数据源 18 条、验收 14 项都要能直接看到，
+   不套全站 table-wrap 的 411px 内部滚动（否则最后一行会被裁掉半行）。 */
+.sys-wrap {
+  max-height: none;
+}
 .sys-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
@@ -415,6 +524,11 @@ onMounted(() => {
   font-family: var(--mono);
   color: var(--muted);
   font-weight: 600;
+}
+.sys-age {
+  font-family: var(--mono);
+  font-size: 10px;
+  white-space: nowrap;
 }
 @media (max-width: 1240px) {
   .sys-grid {

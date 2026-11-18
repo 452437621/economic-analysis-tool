@@ -238,7 +238,11 @@
               </button>
             </div>
           </div>
-          <EmptyState v-if="!heatGroups.length" text="暂无行情数据" />
+          <EmptyState
+            v-if="!heatGroups.length"
+            text="暂无行情数据"
+            hint="总览从最近一次分析快照取数：先到「市场行情」页确认日线已入库，或等下一次采集 / 分析作业跑完再刷新。"
+          />
         </div>
       </section>
 
@@ -257,7 +261,11 @@
             <span class="rate-chg" :class="row.chgClass">{{ row.chg }}</span>
             <span class="rate-spark"><Sparkline :values="row.spark" :positive="(row.chgValue ?? 0) >= 0" /></span>
           </div>
-          <EmptyState v-if="!rateRows.length" text="暂无利率数据" />
+          <EmptyState
+            v-if="!rateRows.length"
+            text="暂无利率数据"
+            hint="利率读数来自本地宏观 / 市场序列：到「利率与流动性」页查看哪条序列缺数据，等采集补齐后这里会自动出现。"
+          />
         </div>
         <div class="card-foot">利差单位 pp · {{ macroAsOf }} · 点击去利率页查看完整曲线</div>
       </aside>
@@ -293,7 +301,11 @@
             </div>
             <span class="alert-time">{{ fmtTime(alert.created_at, true) }}</span>
           </div>
-          <EmptyState v-if="!alertItems.length" text="暂无告警" />
+          <EmptyState
+            v-if="!alertItems.length"
+            text="暂无告警"
+            hint="预警台当前没有触发中的条件：阈值与订阅在「预警台」页配置，触发后这里才会列出。"
+          />
         </div>
       </section>
 
@@ -312,7 +324,11 @@
             <span class="cal-name">{{ event.name }}</span>
             <span class="cal-imp">{{ stars(event.importance) }}</span>
           </div>
-          <EmptyState v-if="!calendar.length" text="暂无日历数据" />
+          <EmptyState
+            v-if="!calendar.length"
+            text="暂无日历数据"
+            hint="经济日历由采集作业写入本地库：确认日历数据源健康（系统状态 → 数据源健康），或等下一次日历同步。"
+          />
           <template v-if="politicalEvents.length">
             <div class="cal-sep">近期事件</div>
             <div v-for="item in politicalEvents" :key="item.date + item.name" class="tl-row">

@@ -60,6 +60,7 @@ import type {
   V2RunList,
   V2Status,
   CycleConfigResponse,
+  CycleIndicatorsResponse,
   LedgerCalibration,
   LedgerCounts,
   LedgerForecastInput,
@@ -248,6 +249,9 @@ export const getCycleState = () => getJson<CycleStateResponse>("/api/v2/cycle/st
 export const getCycleConfig = () => getJson<CycleConfigResponse>("/api/v2/cycle/config");
 export const runCycle = () => postJson<CycleRunResult>("/api/v2/cycle/run", {});
 export const getCycleReadings = () => getJson<CycleReadingsResponse>("/api/v2/cycle/readings");
+/** 32 条指标的明细（evidence / source / stale_days / degraded / degrade_reason） */
+export const getCycleIndicators = () =>
+  getJson<CycleIndicatorsResponse>("/api/v2/cycle/indicators");
 
 /* 世界长河（V2.0 M3） */
 export const getTimelineOverview = () => getJson<TimelineOverview>("/api/v2/timeline/overview");

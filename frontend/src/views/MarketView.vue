@@ -297,7 +297,11 @@
                 <span class="member-pos">{{ fmtInt(row.position) }}</span>
                 <span class="member-chg" :class="trendClass(row.change)">{{ fmtInt(row.change) }}</span>
               </div>
-              <EmptyState v-if="!memberLong.length" text="暂无多头明细" />
+              <EmptyState
+              v-if="!memberLong.length"
+              text="暂无多头明细"
+              hint="当前周期没有品种进入多头名单：动量 / 趋势阈值未触发，或本维度序列尚未入库。"
+            />
             </div>
           </div>
           <div class="member-col">
@@ -313,7 +317,11 @@
                 <span class="member-pos">{{ fmtInt(row.position) }}</span>
                 <span class="member-chg" :class="trendClass(row.change)">{{ fmtInt(row.change) }}</span>
               </div>
-              <EmptyState v-if="!memberShort.length" text="暂无空头明细" />
+              <EmptyState
+              v-if="!memberShort.length"
+              text="暂无空头明细"
+              hint="当前周期没有品种进入空头名单：动量 / 趋势阈值未触发，或本维度序列尚未入库。"
+            />
             </div>
           </div>
         </div>

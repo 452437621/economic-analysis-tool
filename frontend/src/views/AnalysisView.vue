@@ -81,6 +81,203 @@
       </div>
     </section>
 
+    <!-- 引擎透明度：方法注册表 · 最新运行 · 证据等级 · 数据质量（独立于行情分析区块） -->
+    <section class="card table-card ana-block">
+      <div class="card-head">
+        <span class="card-title">方法注册表</span>
+        <span class="badge badge--sm">{{ methodTotal }} 个方法</span>
+        <div class="card-actions">
+          <span class="card-sub">每个结论都能追到方法 id 与代码指纹</span>
+          <RouterLink class="link-btn" to="/pipeline">分析过程 →</RouterLink>
+        </div>
+      </div>
+      <div v-if="methodsLoading && !methods" class="card-body">
+        <SkeletonBlock :rows="4" :cells="5" :height="12" :gap="9" />
+      </div>
+      <ErrorState v-else-if="methodsError && !methods" :error="methodsError" @retry="refreshMethods" />
+      <div v-else-if="!methodRows.length" class="card-body">
+        <EmptyState
+          text="方法注册表为空"
+          hint="后端 /api/v2/methods 没有返回任何方法：先确认后端已启动并注册了方法表，再点右上角「刷新」重试。"
+        />
+      </div>
+      <div v-else class="table-wrap">
+        <table class="data-table ana-method-table">
+          <thead>
+            <tr>
+              <th style="width: 214px">方法</th>
+              <th style="width: 80px">类型</th>
+              <th style="width: 56px">版本</th>
+              <th style="width: 92px">代码指纹</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="method in methodRows" :key="method.method_id">
+              <td>
+                <div class="ana-method-name">{{ method.name }}</div>
+                <div class="ana-method-id mono">{{ method.method_id }}</div>
+              </td>
+              <td><span class="badge badge--sm">{{ methodKindText(method.kind) }}</span></td>
+              <td class="mono dim">{{ method.version || "—" }}</td>
+              <td class="mono ana-sha" :title="method.code_sha || '未记录代码指纹'">{{ shaText(method.code_sha) }}</td>
+              <td class="ana-method-desc" :title="method.description || ''">{{ method.description || "未填写说明" }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card-foot">
+        <svg class="ic"><use href="#i-info" /></svg>
+        <span>代码指纹（code_sha）与运行记录里的 method_id 一起定位「这个结论由哪段代码、哪个版本算出」。</span>
+      </div>
+    </section>
+
+    <div class="ana-engine-grid">
+      <!-- 最新运行结论 -->
+      <section class="card table-card">
+        <div class="card-head">
+          <span class="card-title">最新运行结论</span>
+          <span class="badge badge--sm">{{ runs.length }} 次</span>
+          <div class="card-actions"><span class="card-sub">按开始时间倒序 · 最近 {{ RUN_LIMIT }} 次</span></div>
+        </div>
+        <div v-if="runsLoading && !runs" class="card-body">
+          <SkeletonBlock :rows="4" :cells="2" :height="12" :gap="9" />
+        </div>
+        <ErrorState v-else-if="runsError && !runs" :error="runsError" @retry="refreshRuns" />
+        <div v-else-if="!runs.length" class="card-body">
+          <EmptyState
+            text="尚无运行记录"
+            hint="玻璃盒每次运行都会落一条 run。先运行一次分析 / 周期 / 台账任务，或等下一次调度，再点「刷新」。"
+          />
+        </div>
+        <ul v-else class="ana-run-list">
+          <li v-for="run in runs" :key="run.id" class="ana-run">
+            <div class="ana-run-top">
+              <span class="badge badge--sm" :class="runStatusClass(run.status)">{{ runStatusText(run.status) }}</span>
+              <span class="mono ana-run-kind">{{ run.kind }} / {{ run.subject }}</span>
+              <span class="dim ana-run-time">{{ fmtTime(run.started_at, true) }}</span>
+            </div>
+            <div class="ana-run-sub">
+              <span>方法 <b class="mono">{{ run.method_id || "—" }}</b></span>
+              <span>耗时 {{ run.duration_ms === null ? "—" : `${fmtInt(run.duration_ms)} ms` }}</span>
+              <span>数据日 {{ run.asof ? fmtDate(run.asof) : "—" }}</span>
+            </div>
+            <div v-if="summaryChips(run).length" class="ana-run-chips">
+              <span v-for="chip in summaryChips(run)" :key="chip">{{ chip }}</span>
+            </div>
+            <div
+              v-if="run.degraded_reasons.length"
+              class="ana-run-degraded"
+              :title="run.degraded_reasons.map((item) => `${item.code}: ${item.message}`).join(' · ')"
+            >
+              降级 {{ run.degraded_reasons.length }} 项：{{ run.degraded_reasons[0].code }}
+            </div>
+            <div v-else-if="run.error" class="ana-run-degraded" :title="run.error">失败：{{ run.error }}</div>
+          </li>
+        </ul>
+        <div class="card-foot">结论摘要只列本次运行产出的条目数；完整步骤与规则命中见「分析过程」。</div>
+      </section>
+
+      <!-- 证据等级分布 -->
+      <section class="card table-card">
+        <div class="card-head">
+          <span class="card-title">证据等级分布</span>
+          <span class="badge badge--sm">{{ derivTotal }} 条推导</span>
+          <div class="card-actions"><span class="card-sub">E1 最强 → E4 最弱</span></div>
+        </div>
+        <div v-if="derivationsLoading && !derivations" class="card-body">
+          <SkeletonBlock :rows="3" :cells="2" :height="12" :gap="9" />
+        </div>
+        <ErrorState v-else-if="derivationsError && !derivations" :error="derivationsError" @retry="refreshDerivations" />
+        <div v-else-if="!derivations" class="card-body">
+          <EmptyState
+            text="尚无推导记录"
+            hint="推导由分析 / 周期 / 台账 / 黄金任务运行时写入；先运行一次任务或等待下一次调度，再点「刷新」。"
+          />
+        </div>
+        <template v-else>
+          <div class="card-body">
+            <div class="ana-grades">
+              <div v-for="row in gradeRows" :key="row.grade" class="ana-grade">
+                <span class="ana-grade-key mono">{{ row.grade }}</span>
+                <span class="ana-grade-track"><i :class="row.cls" :style="{ width: row.width }" /></span>
+                <span class="ana-grade-n mono">{{ row.n }}</span>
+              </div>
+            </div>
+            <div class="ana-grade-legend">
+              E1 本地序列可回算 · E2 官方数据（含人工口径） · E3 估算 / 代理 · E4 人工研判；折算权重 1.0 / 0.95 / 0.90 / 0.75 / 0.50（见 config/cycle.yaml）。
+            </div>
+            <div v-if="recentDerivations.length" class="ana-derivs">
+              <div v-for="item in recentDerivations" :key="item.id" class="ana-deriv">
+                <span class="badge badge--sm" :class="gradeClass(item.evidence_grade)">{{ item.evidence_grade }}</span>
+                <span class="ana-deriv-claim" :title="item.claim">{{ item.claim }}</span>
+                <span class="ana-deriv-meta mono">
+                  {{ item.code }} · 置信 {{ item.confidence === null ? "—" : fmtNumber(item.confidence, 2) }}
+                </span>
+              </div>
+            </div>
+            <div v-else class="ana-deriv-blank">取回的推导里没有可展示的结论（claim 为空）。</div>
+          </div>
+          <div class="card-foot">证据等级衡量「这条结论能否回算」，不衡量它的重要性。</div>
+        </template>
+      </section>
+    </div>
+
+    <!-- 数据质量 -->
+    <section class="card table-card ana-block">
+      <div class="card-head">
+        <span class="card-title">数据质量</span>
+        <span class="badge badge--sm" :class="qualityPassedClass">{{ qualitySummaryText }}</span>
+        <div class="card-actions"><span class="card-sub">{{ qualityDateLabel }}</span></div>
+      </div>
+      <div v-if="qualityLoading && !quality" class="card-body">
+        <SkeletonBlock :rows="4" :cells="6" :height="12" :gap="9" />
+      </div>
+      <ErrorState v-else-if="qualityError && !quality" :error="qualityError" @retry="refreshQuality" />
+      <div v-else-if="!qualityRows.length" class="card-body">
+        <EmptyState
+          text="尚无质检结果"
+          hint="新鲜度 / 覆盖率 / 连续性 / 对账检查由定时作业写入；到「系统状态」确认作业是否跑过，再回来点「刷新」。"
+        />
+      </div>
+      <div v-else class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width: 176px">数据集</th>
+              <th style="width: 96px">检查类型</th>
+              <th class="num" style="width: 88px">期望</th>
+              <th class="num" style="width: 88px">实际</th>
+              <th class="num" style="width: 80px">偏差</th>
+              <th style="width: 70px">结果</th>
+              <th>明细</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in qualityRows" :key="`${row.kind}-${row.dataset}-${row.symbol ?? ''}`">
+              <td>
+                {{ row.dataset }}<span v-if="row.symbol" class="dim"> · {{ row.symbol }}</span>
+              </td>
+              <td class="dim">{{ qualityKindText(row.kind) }}</td>
+              <td class="num">{{ fmtNumber(row.expected, 2) }}</td>
+              <td class="num">{{ fmtNumber(row.actual, 2) }}</td>
+              <td class="num">{{ fmtNumber(row.deviation, 2) }}</td>
+              <td>
+                <span class="badge badge--sm" :class="row.passed ? 'badge--live' : 'badge--down'">
+                  {{ row.passed ? "通过" : "未通过" }}
+                </span>
+              </td>
+              <td class="ana-quality-detail" :title="row.detail || ''">{{ row.detail || "—" }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card-foot">
+        <svg class="ic"><use href="#i-info" /></svg>
+        <span>检查时间 {{ qualityDateLabel }} · 未通过项会在「预警台」告警，明细里写明偏差来源。</span>
+      </div>
+    </section>
+
     <!-- 首次加载骨架 -->
     <template v-if="!overview && loading">
       <div class="analysis-top">
@@ -220,7 +417,11 @@
                 <span class="corr-track"><i :class="trendClass(pair.corr)" :style="{ width: corrWidth(pair.corr) }"></i></span>
                 <span class="corr-val num" :class="trendClass(pair.corr)">{{ fmtSigned(pair.corr, 3) }}</span>
               </div>
-              <EmptyState v-if="!correlation.top_pairs.length" text="暂无相关性样本" />
+              <EmptyState
+                v-if="!correlation.top_pairs.length"
+                text="暂无相关性样本"
+                hint="本地相关性快照里没有可对比的品种对：确认至少两个标的的日线已入库，再等一次分析作业。"
+              />
             </div>
           </div>
           <EmptyState v-else text="相关性数据缺失" hint="等待分析任务产出相关性快照。" />
@@ -423,9 +624,17 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import SkeletonBlock from "@/components/ui/SkeletonBlock.vue";
 import { usePolling } from "@/composables/usePolling";
-import { fmtDate, fmtInt, fmtMacro, fmtNumber, fmtPct, fmtSigned, fmtTime, trendClass } from "@/composables/useFormat";
-import { getAnalytics, getGoldOverview } from "@/api/endpoints";
-import type { CalendarStudyGroup, GoldFactor, Regime } from "@/api/types";
+import { fmtDate, fmtDateTime, fmtInt, fmtMacro, fmtNumber, fmtPct, fmtSigned, fmtTime, trendClass } from "@/composables/useFormat";
+import { getAnalytics, getGoldOverview, getQuality, getV2Derivations, getV2Methods, getV2Runs } from "@/api/endpoints";
+import type {
+  CalendarStudyGroup,
+  GoldFactor,
+  QualityRow,
+  Regime,
+  V2Derivation,
+  V2Method,
+  V2Run,
+} from "@/api/types";
 import { useHistoryStore } from "@/stores/history";
 
 const historyStore = useHistoryStore();
@@ -439,6 +648,143 @@ const { data: gold, error: goldError, loading: goldLoading, refresh: refreshGold
   getGoldOverview,
   { interval: 60000 },
 );
+
+/* ── 引擎透明度：方法注册表 / 运行 / 推导证据 / 数据质量（各自独立轮询） ── */
+const RUN_LIMIT = 6;
+const DERIV_LIMIT = 60;
+
+const {
+  data: methods,
+  error: methodsError,
+  loading: methodsLoading,
+  refresh: refreshMethods,
+} = usePolling(getV2Methods, { interval: 120000 });
+
+const {
+  data: runsData,
+  error: runsError,
+  loading: runsLoading,
+  refresh: refreshRuns,
+} = usePolling(() => getV2Runs({ limit: RUN_LIMIT }), { interval: 120000 });
+
+const {
+  data: derivations,
+  error: derivationsError,
+  loading: derivationsLoading,
+  refresh: refreshDerivations,
+} = usePolling(() => getV2Derivations({ limit: DERIV_LIMIT }), { interval: 120000 });
+
+const {
+  data: quality,
+  error: qualityError,
+  loading: qualityLoading,
+  refresh: refreshQuality,
+} = usePolling(getQuality, { interval: 120000 });
+
+const methodTotal = computed(() => methods.value?.total ?? 0);
+const methodRows = computed<V2Method[]>(() => methods.value?.items ?? []);
+const runs = computed<V2Run[]>(() => runsData.value?.items ?? []);
+const derivTotal = computed(() => derivations.value?.total ?? 0);
+const qualityRows = computed<QualityRow[]>(() => quality.value?.data ?? []);
+
+const recentDerivations = computed<V2Derivation[]>(() =>
+  (derivations.value?.items ?? []).filter((item) => item.claim).slice(0, 3),
+);
+
+/** 证据等级计数（E1–E4 + 其它，只显示出现过的等级） */
+const gradeRows = computed(() => {
+  const known = ["E1", "E2", "E3", "E4"];
+  const counts = new Map<string, number>();
+  for (const item of derivations.value?.items ?? []) {
+    const grade = (item.evidence_grade || "—").toUpperCase();
+    counts.set(grade, (counts.get(grade) ?? 0) + 1);
+  }
+  const grades = [...known.filter((grade) => counts.has(grade)), ...[...counts.keys()].filter((grade) => !known.includes(grade))];
+  const max = Math.max(1, ...grades.map((grade) => counts.get(grade) ?? 0));
+  return grades.map((grade) => ({
+    grade,
+    n: counts.get(grade) ?? 0,
+    width: `${Math.max(4, Math.round(((counts.get(grade) ?? 0) / max) * 100))}%`,
+    cls: gradeClass(grade),
+  }));
+});
+
+function gradeClass(grade: string): string {
+  const key = (grade || "").toUpperCase();
+  if (key === "E1") return "ana-grade--e1";
+  if (key === "E2") return "ana-grade--e2";
+  if (key === "E3") return "ana-grade--e3";
+  if (key === "E4") return "ana-grade--e4";
+  return "ana-grade--other";
+}
+
+function methodKindText(kind: string | null | undefined): string {
+  if (!kind) return "—";
+  const labels: Record<string, string> = { model: "模型", pipeline: "流水线", ingest: "采集", dataset: "数据集" };
+  return labels[kind] ?? kind;
+}
+
+function shaText(sha: string | null | undefined): string {
+  if (!sha) return "—";
+  return sha.slice(0, 8);
+}
+
+function runStatusText(status: string): string {
+  if (status === "ok") return "成功";
+  if (status === "degraded") return "降级";
+  if (status === "failed") return "失败";
+  if (status === "running") return "运行中";
+  return status || "—";
+}
+
+function runStatusClass(status: string): string {
+  if (status === "ok") return "badge--live";
+  if (status === "degraded") return "badge--warn";
+  if (status === "failed") return "badge--down";
+  return "";
+}
+
+/** 运行摘要：取 summary 里前 4 个标量键值，拼成「键 值」芯片 */
+function summaryChips(run: V2Run): string[] {
+  const summary = run.summary;
+  if (!summary) return [];
+  const chips: string[] = [];
+  for (const [key, raw] of Object.entries(summary)) {
+    if (chips.length >= 4) break;
+    if (raw === null || raw === undefined) continue;
+    if (typeof raw === "object") continue;
+    const value = typeof raw === "number" ? fmtInt(raw) : String(raw);
+    chips.push(`${key} ${value}`);
+  }
+  return chips;
+}
+
+const qualitySummaryText = computed(() => {
+  const summary = quality.value?.summary;
+  if (!summary) return "— / — 通过";
+  return `${summary.passed} / ${summary.total} 通过`;
+});
+
+const qualityPassedClass = computed(() => {
+  const summary = quality.value?.summary;
+  if (!summary) return "";
+  return summary.failed > 0 ? "badge--warn" : "badge--live";
+});
+
+const qualityDateLabel = computed(() => {
+  const first = quality.value?.data?.[0];
+  return first?.check_date ? `检查于 ${fmtDateTime(first.check_date)}` : "尚未产出检查结果";
+});
+
+function qualityKindText(kind: string): string {
+  const labels: Record<string, string> = {
+    freshness: "新鲜度",
+    coverage: "覆盖率",
+    continuity: "连续性",
+    reconcile: "对账",
+  };
+  return labels[kind] ?? kind;
+}
 
 const goldScore = computed(() => gold.value?.score ?? null);
 const goldLabel = computed(() => goldScore.value?.label ?? "—");
@@ -499,9 +845,16 @@ function goldSignalClass(signal: string): string {
   return "";
 }
 
-/** 刷新按钮同时刷新分析引擎与黄金研判 */
+/** 刷新按钮同时刷新分析引擎、黄金研判与引擎透明度四块 */
 function refreshAll(): void {
-  void Promise.all([refresh(), refreshGold()]);
+  void Promise.all([
+    refresh(),
+    refreshGold(),
+    refreshMethods(),
+    refreshRuns(),
+    refreshDerivations(),
+    refreshQuality(),
+  ]);
 }
 
 /** 归因资产展示名（后端只返回 symbol） */
@@ -1292,6 +1645,207 @@ function openHistory(symbol: string, name: string): void {
   }
   .gold-link {
     margin-top: 6px;
+  }
+}
+
+/* ── 引擎透明度：方法注册表 · 运行 · 证据等级 · 数据质量 ── */
+.ana-block {
+  margin-top: 10px;
+}
+.ana-engine-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+  align-items: stretch;
+}
+.ana-engine-grid > .card {
+  display: flex;
+  flex-direction: column;
+}
+.ana-engine-grid > .card > .card-foot {
+  margin-top: auto;
+}
+.ana-method-table tbody td {
+  height: auto;
+  padding: 7px 10px;
+  vertical-align: top;
+}
+.ana-method-name {
+  font-size: 12px;
+  font-weight: 600;
+}
+.ana-method-id {
+  margin-top: 1px;
+  font-size: 10px;
+  color: var(--dim);
+}
+.ana-sha {
+  color: var(--muted);
+  font-size: 10.5px;
+}
+.ana-method-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--dim);
+  font-size: 11px;
+  white-space: normal;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.ana-run-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ana-run {
+  padding: 9px 13px;
+  border-bottom: 1px solid var(--border);
+}
+.ana-run:last-child {
+  border-bottom: 0;
+}
+.ana-run-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.ana-run-kind {
+  font-size: 11px;
+  font-weight: 600;
+}
+.ana-run-time {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.ana-run-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--dim);
+}
+.ana-run-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+.ana-run-chips > span {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 9.5px;
+}
+.ana-run-degraded {
+  margin-top: 5px;
+  font-size: 10px;
+  color: var(--warn);
+}
+.ana-grades {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.ana-grade {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+}
+.ana-grade-key {
+  width: 20px;
+  color: var(--dim);
+}
+.ana-grade-track {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.ana-grade-track > i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--dim);
+}
+.ana-grade-track > i.ana-grade--e1 {
+  background: var(--ok);
+}
+.ana-grade-track > i.ana-grade--e2 {
+  background: var(--accent);
+}
+.ana-grade-track > i.ana-grade--e3 {
+  background: var(--warn);
+}
+.ana-grade-track > i.ana-grade--e4 {
+  background: var(--down-color);
+}
+.ana-grade-n {
+  width: 20px;
+  text-align: right;
+  color: var(--dim);
+  font-size: 10px;
+}
+.ana-grade-legend {
+  margin-top: 8px;
+  font-size: 9.5px;
+  line-height: 1.55;
+  color: var(--dim);
+}
+.ana-derivs {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
+}
+.ana-deriv {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.ana-deriv-claim {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ana-deriv-meta {
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  color: var(--dim);
+}
+.ana-deriv-blank {
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--dim);
+}
+.ana-quality-detail {
+  max-width: 340px;
+  overflow: hidden;
+  color: var(--dim);
+  font-size: 10.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 1100px) {
+  .ana-engine-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

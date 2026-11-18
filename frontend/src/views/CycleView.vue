@@ -416,6 +416,106 @@
         </section>
       </div>
 
+      <section class="card cyc-trans-card">
+        <div class="card-head">
+          <span class="card-title">结构性 / 人工观测</span>
+          <span class="cyc-card-sub">
+            这些指标没有可自动回算的序列，由人工观测登记；逐条列出证据等级、来源与观测时效，方便核对口径
+          </span>
+          <div class="card-actions">
+            <span class="badge badge--sm">{{ structuralRows.length }} 条</span>
+            <span class="badge badge--sm" :class="structuralDegradedCount ? 'badge--warn' : 'badge--live'">
+              降级 {{ structuralDegradedCount }}
+            </span>
+            <span class="gen-at mono" :title="oldestStaleTitle">最旧 {{ oldestStaleText }}</span>
+          </div>
+        </div>
+        <SkeletonBlock v-if="indicatorPoll.loading.value && !structuralRows.length" :rows="6" />
+        <ErrorState
+          v-else-if="indicatorPoll.error.value && !structuralRows.length"
+          :error="indicatorPoll.error.value"
+          @retry="refreshIndicators"
+        />
+        <div v-else class="table-wrap cyc-trans-wrap">
+          <table class="data-table cyc-trans-table">
+            <thead>
+              <tr>
+                <th>指标</th>
+                <th>分量</th>
+                <th class="num">数值</th>
+                <th class="num">z</th>
+                <th class="num">得分</th>
+                <th>证据</th>
+                <th>来源</th>
+                <th>观测时效</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in structuralRows" :key="row.id">
+                <td class="cyc-trans-name">
+                  {{ row.name }}
+                  <div class="cyc-trans-id mono">{{ row.id }}</div>
+                </td>
+                <td><span class="badge badge--sm">{{ scoreLabel(row.score) }}</span></td>
+                <td class="num">
+                  {{ fmtNumber(row.value, 2) }}<small v-if="row.unit" class="cyc-trans-unit">{{ row.unit }}</small>
+                </td>
+                <td class="num">{{ fmtSigned(row.z, 2) }}</td>
+                <td class="num">{{ fmtNumber(row.score_value, 1) }}</td>
+                <td>
+                  <span class="badge badge--sm" :class="evidenceTone(row.evidence)" :title="evidenceTitle(row.evidence)">
+                    {{ row.evidence || "—" }}
+                  </span>
+                </td>
+                <td>
+                  <span class="cyc-trans-source" :title="row.source || '未登记来源'">{{ row.source || "—" }}</span>
+                </td>
+                <td>
+                  <span
+                    v-if="typeof row.stale_days === 'number'"
+                    class="badge badge--sm"
+                    :class="staleTone(row.stale_days)"
+                    :title="staleTitle(row)"
+                  >
+                    {{ row.stale_days }} 天
+                  </span>
+                  <span v-else class="dim" :title="`观测日 ${fmtDate(row.asof)}：后端未给出 stale_days`">未记录</span>
+                </td>
+                <td>
+                  <span
+                    v-if="row.degraded"
+                    class="badge badge--sm badge--warn cyc-trans-degraded"
+                    :title="row.degrade_reason || '后端标记为降级，但未给出原因'"
+                  >
+                    降级
+                  </span>
+                  <span v-else class="badge badge--sm badge--live">正常</span>
+                </td>
+              </tr>
+              <tr v-if="!structuralRows.length">
+                <td colspan="9">
+                  <EmptyState
+                    text="没有结构性 / 人工观测指标"
+                    hint="后端 /api/v2/cycle/indicators 返回的条目里没有 layer 为「结构性 / 人工观测」的指标：先确认 config/cycle.yaml 的 structural 段未被清空，再点右上角「刷新」。"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card-foot cyc-trans-foot">
+          <span class="cyc-trans-legend">
+            <b>证据等级</b>：E1 本地序列可回算 · E2 官方数据（人工口径） · E3 估算 / 代理 · E4 人工研判；折算权重
+            1.0 / 0.95 / 0.90 / 0.75 / 0.50。
+          </span>
+          <span class="cyc-trans-legend">
+            <b>观测时效</b>：stale_days 是「人工观测日距今的天数」，超过 30 天标黄、超过 90 天标红；降级条目的
+            degrade_reason 放在状态标记的 tooltip 里。
+          </span>
+        </div>
+      </section>
+
       <section class="card cyc-history-card">
         <div class="card-head">
           <span class="card-title">分量历史轨迹</span>
@@ -629,12 +729,14 @@ import {
   fmtTime,
 } from "@/composables/useFormat";
 import { getJson } from "@/api/client";
-import { getCycleConfig, getCycleReadings, getCycleState, runCycle } from "@/api/endpoints";
+import { getCycleConfig, getCycleReadings, getCycleIndicators, getCycleState, runCycle } from "@/api/endpoints";
 import type {
   CycleAlert,
   CycleAnalog,
   CycleAnalogs,
   CycleHistory,
+  CycleIndicator,
+  CycleIndicatorsResponse,
   CycleInventory,
   CycleKey,
   CycleLiquidity,
@@ -657,6 +759,77 @@ const { data, error, loading, refresh } = usePolling<CycleStateResponse>(getCycl
 
 /** 关键读数走独立接口：失败时只降级 C 段，不影响其余区块。 */
 const readingsPoll = usePolling<CycleReadingsResponse>(getCycleReadings, { interval: 60_000 });
+
+/** 指标全量（32 条，含 evidence / source / stale_days / degraded）：独立轮询，只用于透明度卡。 */
+const indicatorPoll = usePolling<CycleIndicatorsResponse>(getCycleIndicators, { interval: 120_000 });
+const refreshIndicators = (): void => {
+  void indicatorPoll.refresh();
+};
+
+const STRUCTURAL_LAYER = "结构性";
+const structuralRows = computed<CycleIndicator[]>(() =>
+  (indicatorPoll.data.value?.items ?? []).filter((row) => (row.layer ?? "").includes(STRUCTURAL_LAYER)),
+);
+const structuralDegradedCount = computed(() => structuralRows.value.filter((row) => row.degraded).length);
+const oldestStaleDays = computed<number | null>(() => {
+  const days = structuralRows.value
+    .map((row) => row.stale_days)
+    .filter((value): value is number => typeof value === "number");
+  return days.length ? Math.max(...days) : null;
+});
+const oldestStaleText = computed(() =>
+  oldestStaleDays.value === null ? "—" : `${oldestStaleDays.value} 天`,
+);
+const oldestStaleTitle = computed(() => {
+  if (oldestStaleDays.value === null) return "后端未给出 stale_days，无法判断观测时效";
+  const oldest = structuralRows.value
+    .filter((row) => row.stale_days === oldestStaleDays.value)
+    .map((row) => `${row.name}（观测日 ${fmtDate(row.asof)}）`);
+  return `最旧的人工观测：${oldest.join("、")}`;
+});
+
+const SCORE_LABEL: Record<string, string> = {
+  DMI: "债务动量",
+  GROWTH: "增长",
+  INFLATION: "通胀",
+  LIQUIDITY: "流动性",
+  ECI: "信用环境",
+  ICI: "库存周期",
+};
+function scoreLabel(score: string | null): string {
+  if (!score) return "—";
+  return SCORE_LABEL[score] ?? score;
+}
+
+const EVIDENCE_TEXT: Record<string, string> = {
+  E1: "本地序列可回算（权重 1.0）",
+  E2: "官方数据、人工录入口径（权重 0.95）",
+  E3: "估算 / 代理指标（权重 0.75）",
+  E4: "人工研判，无自动来源（权重 0.50）",
+};
+function evidenceTone(evidence: string | null): string {
+  if (evidence === "E1") return "badge--live";
+  if (evidence === "E2") return "badge--accent";
+  if (evidence === "E3") return "badge--warn";
+  if (evidence === "E4") return "badge--down";
+  return "";
+}
+function evidenceTitle(evidence: string | null): string {
+  if (!evidence) return "后端未给出证据等级：该指标无法按等级折算权重";
+  return EVIDENCE_TEXT[evidence] ?? `未识别的证据等级 ${evidence}`;
+}
+
+function staleTone(days: number): string {
+  if (days >= 90) return "badge--down";
+  if (days > 30) return "badge--warn";
+  return "";
+}
+function staleTitle(row: CycleIndicator): string {
+  if (row.stale_days === null) return "后端未给出 stale_days";
+  const days = row.stale_days;
+  const level = days >= 90 ? "超过 90 天，观测已明显过期" : days > 30 ? "超过 30 天，建议更新观测" : "在 30 天以内";
+  return `观测日 ${fmtDate(row.asof)}，已 ${days} 天未更新（${level}）。`;
+}
 
 const running = ref(false);
 const recalcError = ref<string | null>(null);
@@ -2243,6 +2416,62 @@ async function recalc(): Promise<void> {
 }
 .cyc-history-card {
   margin-top: 10px;
+}
+/* ── 结构性 / 人工观测透明度卡 ── */
+.cyc-trans-card {
+  margin-top: 10px;
+}
+/* 16 条人工观测全部展开，不套全站 table-wrap 的 411px 内部滚动 */
+.cyc-trans-wrap {
+  max-height: none;
+}
+.cyc-trans-table tbody td {
+  height: auto;
+  padding: 6px 10px;
+  vertical-align: top;
+}
+.cyc-trans-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cyc-trans-id {
+  font-size: 9px;
+  color: var(--dim);
+  font-weight: 400;
+  letter-spacing: 0.2px;
+}
+.cyc-trans-unit {
+  margin-left: 2px;
+  font-size: 9px;
+  color: var(--dim);
+}
+.cyc-trans-source {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  color: var(--muted);
+  font-size: 10px;
+}
+.cyc-trans-degraded {
+  cursor: help;
+}
+.cyc-trans-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+.cyc-trans-legend {
+  flex: 1 1 320px;
+  font-size: 9.5px;
+  line-height: 1.6;
+  color: var(--dim);
+}
+.cyc-trans-legend b {
+  color: var(--muted);
+  font-weight: 600;
 }
 .cyc-bottom {
   display: grid;

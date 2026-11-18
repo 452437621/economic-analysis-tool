@@ -119,65 +119,119 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card table-card">
         <div class="card-head">
           <div>
             <div class="card-title">预测清单</div>
-            <div class="card-sub">共 {{ items.length }} 条 · 到期自动结算并写入 <code>forecast_outcomes</code></div>
+            <div class="card-sub">
+              自动登记：每次核对按 60 日斜率登记 30 / 90 日预测，到期结算写入 <code>forecast_outcomes</code>
+            </div>
           </div>
-          <div class="card-actions ldg-tabs">
-            <button v-for="tab in tabs" :key="tab.id" class="ldg-tab" :class="{ on: filter === tab.id }" type="button" @click="filter = tab.id">
-              {{ tab.label }} <span>{{ tab.count }}</span>
-            </button>
+          <div class="card-actions">
+            <span class="badge badge--sm">未结 {{ openRows.length }} 条</span>
+            <span class="badge badge--sm">已结 {{ resolvedRows.length }} 条</span>
+            <span class="gen-at">生成于 {{ generatedLabel }}</span>
           </div>
         </div>
-        <div class="card-body">
+
+        <div class="ldg-group-head">
+          <span class="ldg-group-title">未结（open）</span>
+          <span class="ldg-group-sub">到期日未到，结算值与 Brier 留空</span>
+        </div>
+        <div class="table-wrap ldg-wrap">
           <EmptyState
-            v-if="!visible.length"
-            :text="items.length ? '当前筛选下没有预测' : '还没有预测记录'"
-            :hint="items.length
-              ? '切换到「全部」查看；「已结」只在到期结算后才有内容。'
-              : '在上方登记一条：方向 + 基线 + 期限 + 主观概率；到期后由「立即核对」自动结算并写入 forecast_outcomes。'"
+            v-if="!openRows.length"
+            text="今日尚无自动登记预测"
+            hint="「立即核对」会为周期读数按 60 日斜率自动登记 30 / 90 日预测（该序列至少需要 5 个历史点，不足则记为持平）；也可以在上方手动登记一条。"
           />
-          <div v-else class="table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>对象</th>
-                  <th>方向</th>
-                  <th>期限</th>
-                  <th>概率</th>
-                  <th>基线</th>
-                  <th>登记日</th>
-                  <th>到期日</th>
-                  <th>状态</th>
-                  <th>实际</th>
-                  <th>Brier</th>
-                  <th>备注</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in visible" :key="row.id">
-                  <td>{{ row.code_label }}</td>
-                  <td>{{ directionText(row.direction) }}</td>
-                  <td class="mono">{{ row.horizon_days }} 天</td>
-                  <td class="mono">{{ row.probability == null ? "—" : fmtNumber(row.probability, 2) }}</td>
-                  <td class="mono">{{ row.baseline_value == null ? "—" : fmtNumber(row.baseline_value, 2) }}</td>
-                  <td class="mono">{{ row.made_at ? fmtDate(row.made_at) : "—" }}</td>
-                  <td class="mono">{{ row.target_date }}</td>
-                  <td>
-                    <span v-if="row.status === 'open'" class="badge badge--sm">未结</span>
-                    <span v-else class="badge badge--sm" :class="row.hit ? 'badge--down' : 'badge--up'">
-                      {{ row.hit ? "命中" : "未中" }}
-                    </span>
-                  </td>
-                  <td class="mono">{{ row.actual == null ? "—" : fmtNumber(row.actual, 2) }}</td>
-                  <td class="mono">{{ row.brier == null ? "—" : fmtNumber(row.brier, 3) }}</td>
-                  <td class="ldg-note" :title="row.notes ?? ''">{{ row.notes || "—" }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <table v-else class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 158px">代码</th>
+                <th style="width: 62px">方向</th>
+                <th class="num" style="width: 70px">期限</th>
+                <th class="num" style="width: 92px">基线值</th>
+                <th class="num" style="width: 92px">目标值</th>
+                <th class="num" style="width: 66px">概率</th>
+                <th style="width: 70px">状态</th>
+                <th style="width: 88px">登记日</th>
+                <th style="width: 88px">到期日</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in openRows" :key="row.id">
+                <td :title="row.notes ?? ''">
+                  <span class="mono ldg-code">{{ row.code }}</span>
+                  <span class="dim ldg-code-label">{{ row.code_label }}</span>
+                </td>
+                <td>{{ directionText(row.direction) }}</td>
+                <td class="num">{{ row.horizon_days }} 天</td>
+                <td class="num">{{ row.baseline_value == null ? "—" : fmtNumber(row.baseline_value, 2) }}</td>
+                <td class="num" title="按 60 日斜率外推的点预测">{{ row.point == null ? "—" : fmtNumber(row.point, 2) }}</td>
+                <td class="num">{{ row.probability == null ? "—" : fmtNumber(row.probability, 2) }}</td>
+                <td><span class="badge badge--sm">未结</span></td>
+                <td class="mono">{{ row.made_at ? fmtDate(row.made_at) : "—" }}</td>
+                <td class="mono">{{ row.target_date }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="ldg-group-head">
+          <span class="ldg-group-title">已结（resolved）</span>
+          <span class="ldg-group-sub">命中记 1 / 未中记 0 · Brier = (概率 − 命中)²</span>
+        </div>
+        <div class="table-wrap ldg-wrap">
+          <EmptyState
+            v-if="!resolvedRows.length"
+            text="还没有到期结算的预测"
+            hint="到期后点「立即核对」结算：这里会显示结算值（到期日实际读数）、命中与否与 Brier；样本攒到 10 条以上，校准曲线才有意义。"
+          />
+          <table v-else class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 158px">代码</th>
+                <th style="width: 62px">方向</th>
+                <th class="num" style="width: 70px">期限</th>
+                <th class="num" style="width: 92px">基线值</th>
+                <th class="num" style="width: 92px">目标值</th>
+                <th class="num" style="width: 66px">概率</th>
+                <th style="width: 72px">结果</th>
+                <th class="num" style="width: 92px">结算值</th>
+                <th class="num" style="width: 74px">Brier</th>
+                <th style="width: 96px">结算日</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in resolvedRows" :key="row.id">
+                <td :title="row.notes ?? ''">
+                  <span class="mono ldg-code">{{ row.code }}</span>
+                  <span class="dim ldg-code-label">{{ row.code_label }}</span>
+                </td>
+                <td>{{ directionText(row.direction) }}</td>
+                <td class="num">{{ row.horizon_days }} 天</td>
+                <td class="num">{{ row.baseline_value == null ? "—" : fmtNumber(row.baseline_value, 2) }}</td>
+                <td class="num" title="按 60 日斜率外推的点预测">{{ row.point == null ? "—" : fmtNumber(row.point, 2) }}</td>
+                <td class="num">{{ row.probability == null ? "—" : fmtNumber(row.probability, 2) }}</td>
+                <td>
+                  <span class="badge badge--sm" :class="row.hit ? 'badge--live' : 'badge--down'">
+                    {{ row.hit ? "命中" : "未中" }}
+                  </span>
+                </td>
+                <td class="num">{{ row.actual == null ? "—" : fmtNumber(row.actual, 2) }}</td>
+                <td class="num">{{ row.brier == null ? "—" : fmtNumber(row.brier, 3) }}</td>
+                <td class="mono">{{ row.resolved_at ? fmtDate(row.resolved_at) : "—" }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card-foot ldg-settle">
+          <svg class="ic"><use href="#i-info" /></svg>
+          <span>
+            结算口径：基线值 = 登记当天的读数；目标值 = 按 60 日斜率外推的点预测；结算值 = 到期日的实际读数；
+            命中 = 实际相对基线的方向与预测方向一致；Brier = (概率 − 命中)²，0 最好、0.25 ≈ 随机 50%。
+          </span>
         </div>
       </div>
 
@@ -188,8 +242,22 @@
             <div class="card-sub">{{ calibration.note ?? "按期限分桶；样本积累后再看分桶差异" }}</div>
           </div>
           <div class="card-body">
-            <EmptyState v-if="!calibration.by_horizon.length" text="暂无已结预测" hint="到期结算后这里会出现按期限分桶的 Brier；先在上方登记一条预测并等待到期。" />
-            <EChart v-else :option="calibrationOption" :height="200" />
+            <EmptyState
+              v-if="calibration.n === 0"
+              text="样本不足（n=0），校准曲线与 Brier 需要至少 10 条已结算预测"
+              hint="预测登记后要等到到期日由「立即核对」结算；已结样本进入 forecast_outcomes 后，这里才画按期限分桶的 Brier。"
+            />
+            <EmptyState
+              v-else-if="!calibration.by_horizon.length"
+              :text="calibrationShortText"
+              hint="分桶要求同一期限至少 2 条已结预测；继续登记并等待到期结算后会自动成桶。"
+            />
+            <template v-else>
+              <EChart :option="calibrationOption" :height="200" />
+              <p v-if="calibration.n < 10" class="ldg-cal-warn">
+                当前只有 {{ calibration.n }} 条已结样本（低于 10 条），分桶 Brier 波动很大，只作方向参考。
+              </p>
+            </template>
             <p class="ldg-cal-note">
               参考：Brier 0.25 ≈ 随机猜测（恒定 50% 概率）；低于 0.15 说明概率已带信息量。已结 {{ calibration.n }} 条。
             </p>
@@ -260,7 +328,6 @@ const running = ref(false);
 const submitting = ref(false);
 const message = ref("");
 const messageError = ref(false);
-const filter = ref<"all" | "open" | "resolved">("all");
 
 const form = reactive({
   code: "",
@@ -350,18 +417,14 @@ const calibrationOption = computed<EChartsOption>(() => {
 
 const items = computed<LedgerForecast[]>(() => payload.value?.forecasts.items ?? []);
 
-const tabs = computed(() => [
-  { id: "all" as const, label: "全部", count: items.value.length },
-  { id: "open" as const, label: "未结", count: items.value.filter((row) => row.status === "open").length },
-  {
-    id: "resolved" as const,
-    label: "已结",
-    count: items.value.filter((row) => row.status === "resolved").length,
-  },
-]);
+/** 未结 / 已结两张分组表（自动登记后按状态分组，不再靠 tab 切换） */
+const openRows = computed<LedgerForecast[]>(() => items.value.filter((row) => row.status === "open"));
+const resolvedRows = computed<LedgerForecast[]>(() =>
+  items.value.filter((row) => row.status !== "open"),
+);
 
-const visible = computed(() =>
-  filter.value === "all" ? items.value : items.value.filter((row) => row.status === filter.value),
+const calibrationShortText = computed(
+  () => `已结 ${calibration.value.n} 条，但没有可用的分桶数据`,
 );
 
 const rateText = computed(() => {
@@ -657,5 +720,57 @@ async function submit(): Promise<void> {
   font-size: 11px;
   margin-top: 14px;
   padding: 10px 12px;
+}
+
+/* ── 未结 / 已结分组表 ── */
+.ldg-wrap {
+  max-height: none;
+}
+
+.ldg-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 13px 6px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+}
+
+.ldg-group-title {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+}
+
+.ldg-group-sub {
+  font-size: 9.5px;
+  color: var(--dim);
+}
+
+.ldg-code {
+  font-weight: 650;
+  font-size: 11px;
+}
+
+.ldg-code-label {
+  margin-left: 6px;
+  font-size: 10px;
+}
+
+.ldg-settle {
+  align-items: flex-start;
+  line-height: 1.6;
+}
+
+.ldg-settle .ic {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.ldg-cal-warn {
+  margin: 10px 0 0;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--warn);
 }
 </style>

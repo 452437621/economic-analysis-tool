@@ -948,6 +948,38 @@ export interface CycleReading {
   degrade_reason: string | null;
 }
 
+/**
+ * /api/v2/cycle/indicators 的单条指标：在 CycleReading 基础上带证据等级、来源、
+ * 时效（stale_days）与降级原因，用于「结构性 / 人工观测」透明度区块。
+ * 注意 score 在这里是分量键（DMI/ICI/ECI/GROWTH/INFLATION/LIQUIDITY），不是数值。
+ */
+export interface CycleIndicator {
+  id: string;
+  name: string;
+  score: string | null;
+  weight: number;
+  direction: number;
+  value: number | null;
+  unit: string | null;
+  asof: string | null;
+  z: number | null;
+  score_value: number | null;
+  evidence: string;
+  source: string | null;
+  layer: string;
+  why: string | null;
+  caveat: string | null;
+  stale_days: number | null;
+  degraded: boolean;
+  degrade_reason: string | null;
+}
+
+export interface CycleIndicatorsResponse {
+  items: CycleIndicator[];
+  total: number;
+  asof: string | null;
+}
+
 export interface CycleComposite {
   name: string | null;
   value: number | null;

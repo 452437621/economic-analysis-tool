@@ -19,7 +19,6 @@
         >
           <svg class="ic"><use :href="item.icon" /></svg>
           <span>{{ item.label }}</span>
-          <span v-if="badgeFor(item.to)" class="nav-badge">{{ badgeFor(item.to) }}</span>
         </RouterLink>
       </div>
     </nav>
@@ -30,7 +29,6 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
 import { useRoute } from "vue-router";
 import { useHealthStore } from "@/stores/health";
 
@@ -100,17 +98,10 @@ const NAV_GROUPS: NavGroup[] = [
 
 const route = useRoute();
 const health = useHealthStore();
-const counts = computed(() => health.counts);
 
 function isActive(to: string): boolean {
   if (to === "/") return route.path === "/";
   return route.path === to || route.path.startsWith(`${to}/`);
-}
-
-function badgeFor(to: string): string | number {
-  if (to === "/market") return counts.value?.instruments ?? "";
-  if (to === "/theses") return counts.value?.theses || "";
-  return "";
 }
 </script>
 
