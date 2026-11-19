@@ -1694,7 +1694,7 @@ export interface TradeStats extends TradeSummary {
 }
 
 // ── 双透镜（美联储主席 / 宋鸿兵）─────────────────────────────────────
-export type LensTab = "synthesis" | "fed" | "song" | "evidence";
+export type LensTab = "synthesis" | "fed" | "song" | "layers" | "personas" | "evidence";
 export type LensEvidence = "E0" | "E1" | "E2" | "E3" | "E4";
 
 export interface LensReading {
@@ -1760,12 +1760,58 @@ export interface LensAsset {
   last: number | null;
   fed: number | null;
   song: number | null;
+  scores?: Record<string, number>;
+  lenses?: number;
   consensus: number | null;
   label_consensus: string;
   agreement: string;
   direction: "up" | "down" | "flat";
   probability: number | null;
   advice: string;
+}
+
+/** 宏观层：增长 / 通胀 / 流动性 / 财政 / 融资 / 美元 / 曲线 */
+export interface LensMacroState {
+  regime: { id: string; label: string; note: string };
+  liquidity: { value: number | null; label: string };
+  fiscal: { value: number | null; label: string };
+  funding: { value: number | null; label: string };
+  flags: string[];
+  narrative: string;
+  coverage: { available: number; total: number };
+}
+
+/** 微观层：价格结构 / 实物紧张 / 拥挤度 */
+export interface LensMicroState {
+  risk_appetite: { id?: string; label: string; value?: number | null };
+  gold_micro: number | null;
+  crowding: string[];
+  narrative: string;
+  coverage: { available: number; total: number };
+}
+
+/** 人物透镜（9 位）：来自 config/personas/*.yaml */
+export interface LensPersona {
+  id: string;
+  name: string;
+  title?: string | null;
+  school?: string | null;
+  key_question?: string | null;
+  thesis?: string | null;
+  state: {
+    lean: { score: number; label: string };
+    coverage: { available: number; total: number };
+    fired_rules: string[];
+    critical_rules?: string[];
+    key_readings?: Array<Record<string, unknown>>;
+    narrative: string;
+  };
+  readings?: LensReading[];
+  catalog?: Array<Record<string, unknown>>;
+  scores?: Record<string, LensScore>;
+  coverage?: { available: number; total: number };
+  derivation?: LensDerivation;
+  method_id?: string | null;
 }
 
 export interface LensWarning {
@@ -1838,6 +1884,10 @@ export interface LensSynthesis {
   divergences: LensDivergence[];
   warnings: LensWarning[];
   consensus_count: number;
+  strong_count?: number;
+  lens_count?: number;
+  weights?: Record<string, number>;
+  headline?: Record<string, unknown>;
   narrative: string;
   outlook: LensOutlook;
   cycle_context: LensCycleContext;
@@ -1862,6 +1912,7 @@ export interface LensStateResponse {
     readings: LensReading[];
     catalog: string[];
     coverage: { available: number; total: number };
+    scores?: Record<string, LensScore>;
     derivation: LensDerivation;
     method_id: string | null;
   };
@@ -1870,11 +1921,37 @@ export interface LensStateResponse {
     readings: LensReading[];
     catalog: string[];
     coverage: { available: number; total: number };
+    scores?: Record<string, LensScore>;
     derivation: LensDerivation;
     method_id: string | null;
   };
+  macro: {
+    state: LensMacroState;
+    readings: LensReading[];
+    catalog: Array<Record<string, unknown>>;
+    coverage: { available: number; total: number };
+    scores?: Record<string, LensScore>;
+    derivation?: LensDerivation;
+    method_id?: string | null;
+  } | null;
+  micro: {
+    state: LensMicroState;
+    readings: LensReading[];
+    catalog: Array<Record<string, unknown>>;
+    coverage: { available: number; total: number };
+    scores?: Record<string, LensScore>;
+    derivation?: LensDerivation;
+    method_id?: string | null;
+  } | null;
+  personas: LensPersona[];
   synthesis: LensSynthesis;
-  rules: { fed: LensRule[]; song: LensRule[] };
+  rules: {
+    fed: LensRule[];
+    song: LensRule[];
+    macro?: LensRule[];
+    micro?: LensRule[];
+    personas?: Record<string, LensRule[]>;
+  };
   data_gaps: Array<{ id: string; label: string; reason: string; impact: string }>;
   disclaimer: string;
   config_version: string | null;

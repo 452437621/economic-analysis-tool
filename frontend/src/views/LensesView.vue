@@ -387,6 +387,147 @@
         </section>
       </template>
 
+      <!-- 宏观层 / 微观层 -->
+      <template v-else-if="activeTab === 'layers'">
+        <div v-if="!state.macro && !state.micro" class="card lens-card">
+          <EmptyState text="尚无宏观/微观层推导" hint="点击「重算双透镜」生成宏观层与微观层。" />
+        </div>
+        <div v-else class="lens-grid lens-grid--2">
+          <section v-if="state.macro" class="card lens-card">
+            <div class="card-head">
+              <span class="card-title">宏观层 · 象限与流动性</span>
+              <span class="spacer"></span>
+              <span class="badge badge--sm">{{ state.macro.coverage.available }}/{{ state.macro.coverage.total }}</span>
+            </div>
+            <div class="card-body">
+              <div class="lens-big">{{ state.macro.state.regime.label }}</div>
+              <p class="lens-muted">{{ state.macro.state.regime.note }}</p>
+              <div class="lens-kv"><span>净流动性 13 周</span><strong class="mono">{{ state.macro.state.liquidity.value ?? "—" }}% {{ state.macro.state.liquidity.label }}</strong></div>
+              <div class="lens-kv"><span>财政脉冲（TTM 赤字/GDP）</span><strong class="mono">{{ state.macro.state.fiscal.value ?? "—" }}% {{ state.macro.state.fiscal.label }}</strong></div>
+              <div class="lens-kv"><span>融资紧张度</span><strong class="mono">{{ state.macro.state.funding.value ?? "—" }}bp {{ state.macro.state.funding.label }}</strong></div>
+              <div v-if="state.macro.state.flags.length" class="lens-flags">
+                <span v-for="flag in state.macro.state.flags" :key="flag" class="badge badge--warn badge--sm">{{ flag }}</span>
+              </div>
+              <p class="lens-narrative">{{ state.macro.state.narrative }}</p>
+              <div class="lens-score-grid">
+                <div v-for="[id, score] in macroScores" :key="id" class="lens-score-row">
+                  <div class="lens-score-row-head">
+                    <span>{{ assetLabel(id) }}</span>
+                    <span class="mono" :class="scoreClass(score.score)">{{ fmtSigned(score.score) }} {{ score.label }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section v-if="state.micro" class="card lens-card">
+            <div class="card-head">
+              <span class="card-title">微观层 · 价格结构与实物紧张</span>
+              <span class="spacer"></span>
+              <span class="badge badge--sm">{{ state.micro.coverage.available }}/{{ state.micro.coverage.total }}</span>
+            </div>
+            <div class="card-body">
+              <div class="lens-big">{{ state.micro.state.risk_appetite.label }}</div>
+              <div class="lens-kv"><span>黄金微观评分</span><strong class="mono" :class="scoreClass(state.micro.state.gold_micro)">{{ fmtSigned(state.micro.state.gold_micro) }}</strong></div>
+              <div v-if="state.micro.state.crowding.length" class="lens-flags">
+                <span v-for="flag in state.micro.state.crowding" :key="flag" class="badge badge--warn badge--sm">{{ flag }}</span>
+              </div>
+              <p class="lens-narrative">{{ state.micro.state.narrative }}</p>
+              <div class="lens-score-grid">
+                <div v-for="[id, score] in microScores" :key="id" class="lens-score-row">
+                  <div class="lens-score-row-head">
+                    <span>{{ assetLabel(id) }}</span>
+                    <span class="mono" :class="scoreClass(score.score)">{{ fmtSigned(score.score) }} {{ score.label }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <section v-if="macroLayer" class="card lens-card">
+          <div class="card-head"><span class="card-title">宏观层读数（{{ macroLayer.coverage.available }}/{{ macroLayer.coverage.total }}）</span></div>
+          <div class="card-body">
+            <div class="lens-readings">
+              <div v-for="r in macroLayer.readings" :key="r.id" class="lens-reading" :class="{ 'is-missing': r.value === null }">
+                <div class="lens-reading-label">{{ r.label }}</div>
+                <div class="lens-reading-value mono">
+                  {{ r.value === null ? "缺失" : fmtNumber(r.value, r.digits) }}<small>{{ r.value === null ? "" : r.unit }}</small>
+                </div>
+                <div class="lens-reading-source"><span class="badge badge--sm">{{ r.evidence }}</span><span class="lens-muted">{{ r.note || r.source }}</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section v-if="microLayer" class="card lens-card">
+          <div class="card-head"><span class="card-title">微观层读数（{{ microLayer.coverage.available }}/{{ microLayer.coverage.total }}）</span></div>
+          <div class="card-body">
+            <div class="lens-readings">
+              <div v-for="r in microLayer.readings" :key="r.id" class="lens-reading" :class="{ 'is-missing': r.value === null }">
+                <div class="lens-reading-label">{{ r.label }}</div>
+                <div class="lens-reading-value mono">
+                  {{ r.value === null ? "缺失" : fmtNumber(r.value, r.digits) }}<small>{{ r.value === null ? "" : r.unit }}</small>
+                </div>
+                <div class="lens-reading-source"><span class="badge badge--sm">{{ r.evidence }}</span><span class="lens-muted">{{ r.note || r.source }}</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </template>
+
+      <!-- 人物透镜 -->
+      <template v-else-if="activeTab === 'personas'">
+        <div v-if="!state.personas.length" class="card lens-card">
+          <EmptyState text="尚无人物透镜" hint="确认 config/personas/*.yaml 存在后重算。" />
+        </div>
+        <div v-else class="lens-grid lens-grid--3">
+          <section v-for="persona in state.personas" :key="persona.id" class="card lens-card">
+            <div class="card-head">
+              <span class="card-title">{{ persona.name }}</span>
+              <span class="spacer"></span>
+              <span class="badge badge--sm" :class="persona.state.lean.score >= 0 ? 'badge--up' : 'badge--warn'">
+                {{ persona.state.lean.label }} {{ fmtSigned(persona.state.lean.score) }}
+              </span>
+            </div>
+            <div class="card-body">
+              <div class="lens-muted">{{ persona.title }}</div>
+              <div class="lens-muted">{{ persona.school }}</div>
+              <div class="lens-kv"><span>覆盖率</span><span class="mono">{{ persona.state.coverage.available }}/{{ persona.state.coverage.total }}</span></div>
+              <div class="lens-kv"><span>命中规则</span><span class="mono">{{ persona.state.fired_rules.length }} 条</span></div>
+              <div v-if="persona.state.fired_rules.length" class="lens-flags">
+                <span v-for="ruleId in persona.state.fired_rules" :key="ruleId" class="badge badge--warn badge--sm">{{ ruleId }}</span>
+              </div>
+              <p class="lens-muted">{{ persona.state.narrative }}</p>
+            </div>
+          </section>
+        </div>
+
+        <section class="card lens-card">
+          <div class="card-head"><span class="card-title">人物评分矩阵</span><span class="spacer"></span><span class="lens-muted">{{ personaMatrix.length }} 套透镜 × {{ matrixAssets.length }} 类资产</span></div>
+          <div class="card-body lens-table-wrap">
+            <table class="lens-table">
+              <thead>
+                <tr>
+                  <th>透镜</th>
+                  <th>倾向</th>
+                  <th v-for="asset in matrixAssets" :key="asset.id">{{ asset.label }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in personaMatrix" :key="row.id">
+                  <td>{{ row.name }}</td>
+                  <td class="mono" :class="scoreClass(row.lean)">{{ fmtSigned(row.lean) }}</td>
+                  <td v-for="asset in matrixAssets" :key="asset.id" class="mono" :class="scoreClass(row.scores[asset.id] ?? null)">
+                    {{ row.scores[asset.id] === undefined ? "—" : fmtSigned(row.scores[asset.id] ?? null) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </template>
+
       <!-- 规则与证据 -->
       <template v-else>
         <div class="lens-grid lens-grid--2">
@@ -587,6 +728,8 @@ const TABS: Array<{ id: LensTab; label: string }> = [
   { id: "synthesis", label: "合成研判" },
   { id: "fed", label: "美联储透镜" },
   { id: "song", label: "宋鸿兵透镜" },
+  { id: "layers", label: "宏观 / 微观" },
+  { id: "personas", label: "人物透镜" },
   { id: "evidence", label: "规则与证据" },
 ];
 
@@ -625,8 +768,23 @@ const fired = computed(() => ({
   fed: (state.value?.rules.fed ?? []).filter((r) => r.fired).length,
   song: (state.value?.rules.song ?? []).filter((r) => r.fired).length,
 }));
-const totalRules = computed(() => (state.value?.rules.fed.length ?? 0) + (state.value?.rules.song.length ?? 0));
-const firedCount = computed(() => fired.value.fed + fired.value.song);
+const totalRules = computed(() => {
+  if (!state.value) return 0;
+  const rules = state.value.rules;
+  let total = (rules.fed?.length ?? 0) + (rules.song?.length ?? 0);
+  total += (rules.macro?.length ?? 0) + (rules.micro?.length ?? 0);
+  for (const list of Object.values(rules.personas ?? {})) total += list.length;
+  return total;
+});
+const firedCount = computed(() => {
+  if (!state.value) return 0;
+  const rules = state.value.rules;
+  let total = fired.value.fed + fired.value.song;
+  total += (rules.macro ?? []).filter((r) => r.fired).length;
+  total += (rules.micro ?? []).filter((r) => r.fired).length;
+  for (const list of Object.values(rules.personas ?? {})) total += list.filter((r) => r.fired).length;
+  return total;
+});
 
 const stanceBadge = computed(() => {
   const value = state.value?.fed.state.stance ?? 50;
@@ -642,12 +800,40 @@ const goldClass = computed(() => {
 });
 const derivationRows = computed(() => {
   if (!state.value) return [];
-  return [
-    state.value.fed.derivation,
-    state.value.song.derivation,
-    state.value.synthesis.derivation,
-  ];
+  const rows = [state.value.fed.derivation, state.value.song.derivation];
+  if (state.value.macro?.derivation) rows.push(state.value.macro.derivation);
+  if (state.value.micro?.derivation) rows.push(state.value.micro.derivation);
+  for (const persona of state.value.personas) {
+    if (persona.derivation) rows.push(persona.derivation);
+  }
+  rows.push(state.value.synthesis.derivation);
+  return rows;
 });
+
+const macroLayer = computed(() => state.value?.macro ?? null);
+const microLayer = computed(() => state.value?.micro ?? null);
+const macroScores = computed(() => toScoreEntries(state.value?.macro?.scores));
+const microScores = computed(() => toScoreEntries(state.value?.micro?.scores));
+
+/** 人物评分矩阵：行=人物透镜，列=七类资产 */
+const personaMatrix = computed(() =>
+  (state.value?.personas ?? []).map((persona) => {
+    const scores: Record<string, number | null> = {};
+    for (const [assetId, item] of Object.entries(persona.scores ?? {})) {
+      scores[assetId] = item?.score ?? null;
+    }
+    return { id: persona.id, name: persona.name, lean: persona.state.lean.score, scores };
+  }),
+);
+const matrixAssets = computed(() =>
+  (state.value?.synthesis.assets ?? []).map((asset) => ({ id: asset.id, label: asset.label })),
+);
+
+function toScoreEntries(
+  scores: Record<string, { score: number | null; label: string }> | undefined,
+): Array<[string, { score: number | null; label: string }]> {
+  return Object.entries(scores ?? {});
+}
 
 function scoreClass(value: number | null | undefined): string {
   if (value === null || value === undefined) return "is-flat";

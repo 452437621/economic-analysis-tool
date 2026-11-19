@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+### 新增（多透镜扩展与数据补全，2026-11-19）
+
+- **人物研究**：新增 9 份研究笔记 [`docs/research/persona-*.md`](docs/research)——达里奥（DL1–DL11）、德鲁肯米勒（SD1–SD11）、马克斯（HM1–HM12）、冈拉克（JG1–JG12）、埃里安（EE1–EE12）、波萨（ZP1–ZP10）、佩蒂斯（MP1–MP12）、辜朝明（RK1–RK11）、政策四人体（PA1–PA12，拉加德/植田和男/贝森特/潘功胜）；每份 300–400 行，含 14 条指标、可证伪规则（阈值 + 失效条件 + 资产映射）、2023–2026 观点验证、出处分级与数据缺口。
+- **通用人物引擎**：新增 `backend/app/lens/persona.py`——YAML 驱动的透镜加载与校验（`load_specs`/`validate_spec`）、AST 白名单表达式沙箱（`z`/`pctile`/`chg`/`pct`/`yoy`/`ma`/`shift`/`sum12`/`ttm`，支持数字开头列名占位符与关键字参数）、读数/规则/七资产评分/lean 与覆盖率。新增 `config/personas/*.yaml` 9 份规格（合计 93 条规则）。
+- **宏观层与微观层**：新增 `backend/app/lens/layers.py`——宏观层 14 条读数（增长/通胀 z、实际利率、净流动性 `(FED_ASSETS−TGA−RRP)/1e12`、财政脉冲 TTM、利息/收入、融资压力、M2 同比、中美曲线）与 M1–M6 规则；微观层 14 条读数（SPX 偏离 200 日线、NDX/SPX、铜金比、油金比、金银比、COMEX 基差、中金价差、SGE 租借、ETF 流向、COT z、汇率与 A 股动量）与 P1–P6 规则。
+- **合成升级**：`backend/app/lens/engine.py` 从 2 套透镜扩到 13 套（美联储、宋鸿兵、宏观、微观 + 9 人物），`_synthesis` 改为加权合成（权重取 `config/lens.yaml`，合计 1.000；缺失透镜不计 0），一致度升级为多镜共振（≥2 套同向 min≥0.25）/共振强信号（≥3 套且 |consensus|≥0.6）/分歧（正负各≥0.35）/单一透镜；分歧按「最强多 vs 最强空」成对输出；推导从 3 条增至 14 条（`lens.macro.state`、`lens.micro.state`、9 条 `lens.persona.<id>.state`），方法注册新增 `lens.macro.v1`/`lens.micro.v1`/`lens.persona.v1`。
+- **数据源补全**：新增 `backend/app/ingest/providers/fed_h41.py`（美联储 H.4.1 资产负债表 6 条周频序列）、`fed_h6.py`（M1/M2/货币基础）、`nyfed_money.py`（TGCR/BGCR/OBFR 与隔夜逆回购余额）；`pipeline.py` 新增 `SOURCE_FED_RESEARCH`、`MACRO_SERIES_META` 19 个 code、世界银行 5 个结构性指标（经常账户、储蓄率、M2/GDP、资本形成、实际增长），并把联邦债务回补到 1800 天、财政部月度收支回补到 109 个月。`macro_series` 34 → **57 条**。
+- **API**：`/api/v2/lenses/*` 暴露 `macro`/`micro`/`personas` 与 `rules.{macro,micro,personas}`，人物条目补 `name/title/school/key_question/thesis`；`lenses` 新增每日 16:25 作业（`runner.py`、`scheduler.py`、`catchup.py`、`init_db.py` 种子同步）。
+- **前端**：`/lenses` 页签扩为 6 个（合成研判 / 美联储 / 宋鸿兵 / 宏观 / 微观 / 人物透镜 / 规则与证据），新增宏观象限卡、微观结构卡、两层读数网格、人物卡与人物评分矩阵，资产表增透镜数与逐镜分数。
+- **文档**：新增 [`docs/28-原始需求达成度审计.md`](docs/28-原始需求达成度审计.md)（原始需求逐条判定与证据、未达成清单、P0–P2 路线）与 [`docs/29-数据源与数据完整性.md`](docs/29-数据源与数据完整性.md)（provider→序列→覆盖、缺口与替代、完整性机制、新增数据源做法）；更新 `docs/27` 缺口表、README 状态与页面表。
+- **验证**：`tests/test_v2_lenses.py` 扩为 8 条（含人物规格校验）；`tests/test_macro_sources.py` 补 H.4.1/H.6 离线 stub；`scripts/lint.py` PASSED；`vue-tsc --noEmit` 0 error；`vite build` 成功；全量 `pytest -q` **358 passed**。
+
 ### 新增（双透镜：美联储一脉与宋鸿兵框架，2026-11-18）
 
 - **研究笔记**：新增 `docs/research/fed-chair-framework.md`（格林斯潘/伯南克/耶伦/鲍威尔：哲学演变、反应函数、26 指标、R1–R15、8 案例、2025–26 预警、S1–S27 出处与 20 处【未核实】）与 `docs/research/song-hongbing-framework.md`（《货币战争》理论骨架、资产映射、25 指标可得性、S1–S14、T1–T8、2023–2026 研判验证、N01–N50 出处）。新增设计说明 [`docs/27-双透镜-美联储与宋鸿兵.md`](docs/27-双透镜-美联储与宋鸿兵.md)。

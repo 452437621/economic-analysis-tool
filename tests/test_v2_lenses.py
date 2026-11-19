@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.lenses import router
 from app.lens import engine as lens_engine
+from app.lens import persona
 from app.main import app
 from app.models.base import Base, new_id
 from app.models.core import GoldMetric, Instrument, MacroObs, MacroSeries, MarketBar
@@ -29,6 +30,15 @@ ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = ROOT / "data" / "test" / "m0" / "lens-engine.db"
 DAYS = 420
 END = "2026-11-16"
+ASSETS = (
+    "us_equity",
+    "gold",
+    "silver",
+    "usd",
+    "cn_equity",
+    "long_bond",
+    "commodities",
+)
 
 MACRO_DAILY = {
     "US2Y": 3.9,
@@ -196,20 +206,51 @@ def client(lens_db):
 # ---------------------------------------------------------------- config
 def test_config_rules_and_weights():
     cfg = lens_engine.load_config()
-    assert cfg["synthesis"]["weights"] == {"fed": 0.5, "song": 0.5}
+    weights = cfg["synthesis"]["weights"]
+    # 多透镜：美联储 / 宋鸿兵 / 宏观层 / 微观层 / 9 位人物
+    assert set(weights) == {
+        "fed", "song", "macro", "micro",
+        "dalio", "druckenmiller", "marks", "gundlach",
+        "el_erian", "pozsar", "pettis", "koo", "policy_actors",
+    }
+    assert abs(sum(weights.values()) - 1.0) < 0.01
     assert len(cfg["fed_rules"]) == 12
     assert len(cfg["song_rules"]) == 12
+    assert len(cfg["macro_rules"]) == 6
+    assert len(cfg["micro_rules"]) == 6
     assert {rule["id"] for rule in cfg["fed_rules"]} == {f"F{i}" for i in range(1, 13)}
     # S6/S14 因缺可计算指标未纳入（见 config/lens.yaml 注释与 docs/27 §4.4），
     # 其余 12 条保留原始编号（S1–S5、S7–S13），不重新编号。
     assert {rule["id"] for rule in cfg["song_rules"]} == {
         "S1", "S2", "S3", "S4", "S5", "S7", "S8", "S9", "S10", "S11", "S12", "S13",
     }
-    for rule in cfg["fed_rules"] + cfg["song_rules"]:
+    for rule in cfg["fed_rules"] + cfg["song_rules"] + cfg["macro_rules"] + cfg["micro_rules"]:
         assert rule["severity"] in {"info", "watch", "warn", "critical"}
         assert rule["when"].get("all") or rule["when"].get("any")
+        assert rule["message"] and rule["falsifier"]
     gaps = {gap["id"] for gap in cfg["data_gaps"]}
-    assert {"song.comex_silver", "song.reserve_share", "fed.hy_oas", "fed.m2"} <= gaps
+    assert {"song.comex_silver", "song.reserve_share", "fed.hy_oas", "macro.m2_history"} <= gaps
+
+
+def test_persona_specs_load_and_validate():
+    specs = persona.load_specs()
+    assert {spec.id for spec in specs} == {
+        "dalio", "druckenmiller", "marks", "gundlach",
+        "el_erian", "pozsar", "pettis", "koo", "policy_actors",
+    }
+    for spec in specs:
+        assert issues_problem(spec) == [], f"{spec.id} 配置有问题：{issues_problem(spec)}"
+        assert 8 <= len(spec.readings) <= 16
+        assert 8 <= len(spec.rules) <= 12
+        assert set(spec.scores) == {
+            "us_equity", "gold", "silver", "usd", "cn_equity", "long_bond", "commodities",
+        }
+        assert spec.key_question and spec.thesis
+
+
+def issues_problem(spec) -> list[str]:
+    """只做结构性校验（不检查列名，允许测试库缺少部分序列）。"""
+    return [issue for issue in persona.validate_spec(spec) if "unknown column" not in issue]
 
 
 # ---------------------------------------------------------------- engine
@@ -218,7 +259,7 @@ def test_run_lenses_end_to_end(db):
 
     assert result["run"]["status"] in {"ok", "degraded"}
     assert result["run"]["id"]
-    assert result["config_version"] == "1.0.0"
+    assert result["config_version"] == "2.0.0"
 
     fed = result["fed"]
     song = result["song"]
@@ -239,18 +280,46 @@ def test_run_lenses_end_to_end(db):
     rules = result["rules"]
     assert len(rules["fed"]) == 12
     assert len(rules["song"]) == 12
+    assert len(rules["macro"]) == 6
+    assert len(rules["micro"]) == 6
     assert {item["status"] for item in rules["fed"]} <= {"fired", "miss", "unknown"}
     # S9 依赖 COMEX 白银库存，测试库没有该序列，必须诚实地标 unknown。
     s9 = next(item for item in rules["song"] if item["id"] == "S9")
     assert s9["status"] == "unknown"
 
+    # 宏观层 / 微观层
+    macro = result["macro"]
+    micro = result["micro"]
+    assert macro["state"]["regime"]["id"] in {
+        "reflation", "stagflation", "goldilocks", "deflation",
+    }
+    assert len(macro["readings"]) == 14
+    assert len(micro["readings"]) == 14
+    assert set(macro["scores"]) == set(ASSETS)
+    assert set(micro["scores"]) == set(ASSETS)
+
+    # 9 份人物透镜：读数可能因测试库缺列而降级，但结构与评分必须齐备。
+    personas = result["personas"]
+    assert len(personas) == len(persona.load_specs())
+    for item in personas:
+        assert item["state"]["lean"]["score"] == item["state"]["lean"]["score"]  # 非 NaN
+        assert -2.0 <= item["state"]["lean"]["score"] <= 2.0
+        assert len(item["state"]["fired_rules"]) <= len(item["rules"])
+        assert set(item["scores"]) == set(ASSETS)
+
     synthesis = result["synthesis"]
     assert synthesis["consensus_count"] >= 0
     assert len(synthesis["assets"]) == 7
+    assert synthesis["lens_count"] == 13
+    assert set(synthesis["weights"]) == {
+        "fed", "song", "macro", "micro", "dalio", "druckenmiller", "marks",
+        "gundlach", "el_erian", "pozsar", "pettis", "koo", "policy_actors",
+    }
     assert synthesis["outlook"]["horizon_days"] == 90
     assert synthesis["outlook"]["invalidators"]
     assert 0.3 <= synthesis["confidence"] <= 0.85
     assert synthesis["rule_metrics"], "synthesis 必须落库 rule_metrics 供只读接口重建规则"
+    assert synthesis["layer_metrics"]["macro"], "宏观层指标需落库，供只读接口重建规则"
 
     codes = {
         row.code
@@ -258,17 +327,26 @@ def test_run_lenses_end_to_end(db):
             select(Derivation).where(Derivation.run_id == result["run"]["id"])
         )
     }
-    assert codes == {"lens.fed.state", "lens.song.state", "lens.synthesis"}
+    assert {"lens.fed.state", "lens.song.state", "lens.macro.state",
+            "lens.micro.state", "lens.synthesis"} <= codes
+    assert sum(1 for code in codes if code.startswith("lens.persona.")) == len(personas)
 
     observations = db.scalars(select(Observation).where(Observation.code.like("lens.%"))).all()
     # 只记录有值的读数（缺失项留给 data_gaps 与 reading.missing_reason），
-    # 加上 7 类资产的共识分；因此数量少于 21+31+7。
+    # 加上 7 类资产的共识分与各透镜 lean；因此数量少于全部读数之和。
     assert len(observations) >= 40
-    assert {row.code.split(".")[1] for row in observations} <= {"fed", "song", "score"}
-    assert {row.code.split(".")[1] for row in observations} == {"fed", "song", "score"}
+    prefixes = {row.code.split(".")[1] for row in observations}
+    persona_ids = {spec.id for spec in persona.load_specs()}
+    assert prefixes <= {"fed", "song", "macro", "micro", "score"} | persona_ids
+    assert {"fed", "song", "score"} <= prefixes
 
     hits = db.scalars(select(RuleHit).where(RuleHit.run_id == result["run"]["id"])).all()
-    assert all(hit.rule_id.startswith("lens.") for hit in hits)
+    # 规则命中统一前缀 lens.（降级原因记为 degrade.lens.*）。
+    assert hits, "至少应写入一条规则命中"
+    assert all(
+        hit.rule_id.startswith("lens.") or hit.rule_id.startswith("degrade.lens.")
+        for hit in hits
+    )
 
 
 def test_run_lenses_is_idempotent(db):
@@ -277,7 +355,8 @@ def test_run_lenses_is_idempotent(db):
     assert first["run"]["id"] != second["run"]["id"]
     rows = db.scalars(select(Derivation).where(Derivation.code.like("lens.%"))).all()
     # 推导 id 由方法+code+输入稳定决定，重跑 upsert 同一行并归到最新运行。
-    assert len(rows) == 3
+    # 13 套透镜 + 1 条合成 = 14 条推导。
+    assert len(rows) == 1 + 2 + 2 + len(persona.load_specs())
     assert {row.run_id for row in rows} == {second["run"]["id"]}
     states = db.scalars(select(AnalysisRun).where(AnalysisRun.kind == "lens")).all()
     assert len(states) >= 2
@@ -289,7 +368,7 @@ def test_api_state_payload(client):
     assert response.status_code == 200, response.text
     payload = response.json()
 
-    assert payload["config_version"] == "1.0.0"
+    assert payload["config_version"] == "2.0.0"
     assert payload["run"]["status"] in {"ok", "degraded"}
     assert payload["disclaimer"]
 
@@ -300,8 +379,22 @@ def test_api_state_payload(client):
     assert payload["fed"]["derivation"]["code"] == "lens.fed.state"
     assert payload["song"]["derivation"]["code"] == "lens.song.state"
 
+    # 宏观层 / 微观层 / 人物透镜对外暴露
+    assert payload["macro"] is not None and payload["micro"] is not None
+    assert len(payload["macro"]["readings"]) == 14
+    assert len(payload["micro"]["readings"]) == 14
+    assert payload["macro"]["state"]["regime"]["label"]
+    assert len(payload["personas"]) == len(persona.load_specs())
+    first = payload["personas"][0]
+    assert {"id", "name", "state", "scores", "catalog"} <= set(first)
+    assert first["state"]["lean"]["label"]
+    assert first["state"]["coverage"]["total"] >= 8
+
     assert len(payload["rules"]["fed"]) == 12
     assert len(payload["rules"]["song"]) == 12
+    assert len(payload["rules"]["macro"]) == 6
+    assert len(payload["rules"]["micro"]) == 6
+    assert len(payload["rules"]["personas"]) == len(payload["personas"])
     assert {item["id"] for item in payload["rules"]["fed"]} == {f"F{i}" for i in range(1, 13)}
     assert {item["id"] for item in payload["rules"]["song"]} == {
         "S1", "S2", "S3", "S4", "S5", "S7", "S8", "S9", "S10", "S11", "S12", "S13",
@@ -311,12 +404,16 @@ def test_api_state_payload(client):
 
     assert payload["synthesis"]["derivation"]["code"] == "lens.synthesis"
     assert len(payload["synthesis"]["assets"]) == 7
+    assert payload["synthesis"]["lens_count"] == 13
     assert payload["data_gaps"]
 
-    # 二次读取走落库路径，仍能重建全部规则（含未命中项）。
+    # 二次读取走落库路径，仍能重建全部规则（含未命中项）与人物透镜。
     again = client.get("/api/v2/lenses/state").json()
     assert len(again["rules"]["fed"]) == 12
     assert len(again["rules"]["song"]) == 12
+    assert len(again["rules"]["macro"]) == 6
+    assert len(again["rules"]["micro"]) == 6
+    assert len(again["personas"]) == len(payload["personas"])
     assert again["asof"] == payload["asof"]
 
 

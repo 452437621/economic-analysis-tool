@@ -1,0 +1,303 @@
+# 佐尔坦·波萨（Zoltan Pozsar）透镜 —— 机器可执行规格
+#
+# 取材：docs/research/persona-pozsar.md（2026-11-19，S01–S17 已标注）。
+# 定位：与 fed（时点）、song（尾部）、marks（风险姿态）同构的透镜，回答
+#   「美元资金市场的哪一段管道在漏水，纸面与实物是否已经分裂」，
+#   输出同一套 读数 → 规则 → 七类资产评分 → 推导落库。
+# 框架：布雷顿森林 III（金条背书 → 内部货币背书 → 外部货币背书）、
+#   美元资金市场管道（准备金/RRP/TGA 三件套、回购分层、季末月末效应）、
+#   纸面与实物分裂（COMEX 基差、SGE 租借、中国溢价、央行购金）、
+#   财政主导（利息挤压 + 期限溢价）。
+#
+# 表达式约定（引擎必须照此解释，否则读数与阈值全部错位）：
+#   * 函数：z(列, win=250)、pctile(列, win=2500)、chg(列, days=63)、pct(列, days=63)、
+#     yoy(列)、ma(列, n=20)、shift(列, n=1)；四则运算、括号、常量；参数可为列名或子表达式。
+#   * 窗口单位是「该序列自身的 bar 条数」：日频 63 bar ≈ 3 个月、250 bar ≈ 1 年；
+#     季频序列 chg(x, 4) = 4 个季度；月频序列 ma(x, 12) = 12 个月（TTM 口径）。
+#   * pctile 返回 0–1；chg 返回原单位差；pct 返回百分比变化（×100）。
+#   * 利率列单位是百分数（US30Y=5.41 即 5.41%）；SOFR_EFFR 已是百分数价差
+#     （0.040 = 4.0bp），故 ×100 得到 bp；US10Y_REAL 同理（2.88 即 2.88%）。
+#   * 新增列（US_FED_ASSETS / US_TGA / US_RRP_AMT / US_TGCR / US_BGCR / US_OBFR）
+#     按统一美元口径入库（与模板 expr US_RRP_AMT / 1000000000 得到十亿美元一致）。
+#   * 规则里 field: value 用读数当前值；chg 用读数最近 63 个交易日变化（引擎默认，
+#     无法按条件指定窗口）；pct 用 2520 日滚动百分位（0–1）；z 用 1260 日 z 分数。
+#   * 证据分级：E1 一手（波萨原文）；E2 本地直接序列；E3 自建合成/代理。
+#
+# 读数预算（14 条上限）与已知偏差（可复核）：
+#   1. ZP1 原为「三取二」：引擎 when 只支持平铺 all / any（嵌套不解析，all 与 any
+#      之间是 AND，无法表达计数阈值），故取已校准的硬组合 CN_GOLD_PREMIUM_PCT ≥ 2.0
+#      且 COMEX_GOLD_BASIS_PCT ≥ 0.9 作 AND；第三腿 SGE 租借单列为 zp.sge_lease 读数，
+#      供 ZP1 的人工复核与失效判断（三项同时回落到中位数以下才算分裂作废）。
+#   2. 相关性类条件无 corr 函数：ZP2 原为 60 日 corr(XAUUSD, US10Y_REAL) > −0.3，
+#      改用「实际利率 63 日上行 ≥20bp + 在岸溢价 ≥0.8% + 金 60 日不跌」三条件同向代理；
+#      ZP10 原为 60 日 corr(XAUUSD, DXY) ≥ +0.2，改用「金 60 日 ≥+10% 且 DXY 63 日上涨」
+#      的同向代理。两者都在 message / falsifier 里写明。
+#   3. ZP4 原为「SOFR_EFFR 5 日均值 >8bp 且 20 日已实现波动 >2×252 日中位数」：
+#      无 std / max 函数，波动腿改用 RRP 缓冲垫（≤2000 亿美元）判别「结构性而非季末
+#      噪声」（S12 的 Cinderella 口径）；5 日均值改为当日值，8bp 阈值保留。
+#   4. ZP7 原为 US_FED_DEBT 63 日涨幅 ≥2% 且 30s10s 20 日 +10bp：读数预算无法单列
+#      债务动量，改用波萨的数量维度 zp.net_liquidity（= 联储资产 − TGA − RRP）63 日
+#      变化 ≤ −3000 亿美元，叠加期限溢价 63 日 ≥+10bp；阈值按净流动性规模（约 5%）自标定。
+#   5. ZP8 原为 USDJPY / USDCHF / EURUSD 三币同时升值：三列均未纳入读数预算，用
+#      DXY 63 日 ≥+3 点（≈+2.9%）+ SOFR−EFFR ≥5bp 代理离岸美元荒；交叉货币基差
+#      本地无列（笔记 9.3），此代理置信度最低。
+#   6. ZP6 的 TTM 用月频 12 期移动均值实现（ma(x, 12)），与笔记 TTM 口径等价；
+#      笔记提到的「月度口径 27.9%」是单月值，不作为触发口径。
+#   7. 未编码（补齐对应读数即可按原编号恢复）：
+#      ZP9（商品抵押品 / 战争通胀，需 CL 与 US10Y_BE 的 20 日变化读数）、
+#      ZP11（流动性反噬开关，需 XAUUSD / SI / SPX 的 5 日跌幅读数，是本次最重要缺口，
+#      当前 −3.7% / −9.3% / −3.9% 已接近）、
+#      ZP12（双赤字，需 US_MTS_DEFICIT TTM / WB_US_GDP 读数，两列美元单位待入库校验）。
+#   8. field: pct 的分位窗口是引擎默认 2520 日（笔记写 250 日分位），口径更宽；
+#      ZP3 的 DXY 分位阈值 60% 原样保留，待引擎支持自定义分位窗口后收紧。
+#   9. LBMA_GOLD_TONNES / COMEX_GOLD_INVENTORY_TONNES 未单列读数（预算所限），
+#      实物库存维度用 COMEX 基差 + SGE 租借 + 中国溢价三处价格信号替代。
+#  10. COFER 美元份额本地无序列，用 zp.dxy 作代理（笔记 9.3 的建议口径）。
+
+id: pozsar
+name: 佐尔坦·波萨
+title: 前瑞信利率策略主管、布雷顿森林 III 提出者
+school: 货币市场管道 / 货币秩序
+key_question: 美元资金市场的哪一段管道正在漏水，纸面与实物是否已经分裂？
+thesis: "货币的信用基础正从内部货币（美债、准备金）向外部货币（黄金、商品、结算网络）迁移：制裁把商品变成带政治条件的抵押品，和平时期训练出来的回购与基差交易结构在季末与月末反复告急。利率水平不是重点，美元资金市场的管道才是——准备金、RRP、TGA 三件套决定冲击有没有缓冲垫，回购分层决定谁来接单，财政部发债决定长端由谁定价。纸面黄金与实物黄金一旦分裂（在岸溢价、交割基差、租借费率同处高分位），定价权就从利率模型回到实物结算；方向对而时点常错，所以这条主线要用开关规则交易，而不是趋势仓位。"
+
+# ── 读数：14 条，覆盖净流动性 / 回购管道 / 纸面与实物分裂 / 财政主导 / 美元裂缝 ──
+readings:
+  - id: zp.net_liquidity
+    label: 净流动性（联储资产 − TGA − RRP，十亿美元）
+    unit: "USD bn"
+    digits: 0
+    expr: "(US_FED_ASSETS - US_TGA - US_RRP_AMT) / 1000000000"
+    source: EPIC 自建（美联储 H.4.1 / 财政部 TGA / 纽约联储 RRP）
+    evidence: E3
+    note: 自建合成；波萨的数量维度总闸（quantities matter，S04）。三件套任一项缺数则整条读数不可用，不做事后补值
+  - id: zp.rrp
+    label: 隔夜逆回购余额（缓冲垫）
+    unit: "USD bn"
+    digits: 0
+    expr: "US_RRP_AMT / 1000000000"
+    source: 纽约联储（RRP）
+    evidence: E2
+    note: RRP 见底后货币市场再无缓冲垫（S12 Cheating on Cinderella）；2024-12 之后已接近零，任何季末跳升不再能用 RRP 解释
+  - id: zp.repo_split_bp
+    label: 回购市场分层（TGCR/BGCR 与 OBFR 之差）
+    unit: bp
+    digits: 1
+    expr: "((US_TGCR - US_BGCR) + (US_BGCR - US_OBFR)) * 100"
+    source: 纽约联储（TGCR / BGCR / OBFR）
+    evidence: E2
+    note: 恒等于 (TGCR − OBFR)×100，写成三段只为让三列都进表达式并保留可读性；正向 = 有担保利率高于无担保联邦基金，抵押品在交易商手里更贵
+  - id: zp.sofr_spike
+    label: SOFR 单日脉冲
+    unit: "%"
+    digits: 3
+    expr: "chg(SOFR, 1)"
+    source: 纽约联储（SOFR）
+    evidence: E2
+    note: 单位是百分数，0.15 即 15bp，与规则阈值同口径；对应笔记第 3 节指标 #2 的单日版本
+  - id: zp.sofr_effr_bp
+    label: 回购—政策利差（SOFR − EFFR）
+    unit: bp
+    digits: 1
+    expr: "SOFR_EFFR * 100"
+    source: 纽约联储（SOFR / EFFR）
+    evidence: E2
+    note: ">3bp 为杂音、>8bp 为管道压力、>15bp 为心梗（笔记第 3 节 #1）；5 日均值口径见文件头偏差 3"
+  - id: zp.cn_gold_premium
+    label: 中国黄金溢价（在岸实物需求）
+    unit: "%"
+    digits: 2
+    expr: "CN_GOLD_PREMIUM_PCT"
+    source: SGE 溢价（WGC / 本地序列）
+    evidence: E2
+    note: 序列中位数 0.70%；≥2.0% 约 90 分位 = 在岸实物挤兑，是 ZP1 的核心腿
+  - id: zp.comex_basis
+    label: COMEX 黄金基差（纸面紧张）
+    unit: "%"
+    digits: 2
+    expr: "COMEX_GOLD_BASIS_PCT"
+    source: COMEX / 本地序列
+    evidence: E2
+    note: 序列中位数 0.31%；≥0.9% 约 90 分位 = 交割与纸面紧张，是 ZP1 的第二腿
+  - id: zp.sge_lease
+    label: SGE 黄金 3M 租借利率（实物紧）
+    unit: "%"
+    digits: 2
+    expr: "SGE_GOLD_LEASE_3M_PCT"
+    source: SGE / 租借市场
+    evidence: E2
+    note: ZP1 的第三腿（三取二在引擎里不可表达，见文件头偏差 1）；中位数 0.72%、≥1.5% 约 90 分位
+  - id: zp.cb_gold_4q
+    label: 央行黄金 4 季度增量（吨）
+    unit: 吨
+    digits: 1
+    expr: "chg(CB_GOLD_GLOBAL_TONNES, 4)"
+    source: WGC 全球央行黄金储备 / 购金
+    evidence: E2
+    note: 列为季频储备水平（2026-06-30 为 32,044.82 吨），4 期差即 4Q 增量（当前 +106.4 吨）；阈值 400 吨 ≈ p75（4Q 增量序列中位数 312.5、最大 628.9）；若入库后为月频须改为 chg(..., 12)
+  - id: zp.gold_mom60
+    label: 黄金 60 日动量
+    unit: "%"
+    digits: 1
+    expr: "pct(XAUUSD, 60)"
+    source: XAUUSD 日线
+    evidence: E2
+    note: ZP2 的「金不跌」与 ZP10 的「金 60 日 ≥+10%」共用；当前 −18.9%（2026-01-28 见顶 5414.84 后回撤约 31%）
+  - id: zp.real10
+    label: 10Y 实际利率
+    unit: "%"
+    digits: 2
+    expr: "US10Y_REAL"
+    source: US10Y_REAL（TIPS）
+    evidence: E2
+    note: 规则里 field 取 chg 即 63 日变化、单位同为百分数（0.2 = 20bp）；笔记口径 20 日变化，见文件头偏差 2
+  - id: zp.term_premium
+    label: 期限溢价代理（30s10s）
+    unit: bp
+    digits: 0
+    expr: "(US30Y - US10Y) * 100"
+    source: US30Y − US10Y（代理，非 ACM 期限溢价）
+    evidence: E3
+    note: 代理口径；>50bp = 财政/供给主导，当前 +34bp（5s30s 为 +52bp，需另立读数）
+  - id: zp.interest_ratio
+    label: 利息支出/财政收入（TTM）
+    unit: "%"
+    digits: 1
+    expr: "ma(US_MTS_INTEREST, 12) / ma(US_MTS_RECEIPTS, 12) * 100"
+    source: 美国财政部 MTS（月频序列）
+    evidence: E2
+    note: 月频 12 期移动均值即 TTM；当前 TTM 19.82%，笔记的「月度口径 27.9%」是单月值、不作触发口径
+  - id: zp.dxy
+    label: 美元指数（体系裂缝，COFER 美元份额代理）
+    unit: ""
+    digits: 2
+    expr: "DXY"
+    source: DXY 日线（COFER 美元份额本地无序列）
+    evidence: E3
+    note: 代理；规则里 field 取 pct 为 2520 日分位、取 chg 为指数点变化（3 点约 +2.9%）；当前 103.92、250 日分位 100%
+
+# ── 规则：9 条，编号沿用笔记 ZP1–ZP12；未编码的 ZP9 / ZP11 / ZP12 见文件头偏差 7 ──
+rules:
+  - id: ZP1
+    name: 纸面—实物分裂
+    severity: warn
+    when:
+      all:
+        - {metric: zp.cn_gold_premium, field: value, op: ">=", value: 2.0}
+        - {metric: zp.comex_basis, field: value, op: ">=", value: 0.9}
+    message: 在岸溢价 ≥2.0% 且 COMEX 基差 ≥0.9%（两腿同处 90 分位），实物挤兑已压倒纸面定价；笔记原口径为三取二，引擎只能表达 AND，第三腿 zp.sge_lease ≥1.5% 作人工复核。多实物金/银、空长端美债、美元中性偏空。
+    falsifier: 三项同时回落到中位数以下（溢价 <0.7%、基差 <0.3%、租借 <0.7%）并持续 10 个交易日，分裂作废、定价权回到利率模型。
+    assets: [gold, silver, long_bond]
+    sources: ["S01", "S03", "S12"]
+  - id: ZP2
+    name: 金—实际利率脱钩（外部货币版）
+    severity: watch
+    when:
+      all:
+        - {metric: zp.real10, field: chg, op: ">=", value: 0.2}
+        - {metric: zp.cn_gold_premium, field: value, op: ">=", value: 0.8}
+        - {metric: zp.gold_mom60, field: value, op: ">=", value: 0}
+    message: 实际利率 63 日上行 ≥20bp 而金价 60 日仍未跌、在岸溢价 ≥0.8%（三条件同向替代原 corr 口径），黄金开始由外部货币需求而非机会成本定价；多金（即使实际利率继续上行）、空长债、美元中性。
+    falsifier: 金 60 日转为下跌 ≥10% 且在岸溢价回落 <0.7% 并持续 20 个交易日（利率重新主导，脱钩不成立）。
+    assets: [gold, long_bond]
+    sources: ["S01", "S10", "S13"]
+  - id: ZP3
+    name: 央行购金慢变量（官方去美元化）
+    severity: info
+    when:
+      all:
+        - {metric: zp.cb_gold_4q, field: value, op: ">=", value: 400}
+        - {metric: zp.dxy, field: pct, op: "<", value: 0.6}
+    message: 央行 4 季度购金 ≥400 吨（≈p75）而美元指数仍在 2520 日 60% 分位以下，官方部门持续把储备从内部货币换成外部货币，布雷顿森林 III 最慢也最硬的证据；黄金战略底仓、美元长期空、商品多。
+    falsifier: 连续两个季度 4Q 增量 <200 吨（p25 以下），或美元分位回到 60% 以上并维持 20 个交易日（购金放缓 + 强美元同时成立）。
+    assets: [gold, commodities, usd]
+    sources: ["S03", "S13"]
+  - id: ZP4
+    name: 回购管道结构压力（非季末噪声）
+    severity: warn
+    when:
+      all:
+        - {metric: zp.sofr_effr_bp, field: value, op: ">=", value: 8}
+        - {metric: zp.rrp, field: value, op: "<=", value: 200}
+    message: 回购—政策利差 ≥8bp 且 RRP 缓冲垫 ≤2000 亿美元，摩擦已不能用季末/月末效应解释，而是准备金与抵押品的结构性紧张；多金、空长债、权益先减杠杆。本地无 SRF 与贴现窗口数据（笔记 9.3），故只能停在 warn。
+    falsifier: 利差 5 日均值 <3bp 且 RRP 余额回到 5000 亿美元以上并持续 10 个交易日（缓冲垫恢复，属技术性摩擦）。
+    assets: [gold, long_bond, us_equity]
+    sources: ["S04", "S12"]
+  - id: ZP5
+    name: 心梗式流动性冲击
+    severity: critical
+    when:
+      any:
+        - {metric: zp.sofr_spike, field: value, op: ">", value: 0.15}
+        - {metric: zp.sofr_effr_bp, field: value, op: ">", value: 15}
+    message: 融资市场心梗——SOFR 单日跳升 >15bp，或回购—政策利差 >15bp；48 小时内卖一切换流动性（黄金也会先被卖），持美元与现金，之后由 ZP1 / ZP2 决定是否反手多金。
+    falsifier: SOFR 回到 5 日均值上下 5bp 以内且利差 <5bp（技术性噪声，而非融资失灵）。
+    assets: [us_equity, gold, usd]
+    sources: ["S01", "S04", "S10"]
+  - id: ZP6
+    name: 财政主导—利息挤压
+    severity: warn
+    when:
+      all:
+        - {metric: zp.interest_ratio, field: value, op: ">=", value: 25}
+        - {metric: zp.term_premium, field: value, op: ">=", value: 50}
+    message: 利息支出/财政收入 TTM ≥25% 且 30s10s ≥50bp，财政需求把货币政策绑住、长端开始为供给而非增长定价；空长债（价格）、多金、做陡 2s30s。当前 TTM 19.82%、30s10s 34bp，未触发但只差一档。
+    falsifier: 比率回落到 20% 以下，或 30s10s 收窄到 30bp 以内（利息挤压叙事不成立）。
+    assets: [long_bond, gold]
+    sources: ["S07", "S12"]
+  - id: ZP7
+    name: 净流动性抽水 + 期限溢价走阔
+    severity: watch
+    when:
+      all:
+        - {metric: zp.net_liquidity, field: chg, op: "<=", value: -300}
+        - {metric: zp.term_premium, field: chg, op: ">=", value: 10}
+    message: 净流动性（联储资产 − TGA − RRP）63 日缩水 ≥3000 亿美元，同时期限溢价 63 日走阔 ≥10bp，财政部发债与 TGA 重建正在抽走准备金、并把供给压力定价进长端；空长债、多金、权益降久期。阈值按净流动性规模约 5% 自标定（笔记原为 US_FED_DEBT 63 日涨幅 ≥2%，见文件头偏差 4）。
+    falsifier: 净流动性 63 日变化转正（≥0）或期限溢价回落 ≥10bp，说明是季节性缴税/季末而非供给加速。
+    assets: [long_bond, gold, us_equity]
+    sources: ["S04", "S07", "S12"]
+  - id: ZP8
+    name: 离岸美元荒（代理口径）
+    severity: warn
+    when:
+      all:
+        - {metric: zp.dxy, field: chg, op: ">=", value: 3}
+        - {metric: zp.sofr_effr_bp, field: value, op: ">=", value: 5}
+    message: 美元指数 63 日升值 ≥3 点（≈+2.9%）叠加回购—政策利差 ≥5bp，境外美元融资与境内管道同时收紧，是离岸美元荒的宏观指纹；多美元、短期空金、空非美权益。本地无 USDJPY / USDCHF / EURUSD 读数与交叉货币基差（笔记 9.3），此条置信度最低。
+    falsifier: DXY 63 日回落至 0 以下且利差 <3bp；单纯避险型美元走强（利差不升）不构成离岸美元荒。
+    assets: [usd, gold, cn_equity]
+    sources: ["S01", "S04"]
+  - id: ZP10
+    name: 美元—黄金同涨（体系分裂确认）
+    severity: watch
+    when:
+      all:
+        - {metric: zp.gold_mom60, field: value, op: ">=", value: 10}
+        - {metric: zp.dxy, field: chg, op: ">", value: 0}
+    message: 金价 60 日 ≥+10% 而美元指数同期也在升值，金与美元同涨 = 货币信用定价而非利率交易；多金、美元不追空、空长债。本地无 corr 函数，用同向上涨做代理（笔记原为 60 日 corr ≥ +0.2）。
+    falsifier: DXY 63 日转跌，或金 60 日涨幅回落到 0 以下（回到标准负相关，即利率主导）。
+    assets: [gold, long_bond]
+    sources: ["S01", "S10"]
+
+# 评分口径（2026-11-19，阶段 II「美元强 + 金弱 + 长端高」的过渡期：
+# 净流动性未确认转松、纸面与实物未分裂、财政主导未触发；分数是结构方向而非当期动量）
+scores:
+  us_equity: -1
+  gold: 2
+  silver: 1
+  usd: 0
+  cn_equity: 0
+  long_bond: -1
+  commodities: 1
+
+triggers:
+  - 中国溢价 ≥2.0% 与 COMEX 基差 ≥0.9% 两腿同触（ZP1）：纸面与实物分裂，只加实物、不加杠杆，空长端美债
+  - SGE 租借 ≥1.5% 作为 ZP1 的第三腿单独确认：实物挤兑升级，黄金矿业与实物现货优先于纸黄金
+  - 实际利率 63 日上行 ≥20bp 而金价 60 日不跌且在岸溢价 ≥0.8%（ZP2）：脱钩成立，金与长债反向
+  - SOFR 单日跳升 >15bp 或 SOFR−EFFR >15bp（ZP5）：48 小时防守，卖一切换流动性，黄金也会先跌，之后看 ZP1 / ZP2 是否反手
+  - SOFR−EFFR ≥8bp 且 RRP 缓冲垫 ≤2000 亿美元（ZP4）：摩擦是结构性的，减权益杠杆、加现金与短债
+  - 利息/收入 TTM ≥25% 且 30s10s ≥50bp（ZP6）：财政主导确认，长端不再是避险资产，股债同跌概率上升
+  - 净流动性 63 日缩水 ≥3000 亿美元且期限溢价走阔 ≥10bp（ZP7）：财政部抽水进长端，空长债、权益降久期
+  - DXY 63 日 ≥+3 点同时 SOFR−EFFR ≥5bp（ZP8）：离岸美元荒，多美元、空非美与短期金
+  - 央行 4 季度购金 ≥400 吨而美元分位 <60%（ZP3）：外部货币背书加速，黄金战略底仓不卖
+  - 金 60 日 ≥+10% 且美元同期升值（ZP10）：货币信用定价启动，黄金与美元不再互斥

@@ -1,0 +1,278 @@
+# 政策制定者合成透镜：拉加德 / 植田和男 / 贝森特 / 潘功胜
+#
+# 来源：docs/research/persona-policy-actors.md（PA1–PA12，2026-11-19）
+# 定位：与美联储（F1–F12）、宋鸿兵（S1–S13）同构的第三透镜，回答「非美这一侧谁先转向」，
+#       不是单一人物透镜，而是四条反应函数的合成读数 → 规则 → 七类资产评分 → 推导落库。
+#
+# 读数预算说明（本文件 14 条上限的取舍，可复核）：
+#   · 价差类读数一律以 bp 计价，规则里的变化条件用 field: chg 表达（chg 即以 bp 计的变化）。
+#   · 价格类指标（DXY / USDJPY）的百分比变化无法由 chg 表达，必须单列 *_chg20 读数。
+#   · 受预算约束，本次未纳入：PA4（需 pa.cn_us_10 + pa.usdcnh_chg20）、PA9（需 pa.jp_2y）、
+#     PA11（需 pa.us10y_chg30），以及 PA3 / PA5 / PA10 的第二条件（需 pa.jp10y_chg20 / pa.cn_10y）。
+#     补齐上述读数即可逐条恢复，规则编号与阈值均沿用笔记原编号，不重新编号。
+#   · EB/BOJ/PBoC 政策利率、欧元区 HICP、日本 CPI、DR001、社融本地均无序列，
+#     相关读数用 DE10Y / FR10Y / JP2Y / CN10Y 曲线做代理，note 字段已标「代理」。
+id: policy_actors
+name: 政策制定者透镜
+title: 拉加德 / 植田和男 / 贝森特 / 潘功胜
+school: 政策反应函数 / 全球久期第二锚
+key_question: 三大央行的下一步谁先转向，久期的第二锚正在往哪边移？
+thesis: "全球利率的第二锚已从美联储单点变成美联储 + 拉加德 + 植田的三体：同样是长端上行，需求型紧缩下黄金承压，2026 年的能源供给型加息下黄金反而受益，符号随驱动源翻转。贝森特的收益率管理把财政部变成收益率管理者，期限溢价开始为赤字定价；潘功胜的金融抑制让中美利差失去对人民币的解释力。四人不会同一天转向，可交易的顺序是 BOJ 定价（JP2Y 高位）→ 日元走强（PA2）→ 美欧利差回落（PA1）。"
+
+# ── 读数：14 条，覆盖美欧 / 美日 / 日债 / 法德 / 美元与日元 / 中债 / 美债长端与财政 / 油价 ──
+readings:
+  - id: pa.us_eu_10
+    label: 美欧10年利差
+    unit: "bp"
+    digits: 1
+    expr: "(US10Y - DE10Y) * 100"
+    source: "FRED（US10Y）/ ECB（DE10Y）"
+    evidence: E1
+    note: "代理美欧政策路径差：本地无 ECB DFR/MRO 日频序列，只能用 10 年名义利差近似。"
+
+  - id: pa.us_jp_10
+    label: 美日10年利差
+    unit: "bp"
+    digits: 1
+    expr: "(US10Y - JP10Y) * 100"
+    source: "FRED / 日本财务省"
+    evidence: E1
+    note: "代理美日政策利率差：本地无 BOJ 政策利率日频序列；2026-11 现值约 215bp，p10 约 187bp。"
+
+  - id: pa.us_jp_2
+    label: 美日2年利差
+    unit: "bp"
+    digits: 1
+    expr: "(US2Y - JP2Y) * 100"
+    source: "FRED / 日本财务省"
+    evidence: E1
+    note: "代理两年政策路径差：只覆盖剩余读数预算，本次未挂规则，用于验证 PA2 与 PA9 的期限结构一致性。"
+
+  - id: pa.jp_30s10s
+    label: 日债30年-10年利差
+    unit: "bp"
+    digits: 1
+    expr: "(JP30Y - JP10Y) * 100"
+    source: 日本财务省
+    evidence: E1
+    note: "代理 JGB 市场功能：本地无成交量与买卖价差，只能用超长端溢价衡量长端定价权回到市场的程度。"
+
+  - id: pa.jp_10s2s
+    label: 日债10年-2年利差
+    unit: "bp"
+    digits: 1
+    expr: "(JP10Y - JP2Y) * 100"
+    source: "日本财务省 / BOJ"
+    evidence: E1
+    note: "代理 BOJ 加息定价：本地无 OIS 会议概率，只能用曲线陡化程度衡量加息已被定价多少。"
+
+  - id: pa.fr_de_10
+    label: 法德10年利差
+    unit: "bp"
+    digits: 1
+    expr: "(FR10Y - DE10Y) * 100"
+    source: "法国/德国主权债（FR10Y 月频 ffill）"
+    evidence: E2
+    note: "代理欧元区财政溢价：本地无 OAT-Bund 日频与成员国 CDS，FR10Y 月频需前置填充后与 DE10Y 相减。"
+
+  - id: pa.dxy_pct252
+    label: 美元指数252日分位
+    unit: "%"
+    digits: 0
+    expr: "pctile(DXY, win=252) * 100"
+    source: "ICE DXY（本地 market_bars）"
+    evidence: E1
+    note: "分位取 0–100 执行口径（与 song.dxy_pct 一致），PA6 阈值 95 即 95%；样本仅 2022 起，每季度重算。"
+
+  - id: pa.dxy_chg20
+    label: 美元指数20日变化
+    unit: "%"
+    digits: 1
+    expr: "pct(DXY, days=20)"
+    source: "ICE DXY（本地 market_bars）"
+    evidence: E1
+    note: "百分比变化无法用 chg 字段表达（chg 是点数差），故单列。"
+
+  - id: pa.usdjpy
+    label: 美元兑日元
+    unit: "日元"
+    digits: 2
+    expr: "USDJPY"
+    source: "本地 market_bars"
+    evidence: E1
+    note: "160 为财务省干预区；2026-11 现值约 159.4。"
+
+  - id: pa.usdjpy_chg20
+    label: 美元兑日元20日变化
+    unit: "%"
+    digits: 1
+    expr: "pct(USDJPY, days=20)"
+    source: "本地 market_bars"
+    evidence: E1
+    note: "PA2 与 PA12 的确认腿：负值＝日元升值（套息平仓），正值＝日元贬值（干预风险）。"
+
+  - id: pa.cn_10s2s
+    label: 中债10年-2年利差
+    unit: "bp"
+    digits: 1
+    expr: "(CN10Y - CN2Y) * 100"
+    source: "中债估值（本地 macro_series）"
+    evidence: E1
+    note: "代理中国政策脉冲：本地无 DR001 与社融日频，只能用国债曲线陡平近似宽货币是否传导到长端。"
+
+  - id: pa.us_30s10s
+    label: 美债30年-10年利差
+    unit: "bp"
+    digits: 1
+    expr: "(US30Y - US10Y) * 100"
+    source: "FRED（US30Y / US10Y）"
+    evidence: E1
+    note: "期限溢价读数；走阔读作财政主导而非经济强劲，这是与美联储透镜 F5 的符号冲突点。"
+
+  - id: pa.int_receipts
+    label: 联邦利息支出/财政收入
+    unit: ""
+    digits: 3
+    expr: "US_MTS_INTEREST / US_MTS_RECEIPTS"
+    source: "美国财政部 MTS（月频 ffill）"
+    evidence: E1
+    note: "比值口径，0.279 即 27.9%；代理财政主导强度，月频发布后约 10 日重算。"
+
+  - id: pa.bz
+    label: 布伦特原油
+    unit: "美元/桶"
+    digits: 2
+    expr: "BZ"
+    source: "ICE 布伦特（本地 market_bars）"
+    evidence: E1
+    note: "拉加德反应函数的能源外生项：BZ 上破 105 视为 ECB 二次加息压力，跌破 80 视为压力解除。"
+
+# ── 规则：PA1–PA12 中本次可机判的 9 条（编号沿用笔记，不重排） ──
+rules:
+  - id: PA1
+    name: 美欧利差极值追涨
+    severity: warn
+    when:
+      all:
+        - {metric: pa.us_eu_10, field: value, op: ">", value: 200}
+        - {metric: pa.us_eu_10, field: chg, op: ">", value: 15}
+    message: "美欧 10 年利差站上 200bp（p95 200.7）且仍在走阔，追多美元、做空欧债的赔率已经变差：2026 年的利差扩张是能源冲击逼着 ECB 加息，不是欧洲更差。"
+    falsifier: "ECB 明确重启降息路径，或 BZ 跌破 80 美元/桶（能源冲击解除，利差失去扩张动力）。"
+    assets: [usd, long_bond]
+    sources: ["P1", "P2"]
+
+  - id: PA2
+    name: 美日利差收窄触发日元套利逆转
+    severity: critical
+    when:
+      all:
+        - {metric: pa.us_jp_10, field: value, op: "<", value: 190}
+        - {metric: pa.usdjpy_chg20, field: value, op: "<=", value: -2.0}
+    message: "美日 10 年利差压缩到 190bp 以下（p10 187.4）而美元兑日元 20 日仍跌超 2%，这是套息平仓而非普通回调：2024-07、2025-01 两次都是这个形态，先冲击全球久期，再收紧美元流动性。"
+    falsifier: "BOJ 明确推迟加息且 US10Y 再上行 20bp，美日利差重新走阔至 210bp 以上。"
+    assets: [usd, us_equity, gold, long_bond]
+    sources: ["P7", "P8", "P24"]
+
+  - id: PA3
+    name: JGB 长端失控
+    severity: warn
+    when:
+      all:
+        - {metric: pa.jp_30s10s, field: value, op: ">", value: 140}
+    message: "日债 30 年-10 年利差超过 140bp（p95 146.9），缩表加财政扩张让长端定价权从央行交回市场，植田「异常飙升时灵活操作」的承诺进入测试区。"
+    falsifier: "财务省缩短发行久期，或 BOJ 扩大购债后 30-10 回落 15bp 以上。"
+    assets: [long_bond, gold, usd]
+    sources: ["P7", "P25", "P26"]
+
+  - id: PA5
+    name: 中债曲线陡化等于宽松不足
+    severity: watch
+    when:
+      all:
+        - {metric: pa.cn_10s2s, field: value, op: ">", value: 65}
+    message: "中债 10 年-2 年利差超过 65bp（p95 65.1），宽货币没有传导到长端，地方债供给在压制长端，宽松的边际效用下降。"
+    falsifier: "降准降息落地后 20 日内曲线平坦化 10bp 以上。"
+    assets: [cn_equity, long_bond]
+    sources: ["P15", "P17", "P21"]
+
+  - id: PA6
+    name: 美元分位极端
+    severity: critical
+    when:
+      all:
+        - {metric: pa.dxy_pct252, field: value, op: ">", value: 95}
+        - {metric: pa.dxy_chg20, field: value, op: ">", value: 2.8}
+    message: "美元指数处于 252 日分位 95% 以上且 20 日再涨超 2.8%，进入全球美元流动性冲击模式；与 F9（3M>5%）、S2（分位>70 且 SOFR−EFFR>10）同源但更早更狠，冲突时以分位口径为准。"
+    falsifier: "DXY 回吐 20 日涨幅一半且 SOFR−EFFR 回到 5bp 以下。"
+    assets: [usd, gold, cn_equity, us_equity]
+    sources: ["P23"]
+
+  - id: PA7
+    name: 财政主导型长端
+    severity: warn
+    when:
+      all:
+        - {metric: pa.us_30s10s, field: value, op: ">", value: 50}
+        - {metric: pa.int_receipts, field: value, op: ">", value: 0.28}
+    message: "美债 30 年-10 年利差超过 50bp 且联邦利息/财政收入上破 0.28，贝森特式收益率管理失效、期限溢价开始为赤字定价；同一根长端上行，F1 读作紧缩、本透镜读作财政主导，黄金与久期方向相反。"
+    falsifier: "财政部缩短 10-30 年发行久期或回购规模翻倍后，30-10 回落至 40bp 以下。"
+    assets: [gold, long_bond, usd]
+    sources: ["P10", "P11", "P23"]
+
+  - id: PA8
+    name: 欧洲财政裂痕
+    severity: warn
+    when:
+      all:
+        - {metric: pa.fr_de_10, field: value, op: ">", value: 100}
+    message: "法德 10 年利差超过 100bp（p95 87.3），欧洲风险溢价已独立于 ECB 政策路径；法国政治与财政冲击会同时压制欧元、把买盘赶向德债。"
+    falsifier: "法国预算通过且法德利差回落 20bp 以上。"
+    assets: [usd, long_bond]
+    sources: ["P1", "P2"]
+
+  - id: PA10
+    name: 中国宽松预期落空
+    severity: info
+    when:
+      all:
+        - {metric: pa.cn_10s2s, field: value, op: "<", value: 30}
+    message: "中债 10 年-2 年利差压缩到 30bp 以下（p5 23.9），降息预期已被债市充分定价，进一步宽松对股市的边际推动下降。"
+    falsifier: "全面降准降息落地且 CN10Y 跌破 1.50%。"
+    assets: [cn_equity, long_bond]
+    sources: ["P15", "P17", "P21"]
+
+  - id: PA12
+    name: 日元干预风险
+    severity: watch
+    when:
+      all:
+        - {metric: pa.usdjpy, field: value, op: ">", value: 160}
+        - {metric: pa.usdjpy_chg20, field: value, op: ">", value: 2.0}
+    message: "美元兑日元站上 160 且 20 日再涨超 2%，财务省口头或实际干预概率陡升，BOJ 也可能用「灵活操作」配合；做多美元兑日元的赔率被政策封顶。"
+    falsifier: "USDJPY 站稳 162 上方一周且无干预，趋势延续。"
+    assets: [usd, gold, long_bond]
+    sources: ["P7", "P8", "P26"]
+
+# ── 七类资产基准评分（-2…+2；long_bond 正 = 看多债券价格） ──
+# 基准态＝四条反应函数均未极端触发；括号内为触发后的修正方向。
+scores:
+  us_equity: "-1：全球久期第二锚在欧日，能源型加息与日元套利逆转都会收紧美元流动性，估值分母先受损；PA2/PA6 触发时降至 -2。"
+  gold: "+1：财政主导（PA7）与央行购金构成底部，套息逆转初期避险买盘占优；PA6 式美元流动性冲击当晚先被卖出，故 PA6 触发时降到 -1。"
+  silver: "0：与黄金同向但缺流动性时先被抛售，只有 PA7 成立且美元不在分位极端时才给 +1。"
+  usd: "0：贝森特强美元话术与欧日加息、套息平仓方向相反，净值为零；PA6 触发 +1.5，PA2 触发 -1。"
+  cn_equity: "0：宽松定价已充分（PA10）压制政策边际效用，美元流动性冲击（PA6）是主要下行风险；中债曲线陡化（PA5）时 -0.5。"
+  long_bond: "-0.5：贝森特式收益率管理抬升期限溢价（PA7），久期趋势性为负；PA2 触发后避险需求令全球久期转为 +1.5 的短多。"
+  commodities: "0：BZ 能源供给冲击支撑油价，但美元流动性收紧压制金属；BZ 上破 105 时 +0.5。"
+
+# ── 静态触发条件（人读摘要，规则由上面 rules 机判） ──
+triggers:
+  - "日元套利（PA2）：US10Y−JP10Y <190bp 且 USDJPY 20 日 ≤−2.0% → 全球久期多、美股减仓、黄金多"
+  - "美元流动性（PA6）：DXY 252 日分位 >95% 且 20 日 >+2.8% → 美元多，新兴市场与白银先跌"
+  - "日本长端（PA3）：JP30Y−JP10Y >140bp → JGB 长端失控测试，BOJ 容忍度见顶"
+  - "美国财政（PA7）：US30Y−US10Y >50bp 且利息/收入 >0.28 → 财政主导，黄金多、久期空"
+  - "欧洲裂痕（PA8）：FR10Y−DE10Y >100bp → 欧元空、德债多"
+  - "美欧利差（PA1）：US10Y−DE10Y >200bp 且继续走阔 → 追涨美元与做空欧债赔率变差"
+  - "中国曲线（PA5/PA10）：CN10Y−CN2Y >65bp 为宽松未传导，<30bp 为宽松定价充分 → A 股边际推动下降"
+  - "日元干预（PA12）：USDJPY >160 且 20 日 >+2.0% → 财务省干预概率陡升，做多美元兑日元赔率封顶"
+  - "转向顺序：BOJ 定价（JP2Y 高位）→ 日元走强（PA2）→ 美欧利差回落（PA1），按此顺序交易「谁先转向」，不假设同日转向"
+  - "冲突裁决：DXY 分位与 F9 冲突时以 PA6 为准；US30Y−US10Y 与 F5 冲突时看利息/收入是否 >0.28；中美利差与 S13 冲突时以管制与结汇（CN_GOLD_PREMIUM_PCT）为准"

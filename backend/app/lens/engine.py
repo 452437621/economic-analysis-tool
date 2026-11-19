@@ -20,6 +20,8 @@ from sqlalchemy.orm import Session
 
 from app.cycle.market import Panel, load_panel
 from app.lens import fed as fed_lens
+from app.lens import layers as layer_builder
+from app.lens import persona as persona_engine
 from app.lens import song as song_lens
 from app.lens.common import evaluate_rule, load_gold_series, round_opt as _round, score_label
 from app.models.v2 import Derivation, Forecast
@@ -32,6 +34,30 @@ METHOD_ENGINE = "lens.engine.v1"
 METHOD_FED = "lens.fed.v1"
 METHOD_SONG = "lens.song.v1"
 METHOD_SYNTHESIS = "lens.synthesis.v1"
+METHOD_MACRO = "lens.macro.v1"
+METHOD_MICRO = "lens.micro.v1"
+METHOD_PERSONA = "lens.persona.v1"
+
+# 表达式求值需要的黄金实物列（面板里没有，来自 gold_metrics）。
+GOLD_COLUMNS: tuple[str, ...] = (
+    "GOLD_PRICE_USD",
+    "CN_GOLD_PREMIUM_PCT",
+    "COMEX_GOLD_BASIS_PCT",
+    "SGE_GOLD_LEASE_3M_PCT",
+    "GOLD_LEASE_PROXY_PCT",
+    "CB_GOLD_GLOBAL_TONNES",
+    "CN_GOLD_RESERVES_USD",
+    "ETF_GLOBAL_TONNES",
+    "COMEX_GOLD_INVENTORY_TONNES",
+    "LBMA_GOLD_TONNES",
+    "LBMA_SILVER_TONNES",
+    "COT_MONEY_NET",
+    "COT_SWAP_NET",
+    "MM_BANK_GOLD_NET",
+    "SHFE_GOLD_STOCK_TONNES",
+    "ETF_FLOW_1M_TONNES",
+    "GOLD_MOM_20D_PCT",
+)
 
 ASSETS: list[dict[str, str]] = [
     {"id": "us_equity", "label": "美股（标普 500）", "symbol": "SPX", "unit": "点", "note": "评分方向=指数涨跌"},
@@ -120,97 +146,159 @@ def _last_close(panel: Panel, symbol: str) -> float | None:
     return float(clean.iloc[-1]) if not clean.empty else None
 
 
+def _lens_scores(lens_value: dict[str, Any]) -> dict[str, float | None]:
+    """把一份透镜（人/层）的资产评分摊平成 ``{asset_id: score}``。"""
+    scores = lens_value.get("scores") or lens_value.get("asset_scores") or {}
+    out: dict[str, float | None] = {}
+    for asset in ASSETS:
+        item = scores.get(asset["id"]) or {}
+        value = item.get("score")
+        out[asset["id"]] = float(value) if value is not None else None
+    return out
+
+
 def _synthesis(
-    fed_state: dict[str, Any],
-    song_state: dict[str, Any],
+    lens_scores: dict[str, dict[str, float | None]],
     panel: Panel,
     config: dict[str, Any],
     cycle_context: dict[str, Any] | None,
+    lens_states: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    weights = (config.get("synthesis") or {}).get("weights") or {}
-    weight_fed = float(weights.get("fed", 0.5))
-    weight_song = float(weights.get("song", 0.5))
-    total = weight_fed + weight_song or 1.0
+    """多透镜合成：按 config 权重加权，输出共识、分歧、预警与情景。
+
+    ``lens_scores`` 是有序映射 ``{透镜 id: {资产 id: 分数}}``，包含 macro/micro
+    两层与全部人物透镜。缺少某透镜分数的资产只用其余透镜加权，绝不把缺失当 0。
+    """
+    settings = config.get("synthesis") or {}
+    weights: dict[str, float] = {
+        str(key): float(value) for key, value in (settings.get("weights") or {}).items()
+    }
+    active = [(lens_id, scores) for lens_id, scores in lens_scores.items() if weights.get(lens_id, 0.0) > 0]
+    if not active:
+        active = list(lens_scores.items())
+    states = lens_states or {}
 
     rows: list[dict[str, Any]] = []
     divergences: list[dict[str, Any]] = []
     for asset in ASSETS:
         asset_id = asset["id"]
-        fed_score = (fed_state.get("asset_scores") or {}).get(asset_id, {}).get("score")
-        song_score = (song_state.get("asset_scores") or {}).get(asset_id, {}).get("score")
+        contributions: dict[str, float] = {}
+        for lens_id, scores in active:
+            value = scores.get(asset_id)
+            if value is None:
+                continue
+            contributions[lens_id] = round(float(value), 2)
+        weight_sum = sum(weights.get(lens_id, 1.0) for lens_id in contributions)
         consensus = None
-        if fed_score is not None and song_score is not None:
-            consensus = round((weight_fed * fed_score + weight_song * song_score) / total, 2)
-        agreement, direction = _agreement(fed_score, song_score, consensus)
+        if contributions and weight_sum > 0:
+            consensus = round(
+                sum(weights.get(lens_id, 1.0) * value for lens_id, value in contributions.items()) / weight_sum,
+                2,
+            )
+        fed_score = contributions.get("fed")
+        song_score = contributions.get("song")
+        agreement, direction = _agreement_multi(contributions, consensus)
         probability = None
         if consensus is not None:
             probability = round(min(0.78, 0.50 + 0.10 * abs(consensus)), 3)
-        row = {
-            "id": asset_id,
-            "label": asset["label"],
-            "symbol": asset["symbol"],
-            "unit": asset["unit"],
-            "note": asset["note"],
-            "last": _round(_last_close(panel, asset["symbol"]), 3),
-            "fed": fed_score,
-            "song": song_score,
-            "consensus": consensus,
-            "label_consensus": score_label(consensus),
-            "agreement": agreement,
-            "direction": direction,
-            "probability": probability,
-            "advice": _advice(agreement, consensus),
-        }
-        rows.append(row)
-        if agreement == "分歧":
-            spread = _round((fed_score or 0.0) - (song_score or 0.0), 2)
-            divergences.append(
-                {
-                    "asset": asset_id,
-                    "label": asset["label"],
-                    "fed": fed_score,
-                    "song": song_score,
-                    "spread": spread,
-                    "reading": f"美联储 {fed_score:+.2f} / 宋鸿兵 {song_score:+.2f}" if fed_score is not None and song_score is not None else "读数不足",
-                    "catalyst": _divergence_catalyst(asset_id),
-                }
-            )
+        rows.append(
+            {
+                "id": asset_id,
+                "label": asset["label"],
+                "symbol": asset["symbol"],
+                "unit": asset["unit"],
+                "note": asset["note"],
+                "last": _round(_last_close(panel, asset["symbol"]), 3),
+                "fed": fed_score,
+                "song": song_score,
+                "scores": contributions,
+                "lenses": len(contributions),
+                "consensus": consensus,
+                "label_consensus": score_label(consensus),
+                "agreement": agreement,
+                "direction": direction,
+                "probability": probability,
+                "advice": _advice(agreement, consensus, len(contributions)),
+            }
+        )
+        if contributions:
+            positives = {key: value for key, value in contributions.items() if value >= 0.35}
+            negatives = {key: value for key, value in contributions.items() if value <= -0.35}
+            if positives and negatives:
+                bull = max(positives, key=lambda key: positives[key])
+                bear = min(negatives, key=lambda key: negatives[key])
+                divergences.append(
+                    {
+                        "asset": asset_id,
+                        "label": asset["label"],
+                        "fed": fed_score,
+                        "song": song_score,
+                        "spread": _round(contributions[bull] - contributions[bear], 2),
+                        "reading": f"{_lens_label(bull, states)} {contributions[bull]:+.2f} / "
+                        f"{_lens_label(bear, states)} {contributions[bear]:+.2f}",
+                        "pair": [bull, bear],
+                        "catalyst": _divergence_catalyst(asset_id),
+                    }
+                )
 
-    warnings = _warning_list(fed_state, song_state)
-
+    warnings = _warning_list(states.get("fed") or {}, states.get("song") or {}, states)
     consensus_count = sum(1 for row in rows if row["agreement"] in {"共振多", "共振空"})
+    strong = [row for row in rows if row["agreement"] == "共振强信号"]
+    headline = {
+        "fed": (states.get("fed") or {}).get("stance_label", "未知"),
+        "song": ((states.get("song") or {}).get("phase") or {}).get("label", "未知"),
+        "macro": ((states.get("macro") or {}).get("regime") or {}).get("label", "未知"),
+        "micro": ((states.get("micro") or {}).get("risk_appetite") or {}).get("label", "未知"),
+        "personas": sum(1 for key in states if key not in {"fed", "song", "macro", "micro"}),
+    }
     narrative = (
-        f"合成结论：{consensus_count} 项资产两镜共振，{len(divergences)} 项分歧。"
-        f"美联储透镜为「{fed_state.get('stance_label', '未知')}」/「{(fed_state.get('regime') or {}).get('label', '未知')}」，"
-        f"宋鸿兵透镜为「{(song_state.get('phase') or {}).get('label', '未知')}」，"
-        f"美元心脏「{(song_state.get('dollar_heart') or {}).get('label', '未知')}」。"
-        "共振项是仓位的来源，分歧项是风险的来源；分歧未解决前，单一透镜的结论只能做研究，不能做仓位。"
+        f"合成结论：{len(active)} 套透镜参与、{consensus_count} 项同向共振、{len(divergences)} 项方向冲突。"
+        f"美联储「{headline['fed']}」、宋鸿兵「{headline['song']}」、宏观层「{headline['macro']}」、"
+        f"微观层「{headline['micro']}」。"
+        "同向项是仓位来源，冲突项是风险来源；冲突未解决前，单套透镜的结论只能做研究，不能做仓位。"
     )
 
-    outlook = _outlook(fed_state, song_state, rows, warnings)
+    outlook = _outlook(states.get("fed") or {}, states.get("song") or {}, rows, warnings)
     return {
         "assets": rows,
         "divergences": divergences,
         "warnings": warnings,
         "consensus_count": consensus_count,
+        "strong_count": len(strong),
+        "lens_count": len(active),
+        "weights": {lens_id: weights.get(lens_id, 1.0) for lens_id, _ in active},
+        "headline": headline,
         "narrative": narrative,
         "outlook": outlook,
         "cycle_context": cycle_context,
-        "confidence": _synthesis_confidence(fed_state, song_state, rows),
+        "confidence": _synthesis_confidence(states.get("fed") or {}, states.get("song") or {}, rows, len(active)),
     }
 
 
-def _agreement(fed: float | None, song: float | None, consensus: float | None) -> tuple[str, str]:
-    if fed is None or song is None:
+def _lens_label(lens_id: str, states: dict[str, dict[str, Any]]) -> str:
+    state = states.get(lens_id) or {}
+    return str(state.get("name") or lens_id)
+
+
+def _agreement_multi(contributions: dict[str, float], consensus: float | None) -> tuple[str, str]:
+    """多透镜一致度：同向且最小 |score| 足够大才算共振。"""
+    if not contributions:
         return "数据不足", "flat"
-    if fed >= 0.25 and song >= 0.25:
-        agreement = "共振多"
-    elif fed <= -0.25 and song <= -0.25:
-        agreement = "共振空"
-    elif fed * song < 0 and min(abs(fed), abs(song)) >= 0.35:
+    values = list(contributions.values())
+    positives = [value for value in values if value >= 0.25]
+    negatives = [value for value in values if value <= -0.25]
+    if len(contributions) == 1:
+        agreement = "单一透镜"
+    elif len(positives) == len(values) and len(values) >= 2:
+        agreement = "共振多" if min(values) >= 0.25 else "弱信号"
+    elif len(negatives) == len(values) and len(values) >= 2:
+        agreement = "共振空" if max(values) <= -0.25 else "弱信号"
+    elif positives and negatives and min(max(positives), abs(min(negatives))) >= 0.35:
         agreement = "分歧"
     else:
         agreement = "弱信号"
+    if len(values) >= 3 and agreement in {"共振多", "共振空"} and abs(consensus or 0.0) >= 0.6:
+        agreement = "共振强信号"
     if consensus is None or abs(consensus) < 0.25:
         direction = "flat"
     elif consensus > 0:
@@ -220,15 +308,25 @@ def _agreement(fed: float | None, song: float | None, consensus: float | None) -
     return agreement, direction
 
 
-def _advice(agreement: str, consensus: float | None) -> str:
+def _agreement(fed: float | None, song: float | None, consensus: float | None) -> tuple[str, str]:
+    if fed is None or song is None:
+        return "数据不足", "flat"
+    return _agreement_multi({"fed": fed, "song": song}, consensus)
+
+
+def _advice(agreement: str, consensus: float | None, lens_count: int = 2) -> str:
+    if agreement == "共振强信号":
+        return "多数透镜同向且强度足够：可按共识方向建仓，分批而非一次性。"
     if agreement == "共振多":
-        return "两镜同向偏多：回调分批，不追高；跌破关键位再重估。"
+        return "多数透镜同向偏多：回调分批，不追高；跌破关键位再重估。"
     if agreement == "共振空":
-        return "两镜同向偏空：反弹减仓，等右侧确认，不接下跌中的刀。"
+        return "多数透镜同向偏空：反弹减仓，等右侧确认，不接下跌中的刀。"
     if agreement == "分歧":
-        return "两镜分歧：只做区间或观望，等催化剂落地，不要用单一透镜下注。"
+        return "透镜之间方向冲突：只做区间或观望，等催化剂落地，不要用单一透镜下注。"
     if agreement == "数据不足":
         return "数据不足：不产生信号。"
+    if agreement == "单一透镜":
+        return "只有一套透镜覆盖该资产：只能作为研究结论，不单独构成仓位。"
     return "弱信号：观察，不建仓。"
 
 
@@ -244,7 +342,11 @@ def _divergence_catalyst(asset_id: str) -> str:
     }.get(asset_id, "下一个数据窗口")
 
 
-def _warning_list(fed_state: dict[str, Any], song_state: dict[str, Any]) -> list[dict[str, Any]]:
+def _warning_list(
+    fed_state: dict[str, Any],
+    song_state: dict[str, Any],
+    states: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     warnings: list[dict[str, Any]] = []
     heart = song_state.get("dollar_heart") or {}
     if heart.get("id") in {"angina", "infarction"}:
@@ -296,6 +398,31 @@ def _warning_list(fed_state: dict[str, Any], song_state: dict[str, Any]) -> list
                 "detail": "实际利率、金融条件与曲线同时处于紧缩端，风险资产的估值分母没有缓冲。",
             }
         )
+    # 新增：宏观层风险标记 + 人物透镜的 critical 规则统一进预警台。
+    for lens_id, state in (states or {}).items():
+        if lens_id in {"fed", "song"}:
+            continue
+        name = str(state.get("name") or lens_id)
+        for flag in state.get("flags") or []:
+            warnings.append(
+                {
+                    "id": f"{lens_id}.{flag}",
+                    "severity": "warn",
+                    "title": f"{name}：{flag}",
+                    "detail": state.get("narrative") or "",
+                }
+            )
+        for rule in state.get("fired") or []:
+            if rule.get("severity") not in {"warn", "critical"}:
+                continue
+            warnings.append(
+                {
+                    "id": f"{lens_id}.{rule.get('id')}",
+                    "severity": rule.get("severity"),
+                    "title": f"{name}：{rule.get('name') or rule.get('id')}",
+                    "detail": rule.get("message") or "",
+                }
+            )
     return warnings
 
 
@@ -331,15 +458,26 @@ def _outlook(
     }
 
 
-def _synthesis_confidence(fed_state: dict[str, Any], song_state: dict[str, Any], rows: list[dict[str, Any]]) -> float:
+def _synthesis_confidence(
+    fed_state: dict[str, Any],
+    song_state: dict[str, Any],
+    rows: list[dict[str, Any]],
+    lens_count: int = 2,
+) -> float:
     fed_cov = (fed_state.get("coverage") or {}).get("available", 0) / max(
         1, (fed_state.get("coverage") or {}).get("total", 1)
     )
     song_cov = (song_state.get("coverage") or {}).get("available", 0) / max(
         1, (song_state.get("coverage") or {}).get("total", 1)
     )
-    agreement_ratio = sum(1 for row in rows if row["agreement"] in {"共振多", "共振空"}) / max(1, len(rows))
-    return round(min(0.85, 0.30 + 0.25 * fed_cov + 0.20 * song_cov + 0.15 * agreement_ratio), 3)
+    agreement_ratio = sum(1 for row in rows if row["agreement"] in {"共振多", "共振空", "共振强信号"}) / max(
+        1, len(rows)
+    )
+    breadth = min(1.0, lens_count / 6.0)
+    return round(
+        min(0.85, 0.20 + 0.20 * fed_cov + 0.15 * song_cov + 0.25 * agreement_ratio + 0.15 * breadth),
+        3,
+    )
 
 
 def _latest_cycle_context(session: Session) -> dict[str, Any] | None:
@@ -363,10 +501,15 @@ def _latest_cycle_context(session: Session) -> dict[str, Any] | None:
 
 
 def _observation_rows(
-    fed_value: dict[str, Any], song_value: dict[str, Any], synth: dict[str, Any], today: date
+    fed_value: dict[str, Any],
+    song_value: dict[str, Any],
+    synth: dict[str, Any],
+    today: date,
+    extra_lenses: list[tuple[str, dict[str, Any]]] | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for lens_name, value in (("fed", fed_value), ("song", song_value)):
+    lenses = [("fed", fed_value), ("song", song_value), *(extra_lenses or [])]
+    for lens_name, value in lenses:
         for reading in value.get("readings") or []:
             if reading.get("value") is None:
                 continue
@@ -384,6 +527,20 @@ def _observation_rows(
                         "pct": reading.get("percentile"),
                         "chg": reading.get("change"),
                     },
+                }
+            )
+        lean = ((value.get("state") or {}).get("lean") or {}).get("score")
+        if lean is not None:
+            rows.append(
+                {
+                    "code": f"lens.{lens_name}.lean",
+                    "asof": today,
+                    "vintage_date": today,
+                    "value": float(lean),
+                    "unit": "score",
+                    "source": f"lens.{lens_name}",
+                    "evidence_grade": "E3",
+                    "extra": {"label": ((value.get("state") or {}).get("lean") or {}).get("label")},
                 }
             )
     for row in synth.get("assets") or []:
@@ -439,7 +596,45 @@ def run_lenses(session: Session, asof: datetime | None = None) -> dict[str, Any]
             if song_value["state"]["coverage"]["available"] < 8:
                 rec.degrade("lens.song.coverage", "宋鸿兵透镜可用读数不足 8 条。")
 
-        metrics: dict[str, dict[str, float | None]] = {
+        with rec.step("macro_layer", kind="compute") as step:
+            gold_extras = {code: gold_metric(code) for code in GOLD_COLUMNS}
+            frame = layer_builder.build_frame(panel, gold_extras)
+            macro_value = layer_builder.build_macro_layer(frame, config.get("macro_rules") or [])
+            step.outputs = {
+                "readings": len(macro_value["readings"]),
+                "available": macro_value["state"].get("coverage", {}).get("available"),
+                "regime": macro_value["state"]["regime"]["label"],
+                "flags": len(macro_value["state"]["flags"]),
+            }
+
+        with rec.step("micro_layer", kind="compute") as step:
+            micro_value = layer_builder.build_micro_layer(frame, config.get("micro_rules") or [])
+            step.outputs = {
+                "readings": len(micro_value["readings"]),
+                "available": micro_value["state"].get("coverage", {}).get("available"),
+                "crowding": len(micro_value["state"]["crowding"]),
+            }
+
+        with rec.step("persona_lenses", kind="compute") as step:
+            personas = persona_engine.build_personas(frame)
+            available = [
+                {"id": item["id"], "name": item["name"], "lean": item["state"]["lean"],
+                 "fired": item["state"]["fired_rules"]}
+                for item in personas
+            ]
+            step.outputs = {"count": len(personas), "personas": available}
+            if not personas:
+                rec.degrade("lens.persona.none", "未发现 config/personas/*.yaml，人物透镜被跳过。")
+            for item in personas:
+                coverage = item["state"]["coverage"]
+                if coverage.get("total") and coverage["available"] < coverage["total"] * 0.5:
+                    rec.degrade(
+                        f"lens.persona.{item['id']}.coverage",
+                        f"{item['name']} 透镜可用读数不足一半（{coverage['available']}/{coverage['total']}）。",
+                    )
+
+
+            metrics: dict[str, dict[str, float | None]] = {
             **fed_value["metrics"],
             **song_value["metrics"],
             "fed.curve_cross_up": _curve_cross_up_metric(panel),
@@ -460,13 +655,58 @@ def run_lenses(session: Session, asof: datetime | None = None) -> dict[str, Any]
             }
             _record_rule_hits(rec, fed_rules)
             _record_rule_hits(rec, song_rules)
+            # 宏观层、微观层与人物透镜的命中规则同样写进 RuleHit，
+            # 这样 /pipeline、预警台与证据抽屉能看到完整的规则证据链。
+            _record_rule_hits(rec, macro_value.get("rules") or [])
+            _record_rule_hits(rec, micro_value.get("rules") or [])
+            for item in personas:
+                _record_rule_hits(rec, item.get("rules") or [])
 
         with rec.step("synthesise", kind="compute") as step:
             cycle_context = _latest_cycle_context(session)
-            synth_value = _synthesis(fed_value["state"], song_value["state"], panel, config, cycle_context)
+            lens_scores: dict[str, dict[str, float | None]] = {
+                "fed": _lens_scores(fed_value),
+                "song": _lens_scores(song_value),
+                "macro": _lens_scores(macro_value),
+                "micro": _lens_scores(micro_value),
+            }
+            lens_states: dict[str, dict[str, Any]] = {
+                "fed": fed_value["state"],
+                "song": song_value["state"],
+                "macro": macro_value["state"],
+                "micro": micro_value["state"],
+            }
+            for item in personas:
+                lens_scores[item["id"]] = _lens_scores(item)
+                lens_states[item["id"]] = item["state"]
+            synth_value = _synthesis(lens_scores, panel, config, cycle_context, lens_states)
             synth_value["rule_metrics"] = metrics
+            # 只读接口要能重建全部规则（含未命中/缺数据），因此把每层的 metrics
+            # 与人物透镜摘要一并写进合成推导的 value。
+            synth_value["layer_metrics"] = {
+                "macro": macro_value["metrics"],
+                "micro": micro_value["metrics"],
+                "personas": {item["id"]: item["metrics"] for item in personas},
+            }
+            synth_value["personas"] = [
+                {
+                    "id": item["id"],
+                    "name": item["name"],
+                    "title": item.get("title"),
+                    "school": item.get("school"),
+                    "key_question": item.get("key_question"),
+                    "thesis": item.get("thesis"),
+                    "state": item["state"],
+                    "scores": item.get("scores"),
+                    "readings": item.get("readings"),
+                    "catalog": item.get("catalog"),
+                }
+                for item in personas
+            ]
             step.outputs = {
+                "lenses": synth_value["lens_count"],
                 "consensus": synth_value["consensus_count"],
+                "strong": synth_value["strong_count"],
                 "divergences": len(synth_value["divergences"]),
                 "confidence": synth_value["confidence"],
             }
@@ -533,6 +773,92 @@ def run_lenses(session: Session, asof: datetime | None = None) -> dict[str, Any]
                 ],
                 opposing=["美国例外论（AI 生产率）可让强美元与美股同涨，冷环流不必然杀估值。"],
             )
+            macro_deriv = rec.derive(
+                code="lens.macro.state",
+                claim=(
+                    f"宏观层：{macro_value['state']['regime']['label']}，"
+                    f"流动性「{macro_value['state']['liquidity']['label']}」，"
+                    f"财政「{macro_value['state']['fiscal']['label']}」"
+                ),
+                value=macro_value,
+                confidence=_lens_confidence(macro_value),
+                evidence_grade="E2",
+                subject="lens.macro",
+                method_id=METHOD_MACRO,
+                inputs=[
+                    "US10Y_REAL", "US10Y_BE", "US2Y", "US30Y", "DXY", "SOFR_EFFR",
+                    "US_FED_ASSETS", "US_TGA", "US_RRP_AMT", "US_M2",
+                    "US_MTS_DEFICIT", "US_MTS_INTEREST", "US_MTS_RECEIPTS", "WB_US_GDP",
+                ],
+                steps=_reading_steps(macro_value["readings"]),
+                rules_hit=[
+                    {"id": rule["id"], "message": rule["message"], "severity": rule["severity"]}
+                    for rule in macro_value["rules"]
+                    if rule["fired"]
+                ],
+                caveats=[
+                    "净流动性 = 美联储总资产 − 财政部一般账户 − 隔夜逆回购，单位为万亿美元；周频。",
+                    "赤字与利息为 TTM 口径，MTS 月度数据约 30 天滞后。",
+                ],
+                falsifiers=["若净流动性连续三个月回升而风险资产继续下跌，流动性主导假设失效。"],
+                opposing=["财政脉冲与流动性可能同时为正却对应衰退，因为赤字本身是衰退的结果。"],
+            )
+            micro_deriv = rec.derive(
+                code="lens.micro.state",
+                claim=(
+                    f"微观层：风险偏好「{micro_value['state']['risk_appetite']['label']}」，"
+                    f"黄金微观评分 {(micro_value['state']['gold_micro'] or {}).get('score') or 0.0:+.2f}"
+                ),
+                value=micro_value,
+                confidence=_lens_confidence(micro_value),
+                evidence_grade="E2",
+                subject="lens.micro",
+                method_id=METHOD_MICRO,
+                inputs=[
+                    "SPX", "NDX", "XAUUSD", "SI", "HG", "CU", "BZ", "CL",
+                    "CN_GOLD_PREMIUM_PCT", "COMEX_GOLD_BASIS_PCT", "SGE_GOLD_LEASE_3M_PCT",
+                    "ETF_GLOBAL_TONNES", "COT_MONEY_NET", "USDCNH", "000300",
+                ],
+                steps=_reading_steps(micro_value["readings"]),
+                rules_hit=[
+                    {"id": rule["id"], "message": rule["message"], "severity": rule["severity"]}
+                    for rule in micro_value["rules"]
+                    if rule["fired"]
+                ],
+                caveats=[
+                    "COMEX 白银库存缺失，实物挤兑只能看黄金基差与租借利率。",
+                    "中国溢价为 SGE 对伦敦价差，受汇率与管制影响，不等于真实紧张度。",
+                ],
+                falsifiers=["若基差、溢价、租借三者同时回落而金价续涨，实物紧张叙事失效。"],
+                opposing=["黄金的微观紧张经常是区域性的（上海/迪拜），不能直接外推到全球定价。"],
+            )
+            persona_derivs: dict[str, Any] = {}
+            for item in personas:
+                state = item["state"]
+                persona_derivs[item["id"]] = rec.derive(
+                    code=f"lens.persona.{item['id']}.state",
+                    claim=(
+                        f"{item['name']}透镜：倾向「{state['lean']['label']}」"
+                        f"（{state['lean']['score']:+.2f}），命中 {len(state['fired_rules'])} 条规则"
+                    ),
+                    value={"state": state, "scores": item.get("scores"), "readings": item.get("readings")},
+                    confidence=_lens_confidence(item),
+                    evidence_grade="E3",
+                    subject=f"lens.persona.{item['id']}",
+                    method_id=METHOD_PERSONA,
+                    inputs=[str(reading.get("source") or "") for reading in item.get("readings") or []][:24],
+                    steps=_reading_steps(item.get("readings") or []),
+                    rules_hit=[
+                        {"id": rule["id"], "message": rule["message"], "severity": rule["severity"]}
+                        for rule in item.get("rules") or []
+                        if rule.get("fired")
+                    ],                    caveats=[
+                        "人物透镜是框架的机械化复刻，不是本人当前观点；规则阈值取自其公开表述与文本。",
+                        "出处分级 E1–E4，含二手转述；未经本人确认。",
+                    ],
+                    falsifiers=[item["thesis"]] if item.get("thesis") else [],
+                    opposing=["同一人物在不同周期可能给出相反判断，框架不是承诺。"],
+                )
             ranked = [row for row in synth_value["assets"] if row.get("consensus") is not None]
             strongest = max(ranked, key=lambda row: abs(row["consensus"]), default=None)
             synth_deriv = rec.derive(
@@ -555,33 +881,82 @@ def run_lenses(session: Session, asof: datetime | None = None) -> dict[str, Any]
                 steps=[
                     {"name": "fed_derivation", "id": fed_deriv.id},
                     {"name": "song_derivation", "id": song_deriv.id},
+                    {"name": "macro_derivation", "id": macro_deriv.id},
+                    {"name": "micro_derivation", "id": micro_deriv.id},
+                    *[
+                        {"name": f"persona_{persona_id}_derivation", "id": deriv.id}
+                        for persona_id, deriv in persona_derivs.items()
+                    ],
                 ],
                 rules_hit=[
                     {"id": rule["id"], "message": rule["message"], "severity": rule["severity"]}
                     for rule in fired_fed + fired_song
                 ],
                 caveats=[
-                    "合成采用两镜等权；权重写在 config/lens.yaml，改权重必须同步改文档。",
+                    f"合成为 {synth_value['lens_count']} 套透镜加权（权重见 config/lens.yaml 的 synthesis.weights），"
+                    "缺某一透镜分数时只用其余透镜加权，不把缺失当 0。",
                     "规则命中是条件成立，不是方向保证；分歧项必须等催化剂。",
                 ],
                 falsifiers=synth_value["outlook"]["invalidators"],
-                opposing=["两镜可能同时犯同一个错：把美元流动性当成唯一自变量，低估财政/供给冲击。"],
-                parents=[fed_deriv.id, song_deriv.id],
+                opposing=["多套透镜可能同时犯同一个错：把美元流动性当成唯一自变量，低估财政/供给冲击。"],
+                parents=[
+                    fed_deriv.id,
+                    song_deriv.id,
+                    macro_deriv.id,
+                    micro_deriv.id,
+                    *[deriv.id for deriv in persona_derivs.values()],
+                ],
             )
-            step.outputs = {"derivations": [fed_deriv.id, song_deriv.id, synth_deriv.id]}
+            step.outputs = {
+                "derivations": [
+                    fed_deriv.id,
+                    song_deriv.id,
+                    macro_deriv.id,
+                    micro_deriv.id,
+                    *[deriv.id for deriv in persona_derivs.values()],
+                    synth_deriv.id,
+                ]
+            }
 
-            data_gaps = _data_gaps(config, fed_value["readings"], song_value["readings"])
-            observations = record_observations(session, _observation_rows(fed_value, song_value, synth_value, today))
+            data_gaps = _data_gaps(
+                config,
+                fed_value["readings"],
+                song_value["readings"],
+                macro_value["readings"],
+                micro_value["readings"],
+            )
+            observations = record_observations(
+                session,
+                _observation_rows(
+                    fed_value,
+                    song_value,
+                    synth_value,
+                    today,
+                    [("macro", macro_value), ("micro", micro_value)]
+                    + [(item["id"], item) for item in personas],
+                ),
+            )
             step.outputs["observations"] = observations
             step.outputs["data_gaps"] = len(data_gaps)
         summary = {
             "fed": fed_value["state"]["stance_label"],
             "song": song_value["state"]["phase"]["label"],
             "heart": song_value["state"]["dollar_heart"]["label"],
+            "macro": macro_value["state"]["regime"]["label"],
+            "personas": len(personas),
+            "lenses": synth_value["lens_count"],
             "consensus": synth_value["consensus_count"],
+            "strong": synth_value["strong_count"],
             "divergences": len(synth_value["divergences"]),
-            "warnings": len(_warning_list(fed_value["state"], song_value["state"])),
-            "derivations": [fed_deriv.id, song_deriv.id, synth_deriv.id],
+            "warnings": len(synth_value["warnings"]),
+            "derivations": [
+                fed_deriv.id,
+                song_deriv.id,
+                macro_deriv.id,
+                micro_deriv.id,
+                *[deriv.id for deriv in persona_derivs.values()],
+                synth_deriv.id,
+            ],
         }
         run = rec.finish(summary=summary)
         session.commit()
@@ -605,10 +980,26 @@ def run_lenses(session: Session, asof: datetime | None = None) -> dict[str, Any]
             "panel": _panel_summary(panel),
             "fed": fed_value,
             "song": song_value,
+            "macro": macro_value,
+            "micro": micro_value,
+            "personas": personas,
             "synthesis": synth_value,
-            "rules": {"fed": fed_rules, "song": song_rules},
+            "rules": {
+                "fed": fed_rules,
+                "song": song_rules,
+                "macro": macro_value["rules"],
+                "micro": micro_value["rules"],
+                "personas": {item["id"]: item.get("rules") or [] for item in personas},
+            },
             "data_gaps": data_gaps,
-            "derivations": {"fed": fed_deriv, "song": song_deriv, "synthesis": synth_deriv},
+            "derivations": {
+                "fed": fed_deriv,
+                "song": song_deriv,
+                "macro": macro_deriv,
+                "micro": micro_deriv,
+                "personas": persona_derivs,
+                "synthesis": synth_deriv,
+            },
             "config_version": config.get("version"),
         }
     except Exception as exc:  # noqa: BLE001 - 记录失败运行后继续抛出
@@ -637,21 +1028,23 @@ def _reading_steps(readings: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _data_gaps(
-    config: dict[str, Any], fed_readings: list[dict[str, Any]], song_readings: list[dict[str, Any]]
+    config: dict[str, Any],
+    *reading_groups: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     gaps = list(config.get("data_gaps") or [])
     known = {gap.get("id") for gap in gaps}
-    for reading in list(fed_readings) + list(song_readings):
-        if reading.get("value") is not None or reading.get("id") in known:
-            continue
-        gaps.append(
-            {
-                "id": reading["id"],
-                "label": reading.get("label"),
-                "reason": reading.get("missing_reason") or "本地库缺该序列",
-                "impact": "读数缺失，UI 已标注为不可用。",
-            }
-        )
+    for readings in reading_groups:
+        for reading in readings:
+            if reading.get("value") is not None or reading.get("id") in known:
+                continue
+            gaps.append(
+                {
+                    "id": reading["id"],
+                    "label": reading.get("label"),
+                    "reason": reading.get("missing_reason") or "本地库缺该序列",
+                    "impact": "读数缺失，UI 已标注为不可用。",
+                }
+            )
     return gaps
 
 
@@ -678,13 +1071,39 @@ def latest_state(session: Session) -> dict[str, Any] | None:
         .limit(1)
     )
     run = synthesis.run_id
+    macro = _latest_derivation(session, "lens.macro.state")
+    micro = _latest_derivation(session, "lens.micro.state")
+    personas = list(
+        session.scalars(
+            select(Derivation)
+            .where(Derivation.code.like("lens.persona.%.state"))
+            .order_by(Derivation.asof.desc(), Derivation.created_at.desc())
+            .limit(40)
+        ).all()
+    )
+    seen: dict[str, Derivation] = {}
+    for row in personas:
+        persona_id = row.code.removeprefix("lens.persona.").removesuffix(".state")
+        seen.setdefault(persona_id, row)
     return {
         "run_id": run,
         "asof": aware(synthesis.asof).isoformat() if synthesis.asof else None,
         "fed": fed,
         "song": song,
+        "macro": macro,
+        "micro": micro,
+        "personas": seen,
         "synthesis": synthesis,
     }
+
+
+def _latest_derivation(session: Session, code: str) -> Derivation | None:
+    return session.scalar(
+        select(Derivation)
+        .where(Derivation.code == code)
+        .order_by(Derivation.asof.desc(), Derivation.created_at.desc())
+        .limit(1)
+    )
 
 
 def latest_forecasts(session: Session, limit: int = 50, status: str | None = None) -> list[Forecast]:

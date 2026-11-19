@@ -19,10 +19,13 @@ from app.ingest.providers import (
     eastmoney_calendar,
     eastmoney_yield,
     ecb,
+    fed_h41,
+    fed_h6,
     frankfurter,
     imf_datamapper,
     jgb,
     nyfed,
+    nyfed_money,
     rss,
     shfe_positions,
     sina,
@@ -110,6 +113,13 @@ SOURCE_TREASURY_FISCAL = dict(
     tier="S1",
     reliability=0.95,
     base_url="https://fiscaldata.treasury.gov",
+)
+SOURCE_FED_RESEARCH = dict(
+    name="美联储H.4.1/H.6",
+    kind="official",
+    tier="S1",
+    reliability=0.95,
+    base_url="https://www.federalreserve.gov",
 )
 
 NEWS_FEEDS = [
@@ -223,6 +233,102 @@ MACRO_SERIES_META: dict[str, dict] = {
         "country": "CN",
         "freq": "y",
     },
+    # ── 纽约联储货币市场管道（TGCR/BGCR/OBFR 与隔夜逆回购规模）──────────
+    "US_TGCR": {"name": "三方一般担保回购利率(TGCR)", "unit": "%", "country": "US", "freq": "d"},
+    "US_BGCR": {"name": "广义一般担保回购利率(BGCR)", "unit": "%", "country": "US", "freq": "d"},
+    "US_OBFR": {"name": "隔夜银行融资利率(OBFR)", "unit": "%", "country": "US", "freq": "d"},
+    "US_RRP_AMT": {
+        "name": "隔夜逆回购(RRP)规模",
+        "unit": "USD",
+        "country": "US",
+        "freq": "d",
+    },
+    # ── 美联储资产负债表（H.4.1，周频）与货币供应（H.6，月频）──────────
+    "US_FED_ASSETS": {"name": "美联储总资产（H.4.1）", "unit": "USD", "country": "US", "freq": "w"},
+    "US_FED_TREASURY": {
+        "name": "美联储持有美国国债（H.4.1）",
+        "unit": "USD",
+        "country": "US",
+        "freq": "w",
+    },
+    "US_FED_MBS": {
+        "name": "美联储持有MBS（H.4.1）",
+        "unit": "USD",
+        "country": "US",
+        "freq": "w",
+    },
+    "US_FED_RESERVES": {
+        "name": "准备金余额（H.4.1，周频）",
+        "unit": "USD",
+        "country": "US",
+        "freq": "w",
+    },
+    "US_TGA": {
+        "name": "财政部一般账户余额(TGA)",
+        "unit": "USD",
+        "country": "US",
+        "freq": "w",
+    },
+    "US_CURRENCY": {"name": "流通中货币（H.4.1）", "unit": "USD", "country": "US", "freq": "w"},
+    "US_M1": {"name": "美国M1（季节调整，H.6）", "unit": "USD", "country": "US", "freq": "m"},
+    "US_M2": {"name": "美国M2（季节调整，H.6）", "unit": "USD", "country": "US", "freq": "m"},
+    "US_MONETARY_BASE": {
+        "name": "美国货币基础（季节调整，H.6）",
+        "unit": "USD",
+        "country": "US",
+        "freq": "m",
+    },
+    # ── 世界银行扩展指标（储蓄/投资/货币化/经常账户，佩蒂斯—辜朝明框架需要）──
+    "WB_US_CA_GDP": {"name": "美国经常账户/GDP（世界银行）", "unit": "%", "country": "US", "freq": "y"},
+    "WB_CN_CA_GDP": {"name": "中国经常账户/GDP（世界银行）", "unit": "%", "country": "CN", "freq": "y"},
+    "WB_US_SAVINGS_GDP": {
+        "name": "美国总储蓄/GDP（世界银行）",
+        "unit": "%",
+        "country": "US",
+        "freq": "y",
+    },
+    "WB_CN_SAVINGS_GDP": {
+        "name": "中国总储蓄/GDP（世界银行）",
+        "unit": "%",
+        "country": "CN",
+        "freq": "y",
+    },
+    "WB_US_M2_GDP": {
+        "name": "美国广义货币/GDP（世界银行）",
+        "unit": "%",
+        "country": "US",
+        "freq": "y",
+    },
+    "WB_CN_M2_GDP": {
+        "name": "中国广义货币/GDP（世界银行）",
+        "unit": "%",
+        "country": "CN",
+        "freq": "y",
+    },
+    "WB_US_CAPFORM_GDP": {
+        "name": "美国资本形成/GDP（世界银行）",
+        "unit": "%",
+        "country": "US",
+        "freq": "y",
+    },
+    "WB_CN_CAPFORM_GDP": {
+        "name": "中国资本形成/GDP（世界银行）",
+        "unit": "%",
+        "country": "CN",
+        "freq": "y",
+    },
+    "WB_US_REAL_GDP_GROWTH": {
+        "name": "美国实际GDP增速（世界银行）",
+        "unit": "%",
+        "country": "US",
+        "freq": "y",
+    },
+    "WB_CN_REAL_GDP_GROWTH": {
+        "name": "中国实际GDP增速（世界银行）",
+        "unit": "%",
+        "country": "CN",
+        "freq": "y",
+    },
 }
 
 # IMF WEO 指标 → 序列 code（键为 DataMapper 的指标名，ISO3 为国家代码）。
@@ -242,6 +348,12 @@ WORLDBANK_ANNUAL_SERIES: dict[str, dict[str, str]] = {
     "FP.CPI.TOTL.ZG": {"USA": "WB_US_CPI", "CHN": "WB_CN_CPI"},
     "SL.UEM.TOTL.ZS": {"USA": "WB_US_UNEMPLOYMENT", "CHN": "WB_CN_UNEMPLOYMENT"},
     "GC.DOD.TOTL.GD.ZS": {"USA": "WB_US_DEBT_GDP", "CHN": "WB_CN_DEBT_GDP"},
+    # 储蓄—投资—货币化：佩蒂斯（贸易差额是 S−I 残差）与辜朝明（资产负债表衰退）的核心口径。
+    "BN.CAB.XOKA.GD.ZS": {"USA": "WB_US_CA_GDP", "CHN": "WB_CN_CA_GDP"},
+    "NY.GNS.ICTR.ZS": {"USA": "WB_US_SAVINGS_GDP", "CHN": "WB_CN_SAVINGS_GDP"},
+    "FM.LBL.BMNY.GD.ZS": {"USA": "WB_US_M2_GDP", "CHN": "WB_CN_M2_GDP"},
+    "NE.GDI.TOTL.ZS": {"USA": "WB_US_CAPFORM_GDP", "CHN": "WB_CN_CAPFORM_GDP"},
+    "NY.GDP.MKTP.KD.ZG": {"USA": "WB_US_REAL_GDP_GROWTH", "CHN": "WB_CN_REAL_GDP_GROWTH"},
 }
 
 # MTS table 9 的 line_code_nbr → 序列 code（表里两行都叫 "Total"，必须按行号区分）。
@@ -797,6 +909,31 @@ def collect_rates() -> dict:
             logger.exception("nyfed rates failed")
             store.record_health(session, nyfed_source.id, ok=False, error=str(exc))
             stats["errors"].append(f"nyfed: {exc}")
+        # NY Fed 货币市场管道：TGCR / BGCR / OBFR / 隔夜逆回购规模
+        try:
+            start = datetime.now(timezone.utc).date() - timedelta(days=365 * 5)
+            series = nyfed_money.fetch_money(client, start_date=start)
+            for code, points in series.items():
+                if not points:
+                    stats["errors"].append(f"nyfed_money {code}: 无数据")
+                    continue
+                meta = MACRO_SERIES_META.get(code, {})
+                n = store.upsert_macro(
+                    session,
+                    code,
+                    points,
+                    source_id=nyfed_source.id,
+                    name=meta.get("name"),
+                    unit=meta.get("unit"),
+                    country=meta.get("country"),
+                    freq=meta.get("freq"),
+                )
+                stats["points"] += n
+                stats["series"] += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("nyfed money failed")
+            stats["errors"].append(f"nyfed_money: {exc}")
+
         session.commit()
 
     stats["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
@@ -885,12 +1022,17 @@ def _store_macro_points(session, code: str, points: list[MacroPoint], source_id:
     return n
 
 
-def collect_macro() -> dict:
+def collect_macro(fed_history_weeks: int = 0) -> dict:
     """Collect structural macro series: IMF WEO, Treasury Fiscal Data, World Bank.
 
     这是「数据缺失补数据源」的结构性读数来源：IMF 提供债务/GDP、赤字、增速等
     年频序列；财政部提供日频债务与月频收支（可算利息/收入比与赤字率）；世界银行
-    作 IMF 不可达时的年频兜底。任一源失败只记 degraded，不影响其它源。
+    作 IMF 不可达时的年频兜底，并补储蓄/投资/货币化/经常账户口径；美联储 H.4.1
+    与 H.6 提供周频资产负债表与月频货币供应（净流动性与 M2 的本体读数）。
+    任一源失败只记 degraded，不影响其它源。
+
+    ``fed_history_weeks`` > 0 时对 H.4.1 做历史回补（每周一个归档页，成本较高），
+    仅供一次性补采使用；默认 0 只取当前周快照。
     """
     started = time.perf_counter()
     stats: dict = {"series": 0, "obs": 0, "degraded_reasons": []}
@@ -926,7 +1068,7 @@ def collect_macro() -> dict:
         treasury_source = store.get_source(session, **SOURCE_TREASURY_FISCAL)
         try:
             debt_points: list[MacroPoint] = []
-            for row in treasury_fiscal.fetch_debt_to_penny(limit=90):
+            for row in treasury_fiscal.fetch_debt_to_penny(limit=1800):
                 ts = _parse_day(row.get("record_date"))
                 value = _to_float(row.get("tot_pub_debt_out_amt"))
                 if ts is None or value is None:
@@ -935,7 +1077,7 @@ def collect_macro() -> dict:
             _store_macro_points(session, "US_FED_DEBT", debt_points, treasury_source.id, stats)
 
             by_month: dict[str, dict[str, float]] = {}
-            for row in treasury_fiscal.fetch_mts(table=9, page_size=600):
+            for row in treasury_fiscal.fetch_mts(table=9, page_size=3600):
                 code = MTS_LINE_SERIES.get(str(row.get("line_code_nbr") or "").strip())
                 month = str(row.get("record_date") or "")[:7]
                 value = _to_float(row.get("current_month_rcpt_outly_amt"))
@@ -993,6 +1135,54 @@ def collect_macro() -> dict:
                 session, wb_source.id, ok=False, error="; ".join(wb_errors[-3:]) or "no data"
             )
             stats["degraded_reasons"].extend(wb_errors)
+
+        # 4) 美联储 H.4.1 周频资产负债表：总资产/国债/MBS/准备金/TGA/流通现金。
+        #    这是「净流动性 = 央行资产 − TGA − RRP」的本体，此前完全缺失。
+        fed_source = store.get_source(session, **SOURCE_FED_RESEARCH)
+        try:
+            if fed_history_weeks > 0:
+                series = fed_h41.fetch_history(weeks=fed_history_weeks)
+            else:
+                snapshot = fed_h41.fetch_current()
+                ts = datetime(snapshot["asof"].year, snapshot["asof"].month, snapshot["asof"].day,
+                              tzinfo=timezone.utc)
+                series = {
+                    code: [MacroPoint(code=code, ts=ts, value=value)]
+                    for code, value in snapshot["values"].items()
+                }
+            for code, points in series.items():
+                if points:
+                    _store_macro_points(session, code, points, fed_source.id, stats)
+            store.record_health(session, fed_source.id, ok=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("fed h41 balance sheet failed")
+            store.record_health(session, fed_source.id, ok=False, error=str(exc))
+            stats["degraded_reasons"].append(f"fed_h41: {exc}")
+
+        # 5) 美联储 H.6 月频货币供应：M1 / M2 / 货币基础（季节调整）。
+        #    M2 此前是透镜的已知缺口，H.6 当前页一次给出约 17 个月。
+        try:
+            if fed_history_weeks > 0:
+                h6_series = fed_h6.fetch_history(months=max(12, fed_history_weeks // 4))
+            else:
+                snapshot = fed_h6.fetch_current()
+                h6_series = {
+                    code: [
+                        MacroPoint(
+                            code=code,
+                            ts=datetime(month.year, month.month, 1, tzinfo=timezone.utc),
+                            value=value,
+                        )
+                        for month, value in sorted(obs.items())
+                    ]
+                    for code, obs in snapshot.items()
+                }
+            for code, points in h6_series.items():
+                if points:
+                    _store_macro_points(session, code, points, fed_source.id, stats)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("fed h6 money supply failed")
+            stats["degraded_reasons"].append(f"fed_h6: {exc}")
 
         session.commit()
 

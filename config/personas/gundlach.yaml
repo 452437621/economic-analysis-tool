@@ -1,0 +1,259 @@
+# 冈拉克透镜（Jeffrey Gundlach / DoubleLine）——机器可执行规格
+# 取材：docs/research/persona-gundlach.md（30 项指标 + JG1–JG12 + 资产映射）。
+# 约定：
+#   * 利率、利差一律用百分点（"%"），例如 fed_gap = 0.50 表示 +50bp，2s10s = -0.10 表示 -10bp。
+#   * readings 的 expr 只用本地日频面板列与允许函数（z/pctile/chg/pct/yoy/ma/shift，见 backend/app/lens/persona.py）；
+#     rules 的 field 语义由引擎给定：value=最新值、chg=63 个交易日变化（读数同单位，利率即百分点）、
+#     z=1260 日滚动 z、pct=2520 日滚动分位（0–1，注意不是涨跌幅）。阈值已按这些窗口校准，故 >0.50 即 +50bp。
+#   * 引擎按表达式求值 scores 并裁剪到 −2…+2，故 scores 写成可求值常量，采纳理由放在行尾注释。
+#   * 本地无 corr / sum / 滚动极值函数：JG8、JG12 的相关性条件退化为「同向性」代理；
+#     JG10（股债 60 日相关，60/40 失效）与 JG11 的 SPX、NDX/SPX 两条腿无法在本规格内机检，
+#     JG10 暂不落规则（编号留空，与 lens.yaml 跳过 S6/S14 的做法一致），JG11 只用铜金比一条腿。
+id: gundlach
+name: 杰弗里·冈拉克
+title: DoubleLine Capital 创始人
+school: 长端利率 / 久期与信用周期
+key_question: 长端利率的公允区间在哪，久期该加还是该减？
+thesis: 长端利率由实际利率、通胀预期与期限溢价三因子定价，其中期限溢价由净供给与财政可持续性主导，美联储只是 2 年期收益率的跟随者而非自变量。10 年期公允区间约 4.9%–6.0%，区间内做趋势跟随、区间外才做反转，久期只在 10Y ≥6.00%（30Y ≥6.50%）时才值得分批加。财政主导的「水床难题」与不透明的私募信贷把信用清算推后但没取消，黄金已从实际利率的函数切换为货币/储备资产，美元结构性偏弱但必须用动量确认。
+
+readings:
+  - id: jg.us10y
+    label: 美债10年
+    unit: "%"
+    digits: 2
+    expr: "US10Y"
+    source: 美国财政部
+    evidence: E1
+  - id: jg.us30y
+    label: 美债30年
+    unit: "%"
+    digits: 2
+    expr: "US30Y"
+    source: 美国财政部
+    evidence: E1
+  - id: jg.real10y
+    label: 10年实际收益率
+    unit: "%"
+    digits: 2
+    expr: "US10Y_REAL"
+    source: 美国财政部（TIPS）
+    evidence: E1
+  - id: jg.real30y
+    label: 30年实际收益率（30Y 名义 − 10Y 盈亏平衡，代理）
+    unit: "%"
+    digits: 2
+    expr: "US30Y - US10Y_BE"
+    source: 代理计算（本地无 US30Y_REAL / US30Y_BE 序列）
+    evidence: E2
+  - id: jg.be10y
+    label: 10年通胀预期
+    unit: "%"
+    digits: 2
+    expr: "US10Y_BE"
+    source: 美国财政部（盈亏平衡通胀）
+    evidence: E1
+  - id: jg.curve_2s10s
+    label: 2s10s
+    unit: "%"
+    digits: 2
+    expr: "US10Y - US2Y"
+    source: 派生（财政部收益率曲线）
+    evidence: E1
+  - id: jg.curve_5s30s
+    label: 5s30s
+    unit: "%"
+    digits: 2
+    expr: "US30Y - US5Y"
+    source: 派生（财政部收益率曲线）
+    evidence: E1
+  - id: jg.fed_gap
+    label: 反应函数缺口（US2Y − EFFR）
+    unit: "%"
+    digits: 2
+    expr: "US2Y - EFFR"
+    source: 派生（财政部 2Y + 纽约联储 EFFR）
+    evidence: E1
+  - id: jg.term_premium
+    label: 期限溢价粗代理（10Y − 2Y −（10Y BE − 2%））
+    unit: "%"
+    digits: 2
+    expr: "US10Y - US2Y - (US10Y_BE - 2.0)"
+    source: 代理计算（本地无 ACM 期限溢价）
+    evidence: E2
+  - id: jg.credit_proxy
+    label: 信用压力代理（铜金比相对一年均值的偏离，负=走阔）
+    unit: "%"
+    digits: 2
+    expr: "((HG / GC) / (ma(HG, 250) / ma(GC, 250)) - 1) * 100"
+    source: 代理计算（COMEX 铜/金；本地无 HY OAS）
+    evidence: E3
+  - id: jg.dxy
+    label: 美元指数
+    unit: 点
+    digits: 2
+    expr: "DXY"
+    source: ICE
+    evidence: E1
+  - id: jg.fair_mix
+    label: 混合模型公允10Y（名义GDP锚 6.0% 常数 + 全球久期锚）
+    unit: "%"
+    digits: 2
+    expr: "0.5 * 6.0 + 0.5 * (DE10Y + US10Y_BE - 2.0)"
+    source: DoubleLine 2026-10 UBS 专访 + 本地近似（WB 年度序列无法算七年均值）
+    evidence: E2
+  - id: jg.gold_mom20
+    label: 黄金20日动量
+    unit: "%"
+    digits: 2
+    expr: "GOLD_MOM_20D_PCT"
+    source: 本地黄金序列
+    evidence: E2
+  - id: jg.interest_receipts
+    label: 联邦利息支出/财政收入（TTM 月均比值）
+    unit: "%"
+    digits: 1
+    expr: "ma(US_MTS_INTEREST, 252) / ma(US_MTS_RECEIPTS, 252) * 100"
+    source: 美国财政部 MTS
+    evidence: E1
+
+rules:
+  - id: JG1
+    name: 实际利率天花板
+    severity: watch
+    when:
+      all:
+        - {metric: jg.real10y, field: value, op: ">=", value: 2.75}
+        - {metric: jg.curve_5s30s, field: chg, op: ">=", value: 0.10}
+    message: "10Y 实际利率进入 2.75% 以上的历史极值区且长端（5s30s 代理）继续走陡，久期赔率开始有利；但若 JG7 同时确认财政主导，极值会被拉长，只能分批建 5–10Y 而不能单独抄底。"
+    falsifier: "实际利率回落至 2.40% 以下，或 5s30s 由走阔转为收窄 10bp 以上（说明是避险买盘而非供给冲击）。"
+    assets: [long_bond, gold]
+    sources: ["S16", "S19"]
+  - id: JG2
+    name: 双模型公允区间（两侧）
+    severity: warn
+    when:
+      any:
+        - {metric: jg.us10y, field: value, op: "<=", value: 4.40}
+        - {metric: jg.us10y, field: value, op: ">=", value: 6.00}
+        - {metric: jg.us30y, field: value, op: ">=", value: 6.50}
+    message: "10Y 跌到 4.40% 以下说明久期已贵、不追多；10Y ≥6.00% 或 30Y ≥6.50% 才是他定义的买点，区间内只做趋势跟随、不做反转（不把公允值当均值回归目标）。"
+    falsifier: "赤字/GDP 升破 8%，或 EFFR 下行的同时联邦债务 60 日增量创 2015 年以来新高（隐性 QE），则整个公允区间上移。"
+    assets: [long_bond, usd]
+    sources: ["S16", "S17"]
+  - id: JG3
+    name: 熊陡=财政/通胀溢价
+    severity: warn
+    when:
+      all:
+        - {metric: jg.curve_5s30s, field: chg, op: ">=", value: 0.15}
+        - {metric: jg.us10y, field: chg, op: ">=", value: 0.20}
+        - {metric: jg.be10y, field: value, op: ">=", value: 2.0}
+    message: "长端主导的熊陡（5s30s 与 10Y 同向抬升、通胀预期不下跌）是供给与期限溢价而不是增长定价，低配 30Y、多 TIPS/黄金/价值股。"
+    falsifier: "10Y 转而下行 15bp 以上（转为避险牛陡），或 10Y 盈亏平衡跌破 2.0%（需求冲击而非供给冲击）。"
+    assets: [long_bond, gold, usd]
+    sources: ["S2", "S16"]
+  - id: JG4
+    name: 牛陡=衰退定价
+    severity: warn
+    when:
+      all:
+        - {metric: jg.curve_2s10s, field: chg, op: ">=", value: 0.20}
+        - {metric: jg.curve_5s30s, field: chg, op: "<=", value: 0.05}
+    message: "2s10s 走阔而 5s30s 不跟（短端崩、降息定价）是牛陡，加 5Y 久期、减信用与周期股、多黄金。"
+    falsifier: "10Y 盈亏平衡升到 2.60% 以上（陡峭化其实是熊陡的伪装），或反应函数缺口重新转正。"
+    assets: [long_bond, us_equity, gold]
+    sources: ["S12", "S16"]
+  - id: JG5
+    name: 去倒挂倒计时
+    severity: critical
+    when:
+      all:
+        - {metric: jg.curve_2s10s, field: value, op: ">=", value: 0.0}
+        - {metric: jg.curve_2s10s, field: chg, op: ">=", value: 0.10}
+    message: "2s10s 由 −10bp 以下转正并站上 0（引擎以 63 个交易日变化 ≥+10bp 近似「维持 20 个交易日」），按其 2024 年的判断工具去倒挂后 6–18 个月进入衰退，全面防御、加中段久期、股票降杠杆。"
+    falsifier: "同期 10Y 实际利率上行 30bp 以上（熊陡式去倒挂而非衰退式），则降级为 info；若 2s10s 重新跌回 0 以下则规则取消。"
+    assets: [long_bond, us_equity]
+    sources: ["S10", "S16"]
+  - id: JG6
+    name: 反应函数缺口
+    severity: watch
+    when:
+      any:
+        - {metric: jg.fed_gap, field: value, op: ">=", value: 0.50}
+        - {metric: jg.fed_gap, field: value, op: "<=", value: -0.70}
+    message: "US2Y − EFFR 连续 10 个交易日 ≥+50bp 说明市场在定价加息（本规则以点值近似，连续确认需人工复核），久期与黄金不宜抢跑；≤−70bp 则降息在即，加久期与黄金——美联储跟随 2Y，不引领 2Y。"
+    falsifier: "FOMC 声明明确排除某一方向，或缺口由 2Y 单独跳动造成而 10Y 的 20 日变化不足 5bp。"
+    assets: [long_bond, usd, gold]
+    sources: ["S12", "S15"]
+  - id: JG7
+    name: 财政主导（水床）
+    severity: watch
+    when:
+      all:
+        - {metric: jg.interest_receipts, field: value, op: ">=", value: 20.0}
+        - {metric: jg.term_premium, field: value, op: ">=", value: 0.0}
+    message: "利息支出/财政收入升破 20%（赤字已约 6.9% GDP）且期限溢价已转正，财政约束进入反应函数、长端与实际利率有结构性上行压力，低配长端、多实物资产与黄金、美元结构性偏空。"
+    falsifier: "利息/收入回落至 15% 以下且赤字/GDP 回到 4% 以下（连续两个季度），或期限溢价重新转负。"
+    assets: [long_bond, gold, commodities]
+    sources: ["S2", "S16"]
+  - id: JG8
+    name: 黄金-实际利率脱钩
+    severity: watch
+    when:
+      all:
+        - {metric: jg.real10y, field: chg, op: ">", value: 0.0}
+        - {metric: jg.gold_mom20, field: value, op: ">=", value: 5.0}
+    message: "实际利率上行而金价 20 日动量同步为正（60 日相关性本地不可算，用同向性代理），黄金定价切到货币/储备属性，超配黄金、减美元现金。"
+    falsifier: "实际利率与金价恢复强负相关（60 日相关性 ≤ −0.50），或央行购金继续增加而金价跌破 4,000 美元。"
+    assets: [gold, usd]
+    sources: ["S4", "S24"]
+  - id: JG9
+    name: 黄金追高禁入
+    severity: info
+    when:
+      all:
+        - {metric: jg.gold_mom20, field: value, op: ">=", value: 15.0}
+    message: "黄金 20 日涨幅 ≥15% 属于垂直拉升，不追高、等回撤到整数关口下方再加（他 2026-04 的「4,000 美元下方才便宜」用法）。"
+    falsifier: "央行购金 20 日增量处于 2015 年以来 90 分位以上（买盘压过技术回撤），或回撤后重新站上 60 日高点。"
+    assets: [gold, silver]
+    sources: ["S20"]
+  - id: JG11
+    name: 信用裂缝代理
+    severity: warn
+    when:
+      all:
+        - {metric: jg.credit_proxy, field: value, op: "<=", value: -8.0}
+    message: "铜金比相对一年均值折价 ≥8%（本地无 HY OAS、无 NDX/SPX 读数时的最佳裂缝代理，另两条腿需人工跟踪），信用事件概率上升，减信用代理、加国债与黄金、股票转等权。"
+    falsifier: "铜金比收复一年均值一半以上，或（接入 HY OAS 后）高收益利差未同步走阔。"
+    assets: [long_bond, gold, us_equity]
+    sources: ["S8", "S21"]
+  - id: JG12
+    name: 美元结构性空头：确认与止损
+    severity: watch
+    when:
+      all:
+        - {metric: jg.dxy, field: chg, op: "<=", value: -4.0}
+        - {metric: jg.us10y, field: chg, op: ">=", value: 0.0}
+    message: "美元 63 个交易日跌幅 ≥4（DXY 点位≈百分点，103 附近约合 4%）且同期收益率仍在抬升（corr60(DXY,10Y) ≤0 的同向性代理），结构性弱美元成立，加 EM 本币债、黄金与非美股票。"
+    falsifier: "美元 63 个交易日涨幅 ≥5 并维持一个季度（2026 年 DXY 96.35→103.9 即反例），美元空头降级为 info，等再确认。"
+    assets: [usd, gold, cn_equity]
+    sources: ["S13", "S17"]
+
+scores:
+  # 引擎（backend/app/lens/persona.py:build_scores）按表达式求值并把结果裁剪到 −2…+2；
+  # long_bond 正 = 看多债券价格。这里是本透镜的静态立场，regime 切换由上面 JG 规则给出修正。
+  us_equity: "-1"     # 估值问题（CAPE 42）大于盈利问题；股债同向下降杠杆、等权化，AI 集中度是裂缝前兆
+  gold: "+2"          # 货币/储备属性已接管定价，长期基石；20 日动量 ≥15% 时按 JG9 不追高、等回撤
+  silver: "+1"        # 跟随黄金的货币属性，工业需求与流动性冲击下贝塔更大，仓位小于黄金
+  usd: "-1"           # 结构性偏空（赤字约 6.9% GDP、利息/收入逼近 20%），60 日动量确认前只减配不做空
+  cn_equity: "0"      # 只在弱美元→EM 流动性传导上偏多，不押制度叙事
+  long_bond: "-1"     # 区间内不追多；10Y ≥6.00% 或 30Y ≥6.50% 才分批加久期，买短中段不买 30Y
+  commodities: "+1"   # 财政主导与通胀黏性的实物对冲，等权商品桶优于单一品种
+
+triggers:
+  - "US10Y 在 4.40%–6.00% 区间内只做趋势跟随；跌破 4.40% 或升破 6.00%（30Y ≥6.50%）才切换为反转/加久期"
+  - "US2Y − EFFR 连续 10 个交易日 ≥+50bp 视为加息在途，≤−70bp 视为降息在即"
+  - "2s10s 由 ≤−10bp 转正并维持 20 个交易日 → 去倒挂倒计时，6–18 个月衰退窗口"
+  - "利息支出/财政收入 TTM ≥20% 且期限溢价代理 ≥0 → 财政主导（水床）成立，长端只做交易性多头"
+  - "黄金 20 日涨幅 ≥15% → 追高禁入；等回撤至关键整数关口下方（如 4,000 美元）再买"
+  - "DXY 60 日跌幅 ≥4% 为弱美元确认、涨幅 ≥5% 并维持 20 日为结构性空头止损"

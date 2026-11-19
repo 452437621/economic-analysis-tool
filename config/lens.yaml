@@ -4,17 +4,33 @@
 # 所有数值读数由 backend/app/lens/{fed,song}.py 从本地库计算，
 # 规则由 backend/app/lens/engine.py 逐条求值，命中情况写入 RuleHit，
 # 结论写入 Derivation（方法 id: lens.fed.v1 / lens.song.v1 / lens.synthesis.v1）。
-version: "1.0.0"
+version: "2.0.0"
 disclaimer: >-
-  本模块是研究工具，不是投资建议。两套透镜都只是对既有文本的显式化与可计算化，
+  本模块是研究工具，不是投资建议。每一套透镜都只是对既有文本/方法的显式化与可计算化，
   规则命中表示「该框架下的条件成立」，不表示市场一定按该框架运行。
-  证据等级 E0–E4 见 docs/27-双透镜-美联储与宋鸿兵.md「证据等级」一节。
+  证据等级 E0–E4 见 docs/27-双透镜-美联储与宋鸿兵.md「证据等级」一节；
+  多透镜体系与宏观/微观两层的设计见 docs/29-多透镜体系.md。
 
-# 合成权重：两镜等权。任何调整都必须同时改这里与 docs，保证可复现。
+# 合成权重：每套透镜的分数按权重加权平均（缺某套分数时只用其余透镜，不把缺失当 0）。
+# 权重反映「证据密度 × 与本资产的相关性」，不是精确概率；任何调整必须同时改文档。
 synthesis:
+  # 13 套透镜的合成权重，合计 = 1.0。
+  # 两套主力框架（美联储 0.17 / 宋鸿兵 0.14）与两层（宏观 0.16 / 微观 0.125）合计 0.595；
+  # 9 位人物合计 0.405，单人权重刻意压低：人物透镜是交叉验证，不是投票主力。
   weights:
-    fed: 0.5
-    song: 0.5
+    fed: 0.17
+    song: 0.14
+    macro: 0.16
+    micro: 0.125
+    dalio: 0.05
+    druckenmiller: 0.05
+    marks: 0.05
+    gundlach: 0.045
+    el_erian: 0.045
+    pozsar: 0.045
+    pettis: 0.04
+    koo: 0.04
+    policy_actors: 0.04
 
 # 数据缺口：这些指标算不出来，UI 必须显式展示，不能静默省略。
 data_gaps:
@@ -34,14 +50,22 @@ data_gaps:
     label: 高收益债利差
     reason: 未接入 ICE BofA 序列。
     impact: 金融条件指数缺信用腿，用 SOFR−EFFR 与股指回撤替代，灵敏度下降。
-  - id: fed.m2
-    label: M2 同比
-    reason: 未接入 FRED M2SL。
-    impact: 货币数量论口径缺失，不影响政策反应函数打分。
   - id: fed.payload
-    label: 财政脉冲
-    reason: 本地只有月度 MTS 收支，无季度财政脉冲口径。
-    impact: 财政对增长的边际贡献只能看赤字/GDP。
+    label: 财政脉冲（季度口径）
+    reason: 本地只有月度 MTS 收支与年度 World Bank 数据，无季度财政脉冲口径。
+    impact: 财政对增长的边际贡献只能用 macro.fiscal_impulse（TTM 赤字/GDP）近似。
+  - id: macro.m2_history
+    label: M2 长历史
+    reason: 美联储 H.6 只提供当前页面（约 17 个月），FRED 不可达。
+    impact: M2 同比可用但 M2 分位/长周期对比不可用。
+  - id: macro.fed_balance_history
+    label: 美联储资产负债表长历史
+    reason: H.4.1 归档页由前端渲染，脚本只能逐周猜测日期，已回补到 2024-08。
+    impact: 净流动性 13 周变化可用，3 年以上历史对比不可用。
+  - id: macro.acm_term_premium
+    label: ACM 期限溢价
+    reason: NY Fed ACM 数据文件路径变更，2026-11 实测不可达。
+    impact: 期限溢价用 30s10s / 10s2s 代理，绝对水平不可比。
 
 # ── 美联储透镜规则 ────────────────────────────────────────────────────
 # 设计原则：每条规则都对应主席们在讲话/著作中反复出现的反应函数，
@@ -303,3 +327,137 @@ song_rules:
     falsifier: 长端上行但纳指继续创新高且盈利上修覆盖估值。
     assets: [us_equity]
     sources: ["宋鸿兵 2025-09-15『AI 泡沫』", "宋鸿兵 2025-11-30 微课堂"]
+
+# ── 宏观层规则（增长 / 通胀 / 流动性 / 财政 / 融资 / 美元 / 曲线）──────────
+# 这些规则不属于任何单一人物的框架，而是多透镜共用的「环境判定」：
+# 它们不直接下单，只决定其他透镜的分数要不要打折（见 docs/29-多透镜体系.md）。
+macro_rules:
+  - id: M1
+    name: 实际利率高企
+    severity: warn
+    when:
+      all:
+        - {metric: macro.real10, field: value, op: ">", value: 2.0}
+        - {metric: macro.real10_bp63, field: value, op: ">", value: 0}
+    message: 10Y 实际利率 >2% 且 63 日仍在走高：估值分母没有缓冲，长久期资产最脆弱。
+    falsifier: 实际利率继续上行但美股同步创新高且盈利上修覆盖估值。
+    assets: [us_equity, gold, long_bond]
+    sources: ["达里奥 债务周期框架", "冈拉克 长端定价"]
+  - id: M2
+    name: 净流动性收缩
+    severity: warn
+    when:
+      all:
+        - {metric: macro.net_liquidity_pct, field: value, op: "<", value: -5}
+    message: 净流动性（总资产−TGA−RRP）13 周收缩超过 5%：风险资产的边际买盘在退。
+    falsifier: 净流动性收缩但风险资产继续上涨（私人信用扩张对冲）。
+    assets: [us_equity, gold, commodities]
+    sources: ["德鲁肯米勒 流动性框架", "波萨 准备金框架"]
+  - id: M3
+    name: 财政主导
+    severity: warn
+    when:
+      all:
+        - {metric: macro.fiscal_impulse, field: value, op: ">", value: 6}
+        - {metric: macro.interest_receipts, field: value, op: ">", value: 20}
+    message: 赤字/GDP >6% 且利息/财政收入 >20%：长端由财政供需定价，不由货币政策定价。
+    falsifier: 赤字率维持高位但长端利率持续下行（衰退定价压倒供给）。
+    assets: [long_bond, gold]
+    sources: ["达里奥 财政主导", "佩蒂斯 储蓄过剩", "冈拉克 公允区间"]
+  - id: M4
+    name: 融资市场紧张
+    severity: critical
+    when:
+      all:
+        - {metric: macro.funding_stress, field: value, op: ">", value: 15}
+    message: SOFR 相对 EFFR 溢价 >15bp：回购市场出现结构性紧张，先降贝塔再讨论方向。
+    falsifier: 溢价跳升但隔夜融资成交量正常、无机构违约。
+    assets: [us_equity, gold, silver, commodities]
+    sources: ["宋鸿兵 美元心脏三态", "波萨 回购框架"]
+  - id: M5
+    name: 增长与通胀双降
+    severity: watch
+    when:
+      all:
+        - {metric: macro.growth_z, field: value, op: "<", value: -1}
+        - {metric: macro.inflation_z, field: value, op: "<", value: -0.5}
+    message: 增长与通胀同时走弱：进入「通缩象限」，债券最好、商品最差。
+    falsifier: 增长转弱但通胀预期反弹（滞胀化）。
+    assets: [long_bond, commodities, us_equity]
+    sources: ["美联储反应函数", "美林时钟"]
+  - id: M6
+    name: 美元拥挤
+    severity: watch
+    when:
+      all:
+        - {metric: macro.dxy_z, field: value, op: ">", value: 1.5}
+    message: 美元 z 分数 >1.5：强美元对新兴市场与商品的压制进入极端区，反转风险同时上升。
+    falsifier: 美元继续走强且新兴市场资金流未恶化。
+    assets: [usd, cn_equity, commodities]
+    sources: ["宋鸿兵 美元环流", "政策层 三体锚"]
+
+# ── 微观层规则（价格结构 / 实物紧张 / 拥挤度）────────────────────────────
+# 微观层只回答「现在进场贵不贵、紧不紧」，不判断方向。
+micro_rules:
+  - id: P1
+    name: 黄金实物紧张
+    severity: warn
+    when:
+      any:
+        - {metric: micro.comex_basis, field: value, op: ">", value: 0.9}
+        - {metric: micro.cn_premium, field: value, op: ">", value: 2.0}
+        - {metric: micro.gold_lease, field: value, op: ">", value: 1.5}
+    message: COMEX 基差 / 中国溢价 / 黄金租借利率三取一超过阈值：实物紧张先于价格反应。
+    falsifier: 三项同时回落而金价继续上涨（金融属性主导）。
+    assets: [gold, silver]
+    sources: ["波萨 布雷顿森林 III", "宋鸿兵 白银挤兑"]
+  - id: P2
+    name: 黄金 ETF 流出
+    severity: watch
+    when:
+      all:
+        - {metric: micro.etf_flow, field: value, op: "<", value: -2}
+    message: 全球黄金 ETF 持仓 3 个月减少 >2%：西方金融需求在撤退，实物需求能否接住是关键。
+    falsifier: ETF 流出但金价上涨（央行与亚洲实物需求接管定价）。
+    assets: [gold]
+    sources: ["世界黄金协会 ETF 流向", "宋鸿兵 央行购金"]
+  - id: P3
+    name: 美股偏离年线过大
+    severity: watch
+    when:
+      all:
+        - {metric: micro.spx_dev200, field: value, op: ">", value: 12}
+    message: 标普高于 200 日均线 12% 以上：趋势健康但回撤空间被打开，追高性价比低。
+    falsifier: 偏离度维持高位且盈利上修持续（趋势市）。
+    assets: [us_equity]
+    sources: ["马克斯 周期定位", "市场温度计"]
+  - id: P4
+    name: 科技集中度极端
+    severity: watch
+    when:
+      all:
+        - {metric: micro.ndx_spx, field: value, op: ">", value: 20}
+    message: 纳指/标普 >20 倍：集中度处于历史极端，指数下跌时真实回撤由少数权重决定。
+    falsifier: 集中度回落但指数继续上涨（普涨扩散）。
+    assets: [us_equity]
+    sources: ["马克斯 集中度风险", "宋鸿兵 AI 泡沫"]
+  - id: P5
+    name: 金银比高位
+    severity: info
+    when:
+      all:
+        - {metric: micro.gold_silver, field: value, op: ">", value: 85}
+    message: 金银比 >85：白银相对低估，若风险偏好回升白银弹性更大；若不回升则继续磨底。
+    falsifier: 金银比高位继续上行 12 个月（结构性短缺定价）。
+    assets: [silver, gold]
+    sources: ["宋鸿兵 金银比", "历史均值回归"]
+  - id: P6
+    name: 铜金比走弱
+    severity: info
+    when:
+      all:
+        - {metric: micro.copper_gold_z, field: value, op: "<", value: -1}
+    message: 铜金比 z<-1：增长预期弱于避险需求，周期品相对承压。
+    falsifier: 铜金比继续走弱但工业金属价格同步上涨（供给冲击）。
+    assets: [commodities, us_equity]
+    sources: ["铜金比 增长代理", "达里奥 增长腿"]

@@ -1,0 +1,261 @@
+id: el_erian
+name: 穆罕默德·埃里安
+title: 剑桥大学皇后学院院长、前 PIMCO CEO
+school: 三难困境 / 预期差
+key_question: 通胀、增长、金融稳定这三者，联储当下把哪个放在第一位？
+thesis: 联储无法同时兼顾通胀、增长与金融稳定，只能在三者之间排序；市场却习惯把其中一条腿的权重定价过头，预期差就是收益来源。三难排序决定资产定价的分母（实际利率与期限溢价），而“政策看跌期权”只有在增长或金融稳定被打坏时才会被重新定价。财政主导、美元特权裂痕与黄金的秩序溢价，是这套框架里的结构性慢变量。
+readings:
+  - id: ee.be10
+    label: 10年期盈亏平衡通胀率(通胀腿)
+    unit: "%"
+    digits: 2
+    expr: "US10Y_BE"
+    source: 美国财政部 TIPS 盈亏平衡通胀
+    evidence: E1
+  - id: ee.real10
+    label: 10年期实际利率(TIPS)
+    unit: "%"
+    digits: 2
+    expr: "US10Y_REAL"
+    source: 美国财政部 TIPS 实际收益率
+    evidence: E6
+  - id: ee.real_policy
+    label: 实际政策利率(EFFR−10Y盈亏平衡)
+    unit: "pp"
+    digits: 2
+    expr: "EFFR - US10Y_BE"
+    source: 纽约联储 EFFR + 美国财政部盈亏平衡通胀
+    evidence: E2
+  - id: ee.spx_ret_20d
+    label: 标普500近20个交易日涨跌幅(增长腿)
+    unit: "%"
+    digits: 1
+    expr: "pct(SPX, 20)"
+    source: 标普500指数
+    evidence: E2
+  - id: ee.spx_drawdown_proxy
+    label: 标普500较250日均线偏离(52周回撤代理)
+    unit: "%"
+    digits: 1
+    expr: "SPX / ma(SPX, 250) * 100 - 100"
+    source: 标普500指数
+    evidence: E1
+    note: 表达式沙箱没有滚动最高价与滚动相关性，用较250日均线的偏离度代理52周回撤深度。
+  - id: ee.funding_stress
+    label: 融资利差(SOFR−EFFR, 金融稳定腿)
+    unit: "bp"
+    digits: 0
+    expr: "SOFR_EFFR * 100"
+    source: 纽约联储 SOFR + 美联储 EFFR
+    evidence: E11
+    note: 库中 SOFR_EFFR 以百分点存储，乘 100 换算为 bp。
+  - id: ee.fed_gap
+    label: 市场定价与政策利率缺口(2Y−EFFR)
+    unit: "pp"
+    digits: 2
+    expr: "US2Y - EFFR"
+    source: 美国财政部国债收益率 + 纽约联储 EFFR
+    evidence: E4
+  - id: ee.long_end_premium
+    label: 长端期限溢价合成(TP代理+30s10s)
+    unit: "bp"
+    digits: 0
+    expr: "((US10Y - (US2Y + 2 * US5Y - US10Y) / 2) + (US30Y - US10Y)) * 100"
+    source: 美国财政部 2Y/5Y/10Y/30Y 国债收益率
+    evidence: E3
+    note: 第一部分是 ACM 期限溢价的代理 TP=10Y−(2Y+2×5Y−10Y)/2，第二部分是 30s10s 陡峭度；合成阈值 110bp 对应笔记中 TP>60bp 且 30s10s>50bp。
+  - id: ee.fiscal_interest_ratio
+    label: 联邦利息支出/财政收入(TTM)
+    unit: "%"
+    digits: 1
+    expr: "ma(US_MTS_INTEREST, 252) / ma(US_MTS_RECEIPTS, 252) * 100"
+    source: 美国财政部月度报表(MTS)
+    evidence: E8
+    note: 月频序列在日频面板上前向填充，252 个交易日均值≈12 个月 TTM 水平；单月比值当前 27.9%，TTM 约 19.2%。
+  - id: ee.gold_chg_63d
+    label: 黄金现货3个月涨跌幅
+    unit: "%"
+    digits: 1
+    expr: "pct(XAUUSD, 63)"
+    source: 黄金现货 XAUUSD
+    evidence: E6
+  - id: ee.dxy_ret_20d
+    label: 美元指数近20个交易日涨跌幅
+    unit: "%"
+    digits: 1
+    expr: "pct(DXY, 20)"
+    source: 美元指数 DXY
+    evidence: E7
+  - id: ee.us10y_chg_20d
+    label: 10年期美债收益率20日变化
+    unit: "bp"
+    digits: 0
+    expr: "chg(US10Y, 20) * 100"
+    source: 美国财政部 10 年期国债收益率
+    evidence: E7
+  - id: ee.cl_ret_20d
+    label: WTI原油近20个交易日涨跌幅
+    unit: "%"
+    digits: 1
+    expr: "pct(CL, 20)"
+    source: NYMEX WTI 原油
+    evidence: E10
+  - id: ee.em_rel_63d
+    label: 新兴/A股相对美股强弱(恒指3个月相对标普)
+    unit: "%"
+    digits: 1
+    expr: "pct(HSI, 63) - pct(SPX, 63)"
+    source: 恒生指数 + 标普500指数
+    evidence: E5
+    note: 沪深300列名以数字开头，表达式解析器会当作数字字面量，故用恒生指数代理 A 股/新兴风险偏好。
+rules:
+  - id: EE1
+    name: 三难同时收紧
+    severity: critical
+    when:
+      all:
+        - {metric: ee.be10, field: value, op: ">", value: 2.5}
+        - {metric: ee.spx_drawdown_proxy, field: value, op: "<=", value: -10}
+        - {metric: ee.funding_stress, field: value, op: ">", value: 10}
+    message: 通胀还在上方、股票已经回撤一成、融资市场又开始报警，三条腿同时收紧，联储没有任何一条腿可以牺牲，风险资产要减仓、黄金是唯一还能承接资金的资产。
+    falsifier: 10 年期盈亏平衡跌破 2.0%，说明这是纯需求冲击而非滞胀，三难并未同时成立。
+    assets: [us_equity, gold, long_bond]
+    sources: ["E1", "E11"]
+  - id: EE2
+    name: 政策看跌期权失效
+    severity: warn
+    when:
+      all:
+        - {metric: ee.spx_ret_20d, field: value, op: "<=", value: -8}
+        - {metric: ee.be10, field: value, op: ">=", value: 2.2}
+        - {metric: ee.real_policy, field: value, op: ">=", value: 1.0}
+    message: 股市跌了 8% 而通胀预期仍在 2.2% 以上、实际政策利率还有 1 个百分点，联储不会像过去那样兜底，“买跌”策略失效，应当买波动率与凸性、以黄金做相对防守。
+    falsifier: SOFR−EFFR 冲上 20bp 以上（融资压力凌驾于通胀之上），或年度失业率上行超过 0.5 个百分点，联储被迫重启看跌期权。
+    assets: [us_equity, gold]
+    sources: ["E2", "E12"]
+  - id: EE3
+    name: 期限溢价回归
+    severity: warn
+    when:
+      all:
+        - {metric: ee.long_end_premium, field: value, op: ">", value: 110}
+    message: 长端期限溢价与曲线陡峭度同时抬升，30 年期不再是避风港而是通胀与财政风险的计价器，应做空长端、用黄金对冲、美元保持中性偏强。
+    falsifier: 期限溢价代理回落到 20bp 以下，或合成读数跌破 70bp，长端重新获得套保需求。
+    assets: [long_bond, gold, usd]
+    sources: ["E3"]
+  - id: EE4
+    name: 预期差(市场比联储鹰)
+    severity: watch
+    when:
+      all:
+        - {metric: ee.fed_gap, field: value, op: ">", value: 0.75}
+    message: 2Y 收益率比 EFFR 高出 75bp 以上，市场替联储把加息走完了；只要数据不配合，这个缺口就是久期与美元的多头。
+    falsifier: 3 个月内联储实际加息至少 1 次，缺口被真实政策兑现。
+    assets: [long_bond, usd]
+    sources: ["E4"]
+  - id: EE5
+    name: 预期差(联储比市场鹰)
+    severity: watch
+    when:
+      all:
+        - {metric: ee.fed_gap, field: value, op: "<", value: -0.25}
+    message: 2Y 比 EFFR 低 25bp 以上，市场已提前定价降息，若联储维持高利率，短端与风险资产会一起重新定价，黄金与新兴市场同步承压。
+    falsifier: 联储转鸽或数据大幅走弱，降息预期被证实而非被证伪。
+    assets: [us_equity, gold, cn_equity]
+    sources: ["E5", "E4"]
+  - id: EE6
+    name: 实际利率与黄金脱钩
+    severity: watch
+    when:
+      all:
+        - {metric: ee.real10, field: chg, op: ">", value: 0.3}
+        - {metric: ee.gold_chg_63d, field: value, op: ">", value: 0}
+    message: 实际利率上行 30bp 以上而金价不跌，黄金交易的是美元信用与秩序溢价，而不是持有成本，应看多黄金、美元保持中性。
+    falsifier: 金价与实际利率重新回到强负相关，实际利率上行时金价同步回落。
+    assets: [gold, usd]
+    sources: ["E6"]
+  - id: EE7
+    name: 美元特权裂痕
+    severity: critical
+    when:
+      all:
+        - {metric: ee.dxy_ret_20d, field: value, op: "<", value: -3}
+        - {metric: ee.us10y_chg_20d, field: value, op: ">", value: 20}
+    message: 美元跌而美债收益率上行，海外资金不再为美国赤字无痛融资，美元特权在边际上出现裂痕，应看多黄金与非美资产、做空美债与美股。
+    falsifier: 美元重新走强而美债收益率回落，避险资金重新买入美元与美债。
+    assets: [gold, cn_equity, long_bond, us_equity]
+    sources: ["E7", "E4"]
+  - id: EE8
+    name: 财政主导
+    severity: warn
+    when:
+      all:
+        - {metric: ee.fiscal_interest_ratio, field: value, op: ">", value: 30}
+        - {metric: ee.real10, field: value, op: ">", value: 2.0}
+    message: 利息支出已吞掉财政收入的 30% 以上、实际利率又在 2% 上方，财政可持续性开始约束货币政策，黄金结构性看多、长端看空、美元长期趋弱。
+    falsifier: 名义增长持续高于利率，或出现实质性财政整顿，债务动态重新稳定。
+    assets: [gold, long_bond, usd]
+    sources: ["E8"]
+  - id: EE9
+    name: 最后一英里停滞
+    severity: info
+    when:
+      all:
+        - {metric: ee.be10, field: chg, op: "<", value: -0.10}
+        - {metric: ee.be10, field: value, op: ">", value: 2.1}
+    message: 通胀回落到 2% 附近的最后一英里走不动，联储既不敢宣布胜利也不敢转向，2s10s 偏平坦化、股票估值继续被压缩。
+    falsifier: 10 年期盈亏平衡跌破 1.9%，去通胀重新占据主导。
+    assets: [long_bond, us_equity]
+    sources: ["E9", "E3"]
+  - id: EE10
+    name: 供给冲击型滞胀
+    severity: warn
+    when:
+      all:
+        - {metric: ee.cl_ret_20d, field: value, op: ">", value: 15}
+        - {metric: ee.be10, field: chg, op: ">", value: 0.10}
+    message: 油价 20 日涨超 15% 且通胀预期同步上行，这是供给冲击型滞胀，联储无解：商品与黄金占优、股票承压、长端看空。
+    falsifier: 铜金比同步上行，说明是需求驱动的再通胀，而非供给冲击。
+    assets: [commodities, gold, us_equity, long_bond]
+    sources: ["E10"]
+    note: 通胀预期腿用 63 日变化作 20 日条件的宽窗代理。
+  - id: EE11
+    name: 金融稳定优先
+    severity: critical
+    when:
+      any:
+        - {metric: ee.funding_stress, field: value, op: ">", value: 15}
+        - {metric: ee.spx_ret_20d, field: value, op: "<=", value: -10}
+    message: 融资利差走阔或股票急跌，金融稳定取代通胀成为联储事实上的第一优先，应看多黄金、增配短端、长端保持中性。
+    falsifier: 5 个交易日内回购利差回落且金价未跌，说明只是技术性扰动。
+    assets: [gold, long_bond]
+    sources: ["E11", "E2"]
+    note: 原笔记为 SOFR−EFFR>15bp 连续 3 日或标普单日跌 5%，表达式沙箱没有连续计数与单日字段，用 20 日跌 10% 代理急跌。
+  - id: EE12
+    name: TINA 终结
+    severity: info
+    when:
+      all:
+        - {metric: ee.real_policy, field: value, op: ">", value: 1.5}
+        - {metric: ee.spx_ret_20d, field: value, op: "<", value: -3}
+    message: 实际政策利率高于 1.5%、股票又跌 3% 以上，持有现金与短债不再有惩罚，股债性价比向短端倾斜。
+    falsifier: EFFR−BE 回到 0 以下，实际政策利率不再惩罚现金。
+    assets: [us_equity, long_bond]
+    sources: ["E12", "E2"]
+scores:
+  # 评分是透镜的静态立场（当前为 B 象限：通胀优先/牺牲增长），三难排序的切换由上面 12 条规则机判。
+  # 正 = 看多；long_bond 正 = 看多债券价格。
+  us_equity: -1.0     # 分母压顶：实际利率 2.88%、期限溢价重建，且政策看跌期权已失效
+  gold: 0.5           # 中性偏多：实际利率是逆风，但财政主导与秩序溢价构成结构性底部
+  silver: 0.0         # 透镜未单独建模白银，按中性处理，不主动偏离
+  usd: 1.0            # 偏强：利差与特权溢价仍在，但特权裂痕（EE7）成立后转弱
+  cn_equity: -0.75    # 偏空：强美元抽流动性，中美利差倒挂 348bp 压制新兴风险偏好
+  long_bond: -1.0     # 看空债券价格：财政主导 + 期限溢价回归，长端不再是避风港
+  commodities: -0.75  # 偏空：通胀优先意味着需求被牺牲，仅供给冲击（EE10）时战术性转多
+triggers:
+  - 10年期盈亏平衡升破 2.5% 且标普 20 日跌幅达到 8%，三难同时收紧，减配美股、看多黄金。
+  - SOFR 与 EFFR 利差升破 15bp 并持续 3 个交易日，金融稳定被放到通胀之前，联储被迫重新扩表。
+  - 10年期实际利率回落到 1.5% 以下，黄金的持有成本约束解除，黄金从结构性多配升级为超配。
+  - 2Y 与 EFFR 的缺口收敛到 25bp 以内，预期差消失，久期与美元的多头平仓。
+  - 美元指数 20 日跌超 3% 而 10 年期收益率上行超 20bp，美元特权裂痕，非美资产与黄金重估。
+  - 利息支出占财政收入升破 30%，财政主导确立，长端与美元长期承压。

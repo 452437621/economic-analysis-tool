@@ -29,6 +29,7 @@ from app.lens.engine import (
     load_config,
     run_lenses,
 )
+from app.lens.persona import load_specs
 from app.models.v2 import AnalysisRun, Derivation
 from app.platform.db import get_session
 
@@ -46,24 +47,79 @@ _derivation_payload = derivation_payload
 _run_payload = run_payload
 
 
-def _persisted_rules(synth_value: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+def _persisted_rules(synth_value: dict[str, Any]) -> dict[str, Any]:
     """Rebuild the full rule table from the persisted metrics (hits + misses)."""
     config = load_config()
     metrics = synth_value.get("rule_metrics") or {}
-    return {
+    layer_metrics = synth_value.get("layer_metrics") or {}
+    roles: dict[str, Any] = {
         "fed": [evaluate_rule(rule, metrics) for rule in config.get("fed_rules", [])],
         "song": [evaluate_rule(rule, metrics) for rule in config.get("song_rules", [])],
+        "macro": [evaluate_rule(rule, layer_metrics.get("macro") or metrics) for rule in config.get("macro_rules", [])],
+        "micro": [evaluate_rule(rule, layer_metrics.get("micro") or metrics) for rule in config.get("micro_rules", [])],
     }
+    personas: dict[str, Any] = {}
+    for persona_id, persona_metrics in (layer_metrics.get("personas") or {}).items():
+        spec = next((item for item in load_specs() if item.id == persona_id), None)
+        if spec is None:
+            continue
+        personas[persona_id] = [evaluate_rule(rule, persona_metrics) for rule in spec.rules]
+    roles["personas"] = personas
+    return roles
 
 
-def _lens_payload(value: dict[str, Any], derivation: Derivation) -> dict[str, Any]:
-    return {
+def _lens_payload(value: dict[str, Any], derivation: Derivation | None) -> dict[str, Any]:
+    payload = {
         "state": value.get("state") or {},
         "readings": value.get("readings") or [],
         "catalog": value.get("catalog") or [],
         "coverage": (value.get("state") or {}).get("coverage") or {},
-        "derivation": _derivation_payload(derivation),
-        "method_id": derivation.method_id,
+        "scores": value.get("scores") or {},
+    }
+    if derivation is not None:
+        payload["derivation"] = _derivation_payload(derivation)
+        payload["method_id"] = derivation.method_id
+    return payload
+
+
+def _persona_payloads(synth_value: dict[str, Any]) -> list[dict[str, Any]]:
+    """人物透镜：从落库的 synthesis 里恢复（只读），或直接用运行结果。"""
+    stored = synth_value.get("personas")
+    if isinstance(stored, list):
+        return stored
+    return []
+
+
+def _persona_meta() -> dict[str, dict[str, Any]]:
+    """人物透镜的静态元信息（名称/头衔/流派/核心问题/论点），来自 YAML 规格。"""
+    return {
+        spec.id: {
+            "name": spec.name,
+            "title": spec.title,
+            "school": spec.school,
+            "key_question": spec.key_question,
+            "thesis": spec.thesis,
+        }
+        for spec in load_specs()
+    }
+
+
+def _persona_entry(
+    persona_id: str,
+    value: dict[str, Any],
+    derivation: Derivation | None,
+    meta: dict[str, Any],
+) -> dict[str, Any]:
+    """把 YAML 元信息与透镜运行值拼成对外的人物透镜结构。"""
+    payload = _lens_payload(value, derivation)
+    return {
+        "id": persona_id,
+        "name": meta.get("name") or value.get("name") or persona_id,
+        "title": value.get("title") or meta.get("title"),
+        "school": value.get("school") or meta.get("school"),
+        "key_question": value.get("key_question") or meta.get("key_question"),
+        "thesis": value.get("thesis") or meta.get("thesis"),
+        **payload,
     }
 
 
@@ -73,8 +129,11 @@ def _payload(
     run: dict[str, Any] | None,
     fed: dict[str, Any],
     song: dict[str, Any],
+    macro: dict[str, Any] | None,
+    micro: dict[str, Any] | None,
+    personas: list[dict[str, Any]],
     synthesis: dict[str, Any],
-    rules: dict[str, list[dict[str, Any]]],
+    rules: dict[str, Any],
     data_gaps: list[dict[str, Any]],
     config: dict[str, Any],
     confidence: float | None,
@@ -85,6 +144,9 @@ def _payload(
         "run": run,
         "fed": fed,
         "song": song,
+        "macro": macro,
+        "micro": micro,
+        "personas": personas,
         "synthesis": synthesis,
         "rules": rules,
         "data_gaps": data_gaps,
@@ -104,13 +166,25 @@ def _payload_from_persisted(session: Session) -> dict[str, Any]:
     synth_row: Derivation = state["synthesis"]
     run = session.get(AnalysisRun, state["run_id"]) if state["run_id"] else None
     config = load_config()
+    synth_value = synth_row.value or {}
+    macro_row = state.get("macro")
+    micro_row = state.get("micro")
+    persona_rows: dict[str, Derivation] = state.get("personas") or {}
+    meta = _persona_meta()
+    personas = [
+        _persona_entry(persona_id, row.value or {}, row, meta.get(persona_id, {}))
+        for persona_id, row in persona_rows.items()
+    ]
     return _payload(
         asof=_iso(synth_row.asof),
         run=_run_payload(run) if run else None,
         fed=_lens_payload(fed_row.value or {}, fed_row),
         song=_lens_payload(song_row.value or {}, song_row),
-        synthesis={**(synth_row.value or {}), "derivation": _derivation_payload(synth_row)},
-        rules=_persisted_rules(synth_row.value or {}),
+        macro=_lens_payload(macro_row.value or {}, macro_row) if macro_row else None,
+        micro=_lens_payload(micro_row.value or {}, micro_row) if micro_row else None,
+        personas=personas or _persona_payloads(synth_value),
+        synthesis={**synth_value, "derivation": _derivation_payload(synth_row)},
+        rules=_persisted_rules(synth_value),
         data_gaps=config.get("data_gaps", []),
         config=config,
         confidence=synth_row.confidence,
@@ -120,11 +194,20 @@ def _payload_from_persisted(session: Session) -> dict[str, Any]:
 
 def _payload_from_result(result: dict[str, Any]) -> dict[str, Any]:
     derivations = result["derivations"]
+    persona_derivs: dict[str, Derivation] = derivations.get("personas") or {}
+    meta = _persona_meta()
+    personas = [
+        _persona_entry(item["id"], item, persona_derivs.get(item["id"]), meta.get(item["id"], {}))
+        for item in result.get("personas") or []
+    ]
     return _payload(
         asof=result["run"].get("asof"),
         run=result["run"],
         fed=_lens_payload(result["fed"], derivations["fed"]),
         song=_lens_payload(result["song"], derivations["song"]),
+        macro=_lens_payload(result["macro"], derivations.get("macro")) if result.get("macro") else None,
+        micro=_lens_payload(result["micro"], derivations.get("micro")) if result.get("micro") else None,
+        personas=personas,
         synthesis={**result["synthesis"], "derivation": _derivation_payload(derivations["synthesis"])},
         rules=result["rules"],
         data_gaps=result["data_gaps"],

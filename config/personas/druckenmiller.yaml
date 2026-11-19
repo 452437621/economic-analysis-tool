@@ -1,0 +1,288 @@
+# 德鲁肯米勒透镜 · 机器可执行规格
+# 取材：docs/research/persona-druckenmiller.md（19 项指标 / SD1–SD12，2026-11-19）
+# 引擎：backend/app/lens/persona.py（读数 → 规则 → 资产评分 → 推导落库）
+#
+# 表达式口径（按当前 persona.py 代码核对）：
+#   · 函数参数本文件一律用位置参数：早期 AST 白名单不含 ast.keyword，当前版本虽已放行 keyword，
+#     统一位置参数保证新旧两版引擎都能跑；
+#   · 以数字开头的列名（000300）现在由引擎 normalize 成 SYM_000300 再求值；本文件不用 A 股代码列，
+#     指数一律用 SPX / NDX / HSI / DJIA 等代码；
+#   · chg(列, n) / pct(列, n) 的 n 按【行】（日频≈交易日），所以 `chg(US10Y_REAL, 63) * 100` 精确等于笔记的
+#     Δ63d（63 个交易日）实际利率变化；yoy(列) 固定 365 行（≈17 个月）；ma 的 min_periods=1；pctile 返回 0–1 分位；
+#   · 规则 field: value=读数当前值；chg=引擎 build_reading 的【63 个自然日】变化（≈43 交易日）；
+#     z=1260 自然日 z 分；pct=0–1 百分位（不是涨跌幅，本文件不使用）。本文件不使用 pctile。
+#
+# 数据依赖：US_FED_ASSETS / US_TGA / US_RRP_AMT 已由 H.4.1 与纽约联储 provider 落库；US_M2（H.6）尚未落库，
+#   落库前 sd.m2_yoy 自动降级为 missing，引用它的规则 status=unknown（不会误报命中）。
+#
+# 与笔记的已知偏离：
+#   · 净流动性＝央行购债 − 财政发行 − 隔夜回收（笔记 §2 的第一变量）不单列为读数（读数预算 14 条），
+#     由 sd.fed_assets_yoy / sd.tga / sd.rrp / sd.m2_yoy 四条分量读数表达；SD2 用 fed_assets_yoy 作扩张确认腿。
+#   · SD5 的估值腿（SPX/MA200 ≥+10%、NDX/SPX 63d ≥+5%）本地无读数，用「M2 同比 × SOFR 摩擦」代理；
+#   · SD7 曲线形态、SD12 集中与止损不可求值，写入 triggers（SD7 由人工核对）；
+#   · SD8 第二条件 DXY ≥ MA200×1.03 无法在读数内表达（本地无年线偏离序列），只保留 Δ63d ≥+4% 主条件，
+#     MA200 确认改为人工核对，见 message/falsifier；
+#   · SD3/SD6 用实际利率与铜金比代理名义利率/油动量；股债同向度用「−股票 63 日动量 × 长端 63 日变化」的乘积
+#     代理（本地无相关性序列）；sd.be10 的变化仍走引擎 63 自然日口径（阈值 20bp 偏严）。
+#   · 资产评分只用当期已落库的列（利率/美元/金铜/原油/美债曲线），避免 H.6 等未落库序列把整条评分打成 NaN；
+#     价格动量只作小权重确认项，与 thesis 的「价格只用于确认与止损」一致。
+# 定位：笔记 §7 要求 SD 在 consensus 权重 ≤0.25——资产评分只是 tilt，不是总仓位。
+
+id: druckenmiller
+name: 斯坦利·德鲁肯米勒
+title: 前索罗斯基金首席策略师、Duquesne 家族办公室创始人
+school: 流动性驱动 / 自上而下宏观交易
+key_question: 未来的 18 个月里，央行净流动性与财政脉冲把资金推向哪类资产？
+thesis: 驱动市场的从来不是当期盈利，而是未来 12–18 个月的流动性与政策方向；净流动性＝央行购债 − 财政发行 − 隔夜回收，它先于价格见顶见底，价格只用来确认与止损，不用来生成论点。央行说什么不重要，资产表与财政部现金账户的变化才说明它真在做什么；政策错误分两段——先制造泡沫，再制造通胀，最后被迫紧缩，每一段都是可交易的方向，而不是可以长期持有的仓位。
+
+readings:
+  - id: sd.real10
+    label: 10 年期实际利率（TIPS）
+    unit: "%"
+    digits: 2
+    expr: "US10Y_REAL"
+    source: 美国财政部实际收益率曲线
+    evidence: E1
+    note: 德鲁肯米勒的核心折现率；2026-11 为 2.88%，处 2022 年以来 99 分位。
+  - id: sd.real10_chg63
+    label: 10 年期实际利率 63 交易日变化
+    unit: bp
+    digits: 0
+    expr: "chg(US10Y_REAL, 63) * 100"
+    source: 美国财政部实际收益率曲线
+    evidence: E1
+    note: 与笔记 Δ63d 同口径（63 个交易日，不是引擎默认的 63 自然日）；SD1/SD2/SD3/SD6/SD11 共用此读数。
+  - id: sd.dxy_mom63
+    label: 美元指数 63 日动量
+    unit: "%"
+    digits: 2
+    expr: "pct(DXY, 63)"
+    source: ICE 美元指数
+    evidence: E2
+    note: 美元是动物精神的反向代理；与净流动性方向相反时，以美元为准先做防守。
+  - id: sd.fed_assets_yoy
+    label: 美联储总资产同比
+    unit: "%"
+    digits: 1
+    expr: "yoy(US_FED_ASSETS)"
+    source: 美联储 H.4.1
+    evidence: E1
+    note: 净流动性的「央行购债」腿；扩张/收缩的方向比规模重要，扩表 + 财政收敛 = 风险资产顺风。
+  - id: sd.tga
+    label: 财政部一般账户余额（TGA）
+    unit: 十亿美元
+    digits: 0
+    expr: "US_TGA / 1e9"
+    source: 美国财政部每日现金报表
+    evidence: E1
+    note: 净流动性的「财政发行」腿；TGA 重建＝财政部发债把准备金从银行体系抽走，是隐形紧缩。
+  - id: sd.rrp
+    label: 隔夜逆回购余额（RRP）
+    unit: 十亿美元
+    digits: 0
+    expr: "US_RRP_AMT / 1e9"
+    source: 纽约联储
+    evidence: E1
+    note: 净流动性的「隔夜回收」腿；RRP 是缓冲垫，耗尽后任何发债都会直接抽准备金。
+  - id: sd.m2_yoy
+    label: M2 同比
+    unit: "%"
+    digits: 1
+    expr: "yoy(US_M2)"
+    source: 美联储 H.6
+    evidence: E1
+    note: 货币存量同比决定 6–18 个月后的名义需求，也是泡沫燃料的计数。
+  - id: sd.deficit_gdp
+    label: 联邦赤字率（12 个月滚动）
+    unit: "%"
+    digits: 2
+    expr: "ma(US_MTS_DEFICIT, 250) * 12 / WB_US_GDP * 100"
+    source: 美国财政部月度财政报表（MTS）+ 世界银行 GDP
+    evidence: E1
+    note: 面板已按日频前值填充，250 行≈12 个月；MTS 以美元存储，勿再乘 1e6（2026-11 实测 6.5%）。
+  - id: sd.interest_receipts
+    label: 利息支出 / 财政收入（12 个月滚动）
+    unit: "%"
+    digits: 2
+    expr: "ma(US_MTS_INTEREST, 250) / ma(US_MTS_RECEIPTS, 250) * 100"
+    source: 美国财政部月度财政报表（MTS）
+    evidence: E1
+    note: 越过 18% 后付息开始挤压可选支出，期限溢价与长端定价随之改变（2026-11 实测 19.1%）。
+  - id: sd.copper_gold
+    label: 铜金比（HG / XAUUSD）
+    unit: ""
+    digits: 2
+    expr: "HG / XAUUSD"
+    source: COMEX 铜 + 伦敦金现
+    evidence: E2
+    note: 动物精神与真实需求的合成代理；走高=增长定价，走低=避险定价。
+  - id: sd.stock_bond_corr
+    label: 股债同向度（= −股票 63 日动量% × 长端 63 日变化 pp；正=双杀或双涨，负=避险分化）
+    unit: ""
+    digits: 2
+    expr: "-pct(SPX, 63) * chg(US10Y, 63)"
+    source: EPIC 自建代理（非严格相关系数）
+    evidence: E3
+    note: 本地无股债相关性序列，用「股票动量 × 债券价格方向」的乘积代理同向度符号与强度；笔记 SD3 的 −3% 股票 × +30bp 长端组合对应乘积 ≈0.9，故 SD3 阈值取 1.0。
+  - id: sd.be10
+    label: 10 年期盈亏平衡通胀率
+    unit: "%"
+    digits: 2
+    expr: "US10Y_BE"
+    source: 美国财政部 / 圣路易斯联储
+    evidence: E1
+    note: 判断股债双杀是通胀型还是实际利率型的分水岭。
+  - id: sd.sofr_effr
+    label: 回购摩擦（SOFR − EFFR）
+    unit: bp
+    digits: 1
+    expr: "SOFR_EFFR * 100"
+    source: 纽约联储 SOFR + 美联储 EFFR
+    evidence: E1
+    note: 只有资金面平静时才相信「宽松」；>8bp 是准备金稀缺的警报。
+  - id: sd.xauusd_mom63
+    label: 黄金 63 日动量
+    unit: "%"
+    digits: 2
+    expr: "pct(XAUUSD, 63)"
+    source: 伦敦金现
+    evidence: E2
+    note: 2026-11 为 −18.9%（距 01-28 高点 −31.1%），黄金的地缘溢价正在退潮。
+
+rules:
+  - id: SD1
+    name: 实际利率双紧
+    severity: warn
+    when:
+      all:
+        - {metric: sd.real10, field: value, op: ">=", value: 2.50}
+        - {metric: sd.real10_chg63, field: value, op: ">=", value: 30}
+        - {metric: sd.dxy_mom63, field: value, op: ">=", value: 3}
+    message: 实际利率 ≥2.50%、63 个交易日再上行 ≥30bp、美元同期 ≥+3%：实际利率与美元同向走高＝全球流动性净收缩，估值压缩、黄金承压、长债失去避险功能，是风险资产最不利的组合。
+    falsifier: 若同期 BE 通胀预期上行 ≥+20bp（通胀驱动而非实际利率驱动），商品与黄金反而受益，本条的做空含义失效，改看 SD4。
+    assets: [us_equity, gold, commodities, usd, long_bond, cn_equity]
+    sources: ["D5", "D8", "D2"]
+
+  - id: SD2
+    name: 央行转向确认（净流动性转松）
+    severity: watch
+    when:
+      all:
+        - {metric: sd.real10_chg63, field: value, op: "<=", value: -20}
+        - {metric: sd.fed_assets_yoy, field: value, op: ">=", value: 0}
+        - {metric: sd.sofr_effr, field: value, op: "<=", value: 8}
+    message: 实际利率 63 个交易日下行 ≥20bp、美联储资产同比 ≥0（停止缩表或扩表）、回购摩擦 ≤8bp：这是「央行转向 + 资金面平稳」的组合，未来 6–12 个月风险资产顺风；净流动性＝Fed 总资产 − TGA − RRP，TGA 与 RRP 的读数用来确认这次扩张没有被发债或隔夜回收吃掉。
+    falsifier: 若 SOFR−EFFR 单日跳升 >8bp 或连续 5 日 >15bp（准备金稀缺），投放只是救火，先 risk-off 再谈宽松；若 TGA 同期重建 ≥$100B（SD10），净流动性并未转松。
+    assets: [us_equity, gold, long_bond, usd, commodities]
+    sources: ["D17", "D24", "D19"]
+
+  - id: SD3
+    name: 股债双杀
+    severity: critical
+    when:
+      all:
+        - {metric: sd.stock_bond_corr, field: value, op: ">=", value: 1.0}
+        - {metric: sd.real10_chg63, field: value, op: ">=", value: 30}
+    message: 股债同向度 ≥1.0（＝股票 63 日跌幅 × 长端 63 日上行幅度）且实际利率 63 个交易日上行 ≥30bp：股票与债券价格同跌（2026-11 现货：SPX −4.2% / US10Y +36bp，乘积约 1.5），这是实际利率与流动性主导的行情，现金与美元优先；双涨分支（实际利率下行 + 股债同向上涨）含义相反，见 SD2。
+    falsifier: 若双杀期 Δ63d(BE) ≥+20bp，说明是通胀型双杀，现金换成黄金/商品；若股债恢复负相关（同向度 <0），本规则判定失效。
+    assets: [us_equity, long_bond, gold, usd]
+    sources: ["D15", "D2", "D16"]
+
+  - id: SD4
+    name: 通胀预期失锚
+    severity: critical
+    when:
+      all:
+        - {metric: sd.be10, field: value, op: ">=", value: 2.50}
+        - {metric: sd.be10, field: chg, op: ">=", value: 0.20}
+    message: 盈亏平衡通胀 ≥2.50% 且三个月内再上行 ≥20bp：实际政策利率（EFFR − BE）被动压缩，市场在给「央行落后曲线」定价，做空长债、做多黄金与商品；若实际政策利率仍 >1.0%，本条只是预警而非确认。
+    falsifier: 若 20 日内 SPX 回撤 ≥8%（需求崩塌），BE 会快速回落，切回 SD3 双杀；BE 见顶回落且实际利率上行，则改看 SD1。
+    assets: [long_bond, gold, commodities, usd]
+    sources: ["D21", "D18", "D22"]
+
+  - id: SD5
+    name: 泡沫晚期（流动性宽裕 × 融资成本抬升，代理）
+    severity: watch
+    when:
+      all:
+        - {metric: sd.m2_yoy, field: value, op: ">=", value: 4}
+        - {metric: sd.sofr_effr, field: value, op: ">=", value: 3}
+    message: M2 同比 ≥4%（货币仍在扩张＝泡沫燃料）而回购摩擦 ≥3bp（资金成本开始抬升＝刹车）：对应笔记 SD5 的「高估值 + 窄幅领涨 + 资金成本拐点」，估值腿（SPX/MA200 ≥+10%、NDX/SPX 63 日 ≥+5%）本地无读数，暂以流动性腿代理；命中时减股票、多黄金与美元、空长债。
+    falsifier: 若 US10Y_REAL ≤1.0%（真宽松），泡沫可继续扩张；代理腿不构成独立证据，估值与集中度读数补齐前须人工复核。
+    assets: [us_equity, gold, usd, long_bond]
+    sources: ["D23", "D13", "D35"]
+
+  - id: SD6
+    name: 商品领先名义增长
+    severity: info
+    when:
+      all:
+        - {metric: sd.copper_gold, field: z, op: ">=", value: 1.0}
+        - {metric: sd.real10_chg63, field: value, op: ">=", value: 20}
+    message: 铜金比处于 5 年 z ≥1（商品与需求定价走强）且实际利率 63 个交易日上行 ≥20bp：名义增长加速在定价，未来 6–12 个月股票顺风、长债逆风；油动量（BZ）腿本地未单列读数，用铜金比与利率方向代理。
+    falsifier: 若铜金比走强而 BE 下行（供给冲击而非需求），商品与增长脱钩，改看 BE 与 SD4，不再当增长信号。
+    assets: [commodities, us_equity, long_bond]
+    sources: ["D11", "D35"]
+
+  - id: SD8
+    name: 美元抽水
+    severity: warn
+    when:
+      all:
+        - {metric: sd.dxy_mom63, field: value, op: ">=", value: 4}
+    message: 美元 63 个交易日 ≥+4%：强美元＝全球美元流动性抽水，新兴市场、黄金、铜与长久期资产同时承压。笔记原条件还要求 DXY 高于 200 日均线 3% 以上，本地无年线偏离读数（2026-11 实测 +3.9%），该确认腿改为人工核对。
+    falsifier: 若 DXY 未站上 200 日均线 3% 以上（只是区间反弹），本规则降级为 SD1 的从属信号；若美联储重启扩表或 RRP 放量，抽水叙事由 SD2 接管。
+    assets: [usd, gold, commodities, cn_equity, us_equity]
+    sources: ["D2", "D13", "D8"]
+
+  - id: SD9
+    name: 财政主导
+    severity: critical
+    when:
+      all:
+        - {metric: sd.deficit_gdp, field: value, op: ">=", value: 6}
+        - {metric: sd.interest_receipts, field: value, op: ">=", value: 18}
+    message: 赤字率 ≥6% 且利息/财政收入 ≥18%：财政部成为边际发债人，付息开始挤压可选支出，市场会向长端索取期限溢价；做空长债、做多黄金与实物资产、谨慎美元（信用与流动性两条腿打架）。这是本透镜相对 Fed/宋透镜的增量价值。
+    falsifier: 若赤字率回落至 <4% 或利息/收入 <15%（税收上修/利率下行），财政主导叙事解除；若长端上行伴随 BE 下行（实际利率型），长债空头可继续持有。
+    assets: [long_bond, gold, commodities, usd, us_equity]
+    sources: ["D8", "D9", "D36"]
+
+  - id: SD10
+    name: 发债抽水
+    severity: info
+    when:
+      all:
+        - {metric: sd.tga, field: chg, op: ">=", value: 100}
+        - {metric: sd.sofr_effr, field: value, op: "<=", value: 5}
+    message: TGA 三个月内重建 ≥$100B（field chg 为引擎 63 自然日口径）且回购摩擦仍 ≤5bp：财政部发债把准备金从银行体系抽走，是「隐形紧缩」，但资金面尚未报警；未来 1–3 个月风险资产易跌难涨，黄金与美元相对占优。
+    falsifier: 若 TGA 上升同时 RRP 同步下降（发债被 RRP 吸收），准备金并未减少，抽水不成立；若 SOFR 摩擦 >8bp，则升级为资金面事件，改看 SD2 的反面。
+    assets: [us_equity, gold, usd, long_bond]
+    sources: ["D24", "D25"]
+
+  - id: SD11
+    name: 黄金双重身份
+    severity: watch
+    when:
+      all:
+        - {metric: sd.xauusd_mom63, field: value, op: "<=", value: -10}
+        - {metric: sd.real10_chg63, field: value, op: ">=", value: 40}
+    message: 黄金 63 个交易日 ≤−10% 且实际利率同期上行 ≥40bp：黄金正被当作「实际利率资产」定价（2026-11 −18.9% / 实际利率 +47bp 已验证），地缘/央行购金叙事暂时无效，金价与风险资产同向下跌；反向分支（金 ≥+10% 且美元同期 ≥+2%）才是地缘身份。
+    falsifier: 若金价下跌而实际利率同期下行（流动性危机式抛售），身份判定失效，属于「卖一切换现金」，应看美元与 RRP；央行购金数据（CB_GOLD_GLOBAL_TONNES）转强则视为身份切换。
+    assets: [gold, silver, usd, us_equity]
+    sources: ["D1", "D11", "D33"]
+
+scores:
+  us_equity: "-0.55 * z(US10Y_REAL, 250) - 0.20 * z(DXY, 250) + 0.20 * z(HG / XAUUSD, 250)"
+  gold: "-0.55 * z(US10Y_REAL, 250) - 0.20 * z(DXY, 250)"
+  silver: "-0.55 * z(US10Y_REAL, 250) - 0.20 * z(DXY, 250) + 0.30 * z(HG / XAUUSD, 250)"
+  usd: "0.60 * z(DXY, 250) + 0.40 * chg(US10Y, 63)"
+  cn_equity: "-0.55 * z(DXY, 250) - 0.35 * z(USDCNH, 250) + 0.02 * pct(HSI, 63)"
+  long_bond: "-0.60 * z(US10Y_REAL, 250) - 0.40 * z(US30Y - US5Y, 250) - 0.25 * z(US10Y_BE, 250)"
+  commodities: "0.55 * z(HG / XAUUSD, 250) + 0.25 * z(CL, 250) - 0.20 * z(DXY, 250)"
+
+triggers:
+  - 收益率曲线（对应笔记 SD7，本地读数预算内未单列曲线读数，人工核对）：Δ63d(US2Y) ≥+40bp 且 Δ63d(10Y−2Y) ≤−15bp → 熊平（2026-11 命中：+61bp / −25bp），短端与经济下行先于长端；Δ63d(US5Y) ≥+30bp 且 Δ63d(30Y−5Y) ≥+20bp → 熊陡/期限溢价扩张，并入 SD9 做空长债；Δ63d(US2Y) ≤−40bp 且 2s10s 由负转正 → 牛陡，降久期风险、做多黄金。
+  - 集中与止损（对应笔记 SD12，人工执行）：单笔浮亏 ≥15%，或「利率路径 / 流动性方向 / 需求盈利」三前提中两个被月度数据推翻 → 减仓或平仓，不摊薄；P&L 与相关性是否断裂是最终风控信号，不由本文件求值。
+  - 18 个月前瞻纪律：本文件的规则只描述「未来 4–6 个季度的条件变量」，不构成当期方向；19 项指标里的价格类（SPX、NDX、DXY、金铜）只用于确认与止损，不用来生成论点——Never, ever invest in the present。
+  - 13F 只能季度确认：Duquesne 申报滞后 45 天且不覆盖空头、期货与外汇，不能当作实时仓位信号；读它是验证「说与做是否一致」，不是跟随交易。
+  - 数据缺口待补：信用利差（HY OAS）、市场广度（腾落线）、PMI/货运量、Truflation 类高频通胀、美联储资产分项（国债/MBS/准备金）、DXY 年线偏离本地无序列；US_M2（H.6）落库前 SD5 会落到 unknown，禁止用替代数据强行点火。

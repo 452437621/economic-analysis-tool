@@ -1,0 +1,283 @@
+# 辜朝明透镜（Richard Koo · 资产负债表衰退 BSR / 借款人消失 / 财政主导 vs 货币失效）
+#
+# 取材：docs/research/persona-koo.md（2026-11-19，数据截点 2026-11-18/19；RK1–RK12、§5 资产映射、§7 与美联储/宋鸿兵透镜的分工）。
+# 与 config/lens.yaml 的 F/S 规则同构：读数是本地序列的纯函数，规则只做阈值比较；调阈值改本文件，不改代码。
+# scores 为静态姿态（同 marks.yaml 口径）：−2…+2 整数，正=看多；long_bond 正=看多债券价格（收益率下行）。
+#
+# 表达式约定：
+#   * 只用 z / pctile / chg / pct / yoy / ma / shift 与四则运算、括号、常量（引擎白名单）。
+#   * chg/pct 的 days、z 的 win 都是交易 bar 条数：20≈1 个月、60≈3 个月、250≈1 年。
+#   * 利率列是百分数（US10Y=5.07 即 5.07%）；利差读数做差后仍是百分点（0.27=27bp）。
+#   * 规则里 field: chg = 该读数在引擎默认窗口（63 个自然日≈2 个月）的变化，只用于笔记中
+#     20 日量级的动量腿（RK4/RK5/RK6/RK8），各规则已注明是近似；其余 60 日/20 日变化
+#     一律写进读数 expr，规则用 field: value，保证窗口精确。
+#   * field: pct 是分位（0–1），不是涨跌幅，本文件不使用。
+#
+# 已知偏差（14 条读数上限所致，均写进对应规则的 message/falsifier）：
+#   1. RK9 / RK10 / RK12 的腿（USDCNH、中美利差、US10Y_REAL、ETF_FLOW_1M_TONNES、
+#      US_FED_DEBT/WB_US_GDP、DXY）没有独立读数槽位，规则降级为 triggers 里的静态条目，
+#      补齐读数后可无损升格（与 config/lens.yaml 跳过 S6/S14 同法）。
+#   2. RK4 以「US10Y 63 日变化 + 日债 30s10s 63 日变化」替代笔记的三腿
+#      （20D JP30Y / US30Y / DE10Y），DE10Y 腿因槽位省略。
+#   3. RK5 的 20D 动量大腿用 field: chg 近似；RK8 省略 20D CN30Y 腿。
+#   4. 10Y/30Y 覆盖：US10Y 为独立读数，30Y 腿以 rk.jgb_30s10y 代表（US30Y 无独立槽位）。
+#   5. JP10Y−JP2Y 由 rk.jp10y − rk.jp2y 直接读出，无独立槽位。
+#   6. 中国风险资产用 000300 20 日动量（数字型 symbol 依赖引擎对 0\d{5} 的占位符替换）；
+#      房产本地无序列（见笔记 §9.3），房地产只以曲线与商品脉冲间接触发。
+#   7. 利率历史自 2022-01 起（不足 5 年）：z(...,250) 可用，pctile(...,2500) 在本透镜禁用；
+#      US_MTS_* 仅 18–19 个月、WB_* 为年度滞后值，含它们的读数只做状态校验、不做交易触发。
+#   8. rk.money_multiplier 依赖新增列（US_M2 / US_MONETARY_BASE），未落库前读数缺失；
+#      缺失时相关描述降级为 triggers，不影响其余规则。
+
+id: koo
+name: 辜朝明
+title: 野村综合研究所首席经济学家
+school: 资产负债表衰退 / 财政主导
+key_question: 当下是「借款人消失」的资产负债表衰退，还是私人部门仍在正常加杠杆？
+thesis: "私人部门的资产负债表状态决定总需求：企业目标从利润最大化切到负债最小化之后，「借款人」就消失了，降息和 QE 都无法创造借款人，财政支出是唯一的解。识别资产负债表衰退必须数量与价格同时确认——数量看借款人消失（私人净储蓄、货币乘数、企业不借新还旧），价格看零利率下长端仍下行、赤字扩张却不推高利率；只看价格会把国债供给过剩误判成私人储蓄过剩。同一个赤字率在 BSR 里利多债券、在正常状态里利空债券，所以先判状态，再定久期、黄金与美元的方向。"
+
+# 读数 = 本地序列的纯函数；规则只做阈值比较。
+# 赤字率、利息/收入、JP2Y、JP10Y、JP30Y−JP10Y、USDJPY 60 日变化、CN10Y、CN10Y−CN2Y
+# 是 RK1/RK2/RK3/RK5/RK7/RK11 校准阈值的直接输入。
+readings:
+  - id: rk.deficit_gdp
+    label: 滚动赤字 / 名义 GDP
+    unit: "%"
+    digits: 2
+    expr: "US_MTS_DEFICIT / WB_US_GDP * 1200"
+    source: 美国财政部 MTS + 世界银行 GDP
+    evidence: E2
+  - id: rk.interest_receipts
+    label: 联邦利息 / 财政收入
+    unit: "%"
+    digits: 1
+    expr: "US_MTS_INTEREST / US_MTS_RECEIPTS * 100"
+    source: 美国财政部 MTS
+    evidence: E2
+  - id: rk.us10y
+    label: 美债 10Y 收益率
+    unit: "%"
+    digits: 2
+    expr: "US10Y"
+    source: FRED DGS10
+    evidence: E1
+  - id: rk.chg60_us10y
+    label: 美债 10Y 60 日变化
+    unit: pp
+    digits: 2
+    expr: "chg(US10Y, 60)"
+    source: FRED DGS10
+    evidence: E1
+  - id: rk.us_2s10s
+    label: 美债 2s10s
+    unit: pp
+    digits: 2
+    expr: "US10Y - US2Y"
+    source: FRED DGS10 / DGS2
+    evidence: E1
+  - id: rk.cn10y
+    label: 中国 10Y 国债收益率
+    unit: "%"
+    digits: 2
+    expr: "CN10Y"
+    source: 中债 / 中国货币网
+    evidence: E1
+  - id: rk.cn_10s2s
+    label: 中国 10Y − 2Y
+    unit: pp
+    digits: 2
+    expr: "CN10Y - CN2Y"
+    source: 中债 / 中国货币网
+    evidence: E1
+  - id: rk.cn_cpi
+    label: 中国 CPI 同比
+    unit: "%"
+    digits: 2
+    expr: "WB_CN_CPI"
+    source: 世界银行（年度，最新 2025）
+    evidence: E2
+  - id: rk.jp10y
+    label: 日本 10Y JGB 收益率
+    unit: "%"
+    digits: 2
+    expr: "JP10Y"
+    source: 日本财务省 / BOJ
+    evidence: E1
+  - id: rk.jp2y
+    label: 日本 2Y JGB 收益率
+    unit: "%"
+    digits: 2
+    expr: "JP2Y"
+    source: 日本财务省 / BOJ
+    evidence: E1
+  - id: rk.jgb_30s10y
+    label: 日债 30s10s
+    unit: pp
+    digits: 2
+    expr: "JP30Y - JP10Y"
+    source: 日本财务省 / BOJ
+    evidence: E1
+  - id: rk.usdjpy_chg60
+    label: USDJPY 60 日变化
+    unit: "%"
+    digits: 2
+    expr: "pct(USDJPY, 60)"
+    source: 行情 USDJPY
+    evidence: E1
+  - id: rk.money_multiplier
+    label: 美国货币乘数代理（M2 / 货币基础）
+    unit: x
+    digits: 2
+    expr: "US_M2 / US_MONETARY_BASE"
+    source: 美联储 H.6 / H.3（US_M2、US_MONETARY_BASE 为新增列，未落库时读数缺失）
+    evidence: E2
+  - id: rk.cn_equity_mom20
+    label: 中国风险资产 20 日动量（沪深 300）
+    unit: "%"
+    digits: 2
+    expr: "pct(000300, 20)"
+    source: 行情 000300（引擎对 0\d{5} 型 symbol 做占位符替换）
+    evidence: E2
+
+# 规则：when 只用 all 或 any；条件 {metric: 读数 id, field: value|chg|z|pct, op, value}。
+# BSR 判定 = 数量腿（赤字率/利息负担/借款人消失）+ 价格腿（长端水平与方向）同时成立，
+# 两条腿就写在同一个 all 里（RK2 即范例）；任何一条腿失效，状态就回退。
+rules:
+  - id: RK1
+    name: 日本式货币政策失效模板
+    severity: watch
+    when:
+      all:
+        - {metric: rk.jp2y, field: value, op: "<=", value: 0.10}
+        - {metric: rk.jp10y, field: value, op: "<=", value: 1.50}
+        - {metric: rk.usdjpy_chg60, field: value, op: ">", value: 2}
+    message: "JP2Y ≤0.10% 而 10Y 仍压在 1.5% 以内、日元 60 日贬值 >2%：BOJ 已无降息空间，宽松无法创造借款人，货币政策失效、财政是唯一解——1990s 日本模板。"
+    falsifier: "JP2Y 连续 60 个交易日 ≥0.25%（利率正常化启动），规则退化为历史/回测模板。"
+    assets: [long_bond, gold, usd]
+    sources: ["S03", "S08", "S02"]
+  - id: RK2
+    name: 资产负债表衰退确认（美国）
+    severity: critical
+    when:
+      all:
+        - {metric: rk.deficit_gdp, field: value, op: ">=", value: 6}
+        - {metric: rk.chg60_us10y, field: value, op: "<=", value: 0.25}
+        - {metric: rk.us10y, field: value, op: "<=", value: 4.5}
+    message: "赤字率 ≥6%、10Y 水平 ≤4.5% 且 60 日变化 ≤+25bp：私人储蓄在吸收国债、赤字没有挤出投资，财政乘数放大，BSR 得到数量+价格双重确认。"
+    falsifier: "60 日 ΔUS10Y >+40bp 或赤字率回落 >1pp（供给/挤出重新定价；2026-11 实测 10Y 5.07%、60 日 +33bp，本规则因此未触发，也正是「美国不是 BSR」的量化证据）。"
+    assets: [long_bond, us_equity, gold]
+    sources: ["S16", "S12"]
+  - id: RK3
+    name: 财政主导（利息负担侵蚀财政能力）
+    severity: warn
+    when:
+      all:
+        - {metric: rk.interest_receipts, field: value, op: ">=", value: 18}
+        - {metric: rk.deficit_gdp, field: value, op: ">=", value: 5}
+    message: "利息/财政收入 ≥18% 且赤字率 ≥5%：利息成为财政大项，财政逆周期能力被侵蚀，长端由国债供给而非增长定价。2026-11 现值 19.8% / 6.86%，已触发；利息/收入 >22% 升 critical。"
+    falsifier: "EFFR <2.5% 且 10Y <3.5% 且利息/收入回落 <15%（利息负担与长端同步缓解）。"
+    assets: [gold, long_bond]
+    sources: ["S17", "S18"]
+  - id: RK4
+    name: 全球久期共振（美日长端同步重定价）
+    severity: critical
+    when:
+      all:
+        - {metric: rk.us10y, field: chg, op: ">=", value: 0.30}
+        - {metric: rk.jgb_30s10y, field: chg, op: ">=", value: 0.25}
+    message: "美债 10Y 与日债 30s10s 在 63 日窗口内同步上行（≥30bp / ≥25bp）：日本资金回流与正常化推高全球期限溢价，长端久期同步重定价——笔记原三腿（20D JP30Y/US30Y/DE10Y）受 14 条读数上限压缩，DE10Y 腿省略、窗口以 63 自然日近似。"
+    falsifier: "两国长端 63 日变化同时回落到阈值一半以下；或日元同步走强（是避险买债而非抛售）。"
+    assets: [long_bond, usd, gold]
+    sources: ["S20", "S24"]
+  - id: RK5
+    name: 日债长端无锚（日本式特拉斯时刻）
+    severity: critical
+    when:
+      all:
+        - {metric: rk.jp10y, field: value, op: ">=", value: 2.5}
+        - {metric: rk.jgb_30s10y, field: value, op: ">=", value: 0.8}
+        - {metric: rk.jp10y, field: chg, op: ">=", value: 0.30}
+    message: "JP10Y ≥2.5% 且 30s10s ≥80bp，且 63 日窗口内 JP10Y 再上行 ≥30bp：市场已在为日本财政风险定价，BOJ 先加息而财政不扩张，就是「特拉斯时刻」。"
+    falsifier: "JP10Y <2.0% 且 30s10s <0.8（长端重新被 BOJ 控住）。"
+    assets: [long_bond, usd, gold]
+    sources: ["S14", "S24"]
+  - id: RK6
+    name: 美债熊陡 vs 牛陡
+    severity: watch
+    when:
+      all:
+        - {metric: rk.us_2s10s, field: value, op: ">", value: 0}
+        - {metric: rk.chg60_us10y, field: value, op: ">=", value: 0.30}
+        - {metric: rk.us_2s10s, field: chg, op: ">=", value: 0}
+    message: "2s10s 为正、10Y 60 日变化 ≥+30bp 且曲线继续走陡 = 熊陡：定价的是财政供给与通胀溢价，不是 BSR 的牛陡。2026-11 实测 2s10s +27bp、10Y 60 日 +33bp，本规则即「美国非 BSR」的价格证据。"
+    falsifier: "转牛陡——10Y 60 日变化转负而曲线继续走陡（长端由降息/避险定价，回到 BSR 侧）。"
+    assets: [long_bond, commodities, usd]
+    sources: ["S16", "S12"]
+  - id: RK7
+    name: 中国价格面 BSR（资产荒 + 信贷需求不足）
+    severity: watch
+    when:
+      all:
+        - {metric: rk.cn10y, field: value, op: "<=", value: 2.2}
+        - {metric: rk.cn_10s2s, field: value, op: "<=", value: 0.6}
+    message: "CN10Y ≤2.2% 且 10Y−2Y ≤60bp：私人储蓄过剩、信贷需求不足，资产荒把长端压到政策利率附近，价格面已符合资产负债表衰退。2026-11 现值 1.59% / +36bp，本规则触发。"
+    falsifier: "CN10Y >2.6% 且 CN10Y−CN2Y >0.8 连续 60 个交易日（信贷需求恢复，价格面退出 BSR）。"
+    assets: [long_bond, gold]
+    sources: ["S05", "S19"]
+  - id: RK8
+    name: 中国财政脉冲确认（A 股只做脉冲）
+    severity: info
+    when:
+      all:
+        - {metric: rk.cn_10s2s, field: chg, op: ">=", value: 0.25}
+        - {metric: rk.cn_equity_mom20, field: value, op: ">=", value: 5}
+    message: "中国曲线 63 日走陡 ≥25bp 且 000300 20 日 ≥+5%：财政脉冲落地、风险资产确认——A 股只做这种政策脉冲，不做趋势多；笔记的 20D CN30Y 腿受读数上限省略。"
+    falsifier: "30 个自然日内 000300 回吐 >5%，或 CN10Y 再创新低（脉冲未持续）。"
+    assets: [cn_equity, commodities, long_bond]
+    sources: ["S05", "S07"]
+  - id: RK11
+    name: 日本退出 BSR 的四条件（日元资产重估）
+    severity: watch
+    when:
+      all:
+        - {metric: rk.jp10y, field: value, op: ">=", value: 2.5}
+        - {metric: rk.jp2y, field: value, op: ">=", value: 0.75}
+        - {metric: rk.usdjpy_chg60, field: value, op: "<=", value: 0}
+        - {metric: rk.jgb_30s10y, field: value, op: "<=", value: 1.3}
+    message: "JP10Y ≥2.5%、JP2Y ≥0.75%、USDJPY 60 日不再贬值且 30s10s ≤130bp：名义增长+利率正常化+日元止跌，日本才算真正退出资产负债表衰退，日元资产重估。2026-11 只差日元腿 0.22pp。"
+    falsifier: "USDJPY >165 或 JP30Y ≥4.5%（财政风险压倒正常化叙事）。"
+    assets: [usd, long_bond]
+    sources: ["S03", "S20"]
+
+# 分数 = 静态姿态（状态切换靠 rules 与 triggers 判定，明细见上方偏差注释与笔记 §5）。
+# 正=看多、负=看空，量级 −2…+2；long_bond 正=看多债券价格。
+# 2026-11-19 状态：RK2 未触发（美国非 BSR、长端上行=挤出）→ 空久期；RK3/RK7 触发；
+# RK5/RK11 结构就位、动量未确认（日本「退出中」但不能做空其长端）；RK10 沉默（实际利率 2.88%）。
+scores:
+  # SPX：非 BSR 无需求塌陷，但长端供给定价压制估值；双向都不极端 → 0
+  us_equity: 0
+  # 黄金：债务货币化/财政主导方向利多，但实际利率 2.88% 让 RK10 沉默 → 只结构性配置 +1
+  gold: 1
+  # 白银：弹性依赖黄金货币化信号（RK10），当前未触发 → 0
+  silver: 0
+  # 美元：非 BSR + 利差与长端优势 +1；长期债务货币化（RK12）兑现前不翻空，兑现后降为 −1
+  usd: 1
+  # 中国风险资产：准 BSR，只做 RK8 政策脉冲，无脉冲时不做趋势 → 0
+  cn_equity: 0
+  # 长久期：美国长端由供给/期限溢价定价，正=看多债券价格 → 空久期 −1；RK2 转档后翻 +2
+  long_bond: -1
+  # 大宗：全球名义需求弱 + 财政托底，等 RK8 脉冲确认 → 0
+  commodities: 0
+
+# 静态触发条件：读数未落库或超出 14 条上限的腿，先以文本形式挂在这里；补齐读数后升格为规则。
+triggers:
+  - "RK2 转档（关键状态机）：赤字率 ≥6% 且 US10Y 回落至 ≤4.5% 并 60 日变化转负（≤0）→ 由「美国非 BSR」切到「BSR 确认」，long_bond 由 −1 翻 +2、us_equity 由 0 升 +1、usd 由 +1 降 0。"
+  - "美国主动财政整顿（1997 桥本式）是本框架最强的做空信号：赤字率单年压缩 >1.5pp 且货币乘数仍在下降 → 总需求二次塌陷，股票/大宗 −2、长债 +2。"
+  - "货币乘数坍塌确认（依赖未落库的 US_M2 / US_MONETARY_BASE）：rk.money_multiplier 连续 6 个月下行且 <4.0，同时企业信贷增速为负 → 「借款人消失」的直接证据，为 RK2 的数量腿提供旁证。"
+  - "RK10 黄金货币化（读数槽位不足，暂为文本）：US10Y_REAL ≤0.5% 且赤字率 ≥6% 且 ETF_FLOW_1M_TONNES >0 → 黄金 +2、白银 +1；失效条件 US10Y_REAL >1.5% 或 ETF_FLOW_1M_TONNES <−20（当前 real 2.88%、ETF +19.1t，方向对但价格腿不成立）。"
+  - "RK9 人民币贬值/资本外流（读数槽位不足，暂为文本）：USDCNH 60 日 ≥+2% 且 CN10Y−US10Y ≤−1.5pp → cn_equity −1、usd +1；若同时 RK7 成立（中国价格面 BSR），是财政脉冲前的流动性压力。"
+  - "RK12 美元信用/去美元化（读数槽位不足，暂为文本）：US_FED_DEBT/WB_US_GDP ≥1.30 且 DXY 60 日 ≤−2% 且 US10Y_REAL ≤1.0 → gold +1、usd −2；当前债务/GDP 132.3% 已过线、DXY 60 日 +4.84%，价格腿未成立。"
+  - "RK11 收尾（日本正常化完成）：JP10Y ≥2.5% 且 JP2Y ≥0.75% 且 USDJPY 60 日 ≤0 且 30s10s ≤1.3 → 日本不再是「BSR 退出中」的例外，改为常规久期定价；此时才可考虑空 JP30Y / 多日元（2026-11 差日元腿 0.22pp）。"
+  - "中国政策脉冲（RK8 升级）：CN10Y−CN2Y 20 日变化 ≥+25bp 且 CN30Y 20 日 ≥+20bp 且沪深 300 20 日 ≥+5% → cn_equity +1、commodities +1；脉冲失效（000300 30 日回吐 >5%）即离场，不做趋势多。"
+  - "BSR 退出确认（美国）：连续 2 个季度赤字率 <4% 且 2s10s 转负再转正（曲线由倒挂修复且长端不再上行）→ 私人部门恢复加杠杆，RK3 降级、长端转为区间交易。"
+  - "数据退化处理：US_MTS_* 仅 18–19 个月、WB_* 为年度滞后值——若 rk.deficit_gdp 或 rk.interest_receipts 缺失，RK2/RK3 状态为 unknown，不得按 0 处理；此时以 RK6/RK7 的价格腿单独定状态。"

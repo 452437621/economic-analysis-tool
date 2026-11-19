@@ -30,6 +30,7 @@ CATCH_UP: dict[str, dict[str, int]] = {
     "check_data_quality": {"hour": 15, "minute": 50, "max_lag_hours": 6},
     "analyze": {"hour": 16, "minute": 10, "max_lag_hours": 6},
     "cycle": {"hour": 16, "minute": 20, "max_lag_hours": 6},
+    "lenses": {"hour": 16, "minute": 25, "max_lag_hours": 6},
     "decide": {"hour": 16, "minute": 30, "max_lag_hours": 6},
     "theses": {"hour": 16, "minute": 35, "max_lag_hours": 6},
     "collect_gold": {"hour": 16, "minute": 40, "max_lag_hours": 6},

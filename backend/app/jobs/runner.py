@@ -68,6 +68,35 @@ def _run_cycle() -> dict:
     }
 
 
+def _run_lenses() -> dict:
+    """V2.0 多透镜研判：13 套框架各跑一遍并合成，返回紧凑摘要。
+
+    透镜的预警来自规则命中（F*/S*/M*/P*/人物规则），因此每日运行一次才能让
+    ``/api/v2/lenses/state`` 与预警台拿到当天读数；完整读数落库在 derivations。
+    """
+    from app.lens.engine import run_lenses
+
+    with SessionLocal() as session:
+        result = run_lenses(session)
+    run = result.get("run") or {}
+    summary = run.get("summary") or {}
+    return {
+        "run_id": run.get("id"),
+        "status": run.get("status"),
+        "asof": run.get("asof"),
+        "fed": summary.get("fed"),
+        "song": summary.get("song"),
+        "macro": summary.get("macro"),
+        "personas": summary.get("personas"),
+        "lenses": summary.get("lenses"),
+        "consensus": summary.get("consensus"),
+        "strong": summary.get("strong"),
+        "divergences": summary.get("divergences"),
+        "warnings": summary.get("warnings"),
+        "degraded_reasons": run.get("degraded_reasons"),
+    }
+
+
 def _run_timeline() -> dict:
     """把 1500–2026 年表与当下坐标重新入库（数据集改过之后由周日任务刷新）。"""
     from app.timeline.engine import run_timeline
@@ -123,6 +152,7 @@ JOBS = {
     "check_data_quality": pipeline.check_data_quality,
     "analyze": run_analytics,
     "cycle": _run_cycle,
+    "lenses": _run_lenses,
     "decide": run_decision,
     "theses": generate_theses,
     "score_predictions": score_predictions,

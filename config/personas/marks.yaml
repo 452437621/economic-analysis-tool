@@ -1,0 +1,300 @@
+# 霍华德·马克斯（Oaktree）透镜 —— 机器可执行规格
+#
+# 取材：docs/research/persona-marks.md（2026-11-19，E1–E3 已标注）。
+# 与 config/lens.yaml 的 F/S 规则同构：读数是从本地序列算出的纯函数，规则只做
+# 阈值比较；任何阈值调整都改本文件、不改代码。
+# 定位：输出「风险姿态（仓位比例）」与「赔率判断」，不做点位与时点预测；
+# 与 fed 透镜（时点）、song 透镜（尾部）互补，冲突仲裁见笔记第 7.3 节。
+#
+# 表达式约定（引擎 backend/app/lens/persona.py:evaluate_expression 照此求值）：
+#   * 函数：z(列, win=250)、pctile(列, win=2500)、chg(列, days=63)、pct(列, days=63)、
+#     yoy(列)、ma(列, n=20)、shift(列, n=1)；四则运算、括号、常量；
+#     函数参数可以是列名或子表达式（如 pctile(SPX/ma(SPX, 250) - 1, 1250)）。
+#   * win / days / n 一律是「面板行数」——日频面板（layers.build_frame 取尾部
+#     2600 行）下一行≈一个交易日：250≈1 年、1250≈5 年、60~63≈3 个月。
+#   * pctile 返回 0–1 的滚动百分位，需要 0–100 分位时在表达式中自行 ×100。
+#   * chg 返回原单位差值；pct 返回百分比变化（×100）；yoy = pct(列, 365)。
+#   * 利率列单位是百分数（US10Y=5.07 即 5.07%）；SOFR_EFFR 是相对 EFFR 的
+#     利差、同为百分数（0.044 = 4.4bp），故 ×100 得到 bp。
+#   * 规则 field: value|chg|z|pct 来自引擎 metric_map；其中 chg / pct 由
+#     lens/common.py:change_over 按「63 个自然日」计算（≈43 个交易日），不是
+#     bar 条数。凡阈值按笔记 Δ60（60 个交易日）校准的规则（HM3 / HM5），因此
+#     改用显式 Δ 读数 hm.real10_d60 / hm.be10_d60 + field: value，避免窗口错位。
+#   * 证据分级：E1 一手（Oaktree 备忘录原文）；E2 本地直接序列；E3 自建合成/代理。
+#
+# 与笔记的已知偏差（读数上限 14 条所致；替换处已写进规则 message / falsifier）：
+#   1. 温度缺「20 日实现波动率」腿：给定函数集内算不出波动率；权重按
+#      0.40 / 0.30 / 0.30 重新分配给 SPX 偏离、NDX/SPX 集中度、黄金偏离，
+#      HM1 阈值沿用笔记 80/25，待波动率腿接入后重标定。
+#   2. HM1 只编码乐观端（T≥80 且 dev≥+10%）；悲观端与 HM12 重叠，由 HM12 的
+#      更严条件（dev≤−20% + 融资失灵）统一表达，避免同一端两条规则互相打架。
+#   3. HM4 用 10Y 实际利率「水平值」替代「200 日均值」口径
+#      （ma 只能作为读数外层函数，无法做「≥2.0 维持 120 日」的持续性判定）。
+#   4. HM7 的「NDX 偏离 250 日线 ≥+10%」用「SPX 偏离年线 ≥0」替代做同向确认
+#      （与笔记 falsifier「NDX/SPX 高位但 SPX 偏离 ≤0 只是结构迁移」同义）。
+#   5. HM9（SPX 连续两个自然年 ≥+20%）需单列年度收益读数，超出 14 条上限，暂不纳入。
+#   6. HM6（30Y−10Y ≥40bp 且 10Y ≥5.0%）未纳入：它与 HM11 共用 10Y 腿，且长端
+#      财政主导更属 song 透镜的领地；腾出的读数额度用于 HM3/HM5 的 Δ60 口径，
+#      以保证下面第 7 条的阈值保真。
+#   7. HM2 / HM3 / HM11 的已校准阈值原样保留：SOFR−EFFR 20 日均值 >10bp 且 DXY 55 日
+#      >+3%、Δ60(US10Y_REAL) ≥+50bp、US10Y ≥5.0 且 dev250(SPX) ≥0。
+#   8. Δ 窗口取 60 个交易日（笔记的 Δ60）而非引擎 chg 的 63 个自然日：以本地库
+#      2026-11-19 面板实测，Δ60 给出 real10 +44bp、BE −16bp（HM3 不触发、HM5 触发，
+#      与笔记一致）；若改用 63 个 bar 则变成 +54bp / −14bp，两条规则会同时翻转，
+#      这正是笔记标注「+48bp 临界」的原因，改动窗口前请重跑回放。
+
+id: marks
+name: 霍华德·马克斯
+title: 橡树资本联合创始人
+school: 周期定位 / 风险优先
+key_question: 现在处在市场钟摆的什么位置，赔率站在哪一边？
+thesis: 周期不是涨跌交替，而是一连串「A 导致 B」的因果链；判断位置只需回答资本可得性是否在收紧、投资者心理钟摆在哪个极端。风险是永久损失的概率而非波动率，所以这只透镜输出的是风险姿态（仓位比例）与赔率判断，不是目标价与时点。只在赔率明显偏向自己时下注，其余时间保持中性。
+
+readings:
+  - id: hm.temperature
+    label: 市场温度（自建合成，0–100，非 Marks 原始口径）
+    unit: ""
+    digits: 0
+    expr: "40*pctile(SPX/ma(SPX, 250) - 1, 1250) + 30*pctile(NDX/SPX, 1250) + 30*pctile(XAUUSD/ma(XAUUSD, 250) - 1, 1250)"
+    source: EPIC 自建
+    evidence: E3
+    note: 三条钟摆腿的分位加权：SPX 相对年线偏离（40%）、NDX/SPX 集中度（30%）、黄金相对年线偏离（30%）。0=历史最冷，100=历史最热。
+  - id: hm.spx_vs_ma250
+    label: 标普 500 相对 250 日均线偏离
+    unit: "%"
+    digits: 1
+    expr: "(SPX/ma(SPX, 250) - 1)*100"
+    source: SPX 日线
+    evidence: E2
+  - id: hm.ndx_spx_pct
+    label: 纳指/标普集中度（1250 日分位，0–100）
+    unit: ""
+    digits: 0
+    expr: "100*pctile(NDX/SPX, 1250)"
+    source: NDX/SPX 日线（EPIC 自建代理）
+    evidence: E3
+    note: 赢家集中度越高，指数化被动买盘对尾部越不敏感——马克斯称之为「风险在结构里积累」。
+  - id: hm.sofr_effr
+    label: SOFR−EFFR 20 日均值（回购融资摩擦）
+    unit: bp
+    digits: 1
+    expr: "ma(SOFR_EFFR, 20)*100"
+    source: NY Fed SOFR / EFFR
+    evidence: E2
+    note: 资本可得性的第一手指标：放贷意愿下降时先在这里出现摩擦。
+  - id: hm.dxy_mom55
+    label: 美元指数 55 日动量
+    unit: "%"
+    digits: 1
+    expr: "pct(DXY, 55)"
+    source: DXY 日线
+    evidence: E2
+  - id: hm.us10y
+    label: 10Y 美债收益率
+    unit: "%"
+    digits: 2
+    expr: "US10Y"
+    source: US10Y
+    evidence: E2
+  - id: hm.real10
+    label: 10Y 实际利率
+    unit: "%"
+    digits: 2
+    expr: "US10Y_REAL"
+    source: US10Y_REAL
+    evidence: E2
+  - id: hm.real10_d60
+    label: 10Y 实际利率 60 日变化（实际利率冲击）
+    unit: bp
+    digits: 0
+    expr: "chg(US10Y_REAL, 60)*100"
+    source: US10Y_REAL（EPIC 自建 Δ60）
+    evidence: E3
+    note: 笔记的 Δ60(US10Y_REAL) 口径；>+50bp 即 HM3。
+  - id: hm.be10_d60
+    label: 10Y 通胀预期 60 日变化
+    unit: bp
+    digits: 0
+    expr: "chg(US10Y_BE, 60)*100"
+    source: US10Y_BE（EPIC 自建 Δ60）
+    evidence: E3
+  - id: hm.policy_gap
+    label: 2Y−EFFR 政策预期缺口
+    unit: bp
+    digits: 0
+    expr: "(US2Y - EFFR)*100"
+    source: US2Y / EFFR
+    evidence: E2
+    note: 负值=市场已定价降息；≤−100bp 是恐慌定价。
+  - id: hm.hy_proxy
+    label: HY 利差代理（自建合成，0–100，越高越紧）
+    unit: ""
+    digits: 0
+    expr: "100*(0.40*pctile(SOFR_EFFR, 250) + 0.35*pctile(DXY, 250) + 0.25*pctile(US10Y_REAL, 250))"
+    source: EPIC 自建（本地无 HY OAS）
+    evidence: E3
+    note: 用融资摩擦、美元动量、实际利率三条信用敏感序列的分位替代 HY 利差；数值越高表示信用条件收紧。
+  - id: hm.credit_impulse
+    label: 信贷脉冲代理（M2 同比 − 名义 GDP 同比）
+    unit: pp
+    digits: 1
+    expr: "yoy(US_M2) - yoy(WB_US_GDP)"
+    source: EPIC 自建（US_M2 / WB_US_GDP）
+    evidence: E3
+    note: 正值=信用扩张快于名义增长，是马克斯「资本可得性」的慢变量；US_M2 尚未落库时本读数自动缺失。
+  - id: hm.gold_vs_ma250
+    label: 黄金相对 250 日均线偏离
+    unit: "%"
+    digits: 1
+    expr: "(XAUUSD/ma(XAUUSD, 250) - 1)*100"
+    source: XAUUSD 日线
+    evidence: E2
+  - id: hm.gold_crowding
+    label: 黄金实物持仓拥挤度（ETF 全球吨位分位，0–100）
+    unit: ""
+    digits: 0
+    expr: "100*pctile(ETF_GLOBAL_TONNES, 250)"
+    source: ETF_GLOBAL_TONNES（WGC）
+    evidence: E2
+
+rules:
+  - id: HM1
+    name: 钟摆到乐观端
+    severity: watch
+    when:
+      all:
+        - {metric: hm.temperature, field: value, op: ">=", value: 80}
+        - {metric: hm.spx_vs_ma250, field: value, op: ">=", value: 10}
+    message: 市场温度 ≥80（价格位置、集中度、黄金钟摆共振）且标普偏离年线 ≥+10%，乐观端已到；反向减权益与商品，把仓位交给现金与短债。
+    falsifier: 温度 ≥80 但 10Y 实际利率 <0（流动性极宽），估值可继续扩张，钟摆规则会被流动性压过。
+    assets: [us_equity, commodities]
+    sources: ["M1", "M2"]
+  - id: HM2
+    name: 资本可得性开始收缩
+    severity: warn
+    when:
+      all:
+        - {metric: hm.sofr_effr, field: value, op: ">", value: 10}
+        - {metric: hm.dxy_mom55, field: value, op: ">", value: 3}
+    message: 回购摩擦 20 日均值 >10bp（放贷意愿下降）叠加美元 55 日 >+3%（全球美元信贷收紧），信用周期由扩张转收缩的早期信号；减高杠杆权益与信用，加短久期与现金。
+    falsifier: SOFR−EFFR 20 日均值 5 个交易日内回落至 5bp 以内（技术性摩擦，非信用事件）。
+    assets: [us_equity, long_bond]
+    sources: ["M4", "M7"]
+  - id: HM3
+    name: 实际利率紧缩冲击
+    severity: warn
+    when:
+      all:
+        - {metric: hm.real10_d60, field: value, op: ">=", value: 50}
+    message: 10Y 实际利率 60 个交易日上行 ≥50bp，贴现率与违约概率同时抬升，是唯一能同时压制股/债/金/商品的组合；短债与现金相对占优。
+    falsifier: 同期 US10Y_BE 60 日上行 ≥+20bp（增长驱动型上行，权益可消化）。
+    assets: [us_equity, gold, long_bond, commodities]
+    sources: ["M5", "M4"]
+  - id: HM4
+    name: 低利率时代结束（Sea Change 未逆转）
+    severity: info
+    when:
+      all:
+        - {metric: hm.real10, field: value, op: ">=", value: 2.0}
+    message: 10Y 实际利率 ≥2.0%（口径为水平值，200 日均值版本见 falsifier），中性利率与期限溢价已重定价，长久期资产的估值中枢永久下移；下调长久期成长与私募信贷的 IRR 预期。
+    falsifier: 实际利率 200 日均值回落至 1.5% 以下并维持 60 个交易日（说明是周期而非结构）。
+    assets: [long_bond, us_equity]
+    sources: ["M5", "M4"]
+  - id: HM5
+    name: 财政型紧缩
+    severity: warn
+    when:
+      all:
+        - {metric: hm.be10_d60, field: value, op: "<=", value: -15}
+        - {metric: hm.real10_d60, field: value, op: ">=", value: 40}
+    message: 通胀预期 60 个交易日下行 ≥15bp 而实际利率上行 ≥40bp，名义利率由期限溢价与财政供给定价而非增长；利空黄金、成长股与信用，利多短端与美元。
+    falsifier: 30Y−10Y 回落至 15bp 以下且实际利率转降（财政溢价消退）。
+    assets: [gold, us_equity, long_bond]
+    sources: ["M5", "M9"]
+  - id: HM7
+    name: 集中度极端
+    severity: watch
+    when:
+      all:
+        - {metric: hm.ndx_spx_pct, field: value, op: ">=", value: 90}
+        - {metric: hm.spx_vs_ma250, field: value, op: ">=", value: 0}
+    message: 纳指/标普集中度处于 1250 日 ≥90 分位且标普仍在年线上，赢家已被充分定价、指数化被动买盘放大尾部；减指数/巨头敞口，增等权、价值与非美。
+    falsifier: 集中度高位但标普偏离年线 ≤0（并非泡沫，只是结构迁移）。
+    assets: [us_equity]
+    sources: ["M3", "M2"]
+  - id: HM8
+    name: 泡沫破裂事后确认（只减不做空）
+    severity: critical
+    when:
+      all:
+        - {metric: hm.gold_vs_ma250, field: value, op: "<=", value: -10}
+        - {metric: hm.gold_crowding, field: value, op: ">=", value: 70}
+    message: 黄金已跌破年线 10% 以上而 ETF 实物持仓仍处高分位（散户接盘、实物端未出清），泡沫由市场自己确认；减仓至基准以下，不建立空头——泡沫只能事后确认。
+    falsifier: 确认后 60 日内价格收复前高且 ETF 吨位分位回落至 80 以下（假摔）。
+    assets: [gold, silver]
+    sources: ["M2", "M3"]
+  - id: HM10
+    name: 信用周期转向
+    severity: warn
+    when:
+      all:
+        - {metric: hm.policy_gap, field: value, op: "<=", value: -50}
+        - {metric: hm.hy_proxy, field: value, op: ">=", value: 55}
+    message: 市场定价降息 ≥50bp（增长预期转弱）且信用可得性代理 ≥55（融资端先紧），是信用利差走阔的前导；减信用、加国债，准备不良债务干火药。
+    falsifier: 降息预期来自通胀回落且 US10Y_BE 同步下行（软着陆，不是信用事件）。
+    assets: [us_equity, long_bond]
+    sources: ["M4", "M8"]
+  - id: HM11
+    name: 股债赔率不利
+    severity: warn
+    when:
+      all:
+        - {metric: hm.us10y, field: value, op: ">=", value: 5.0}
+        - {metric: hm.spx_vs_ma250, field: value, op: ">=", value: 0}
+    message: 10Y ≥5.0% 而标普仅高于年线，股票风险溢价被实际利率吃光，股票期望回报低于现金；权益减至基准以下，用短债与货基替代。
+    falsifier: US10Y_BE 快速下行 50bp 以上（实际利率回落，估值重新扩张）。
+    assets: [us_equity, long_bond]
+    sources: ["M1", "M5"]
+  - id: HM12
+    name: 不良债务窗口
+    severity: info
+    when:
+      all:
+        - {metric: hm.policy_gap, field: value, op: "<=", value: -100}
+        - {metric: hm.spx_vs_ma250, field: value, op: "<=", value: -20}
+        - {metric: hm.sofr_effr, field: value, op: ">", value: 15}
+    message: 恐慌（标普跌破年线 20%）＋融资失灵（SOFR−EFFR >15bp）＋市场定价降息 >100bp，才是主场；买入折价信用、可转债与困境资产——本透镜唯一「越恐慌越买」的规则。
+    falsifier: 触发后 12 个月信用利差未走阔（流动性冲击而非偿付危机）。
+    assets: [us_equity, long_bond]
+    sources: ["M2", "M4"]
+
+# 静态风险姿态（−2…+2，正=看多；long_bond 正=看多债券价格）。
+# 引擎把每个值当表达式求值再 clamp 到 −2…+2，所以直接写数值字面量即可；口径是
+# 「结构性格局」而非当日读数，规则命中只调整幅度，不改变符号。
+# 格局：周期后段、实际利率 2.9% 高位、股债赔率不利（HM4/HM11 长期成立），
+# 但信用窗口尚未打开（HM2/HM10/HM12 未成立，SOFR−EFFR 仅 4bp），故「防守但不投降」。
+# us_equity −1：HM11 股债赔率不利，风险溢价被实际利率吃光；
+# gold 0：钟摆已回摆但实物端未出清（HM8 触发），不做多不做空；
+# silver −1：HM8 事后确认，白银是黄金的杠杆、出清期跌幅更大；
+# usd 0：本透镜无独立汇率判断，美元只作信贷条件的输入（HM2）；
+# cn_equity 0：本透镜无中国输入，维持中性、由 pettis 透镜覆盖；
+# long_bond −1：实际利率 2.9% 高位，长端久期不是好生意（看多债券价格 = 负分）；
+# commodities −1：周期后段需求走弱（铜 60 日动量约 −9%）。
+scores:
+  us_equity: -1
+  gold: 0
+  silver: -1
+  usd: 0
+  cn_equity: 0
+  long_bond: -1
+  commodities: -1
+
+triggers:
+  - 市场温度 ≥80 且标普偏离年线 ≥+10%（HM1）：钟摆到乐观端，减权益与商品、加现金与短债
+  - 市场温度 ≤25 且标普偏离年线 ≤−10%：悲观端，分批加信用与权益，最终以 HM12 为买点确认
+  - SOFR−EFFR 20 日均值 >10bp 且美元 55 日 >+3%（HM2）：资本可得性开始收缩，先降杠杆
+  - 10Y 实际利率 60 日上行 ≥50bp（HM3）：久期与成长股的主开关，股/债/金/商品同时承压
+  - 通胀预期 60 日下行 ≥15bp 且实际利率 60 日上行 ≥40bp（HM5）：财政型紧缩，利空黄金与长久期
+  - 2Y−EFFR 转为 −50bp 以下（HM10）：信用周期转向的前导，重点盯 HY 利差与 BDC 折价
+  - 2Y−EFFR ≤−100bp 且标普跌破年线 20%、SOFR−EFFR >15bp（HM12）：不良债务窗口，开始买入折价信用
+  - 黄金 ETF 吨位分位从高位快速回落且价格收复前高（HM8 失效）：实物端出清完成，重新评估贵金属

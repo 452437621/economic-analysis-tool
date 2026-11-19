@@ -257,11 +257,20 @@ def _register_collectors() -> None:
         coalesce=True,
     )
     # EPIC-C 2.0：16:20 周期定位（在 analyze 16:10 之后、decide 16:30 之前），
+    # 16:25 多透镜研判（13 套框架 + 规则命中，供专题页与预警台当日读数），
     # 16:45 台账核对（周期快照就绪后核对 26 条原则与到期预测）。
     scheduler.add_job(
         _collector("cycle"),
         trigger=CronTrigger(hour=16, minute=20, timezone=CST),
         id="cycle_daily",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _collector("lenses"),
+        trigger=CronTrigger(hour=16, minute=25, timezone=CST),
+        id="lenses_daily",
         replace_existing=True,
         max_instances=1,
         coalesce=True,

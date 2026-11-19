@@ -1,0 +1,241 @@
+id: dalio
+name: 瑞·达里奥
+title: 桥水基金创始人、全天候策略提出者
+school: 债务周期 / 风险平价
+key_question: 当前处在长债务周期的哪个阶段？
+thesis: "长期债务周期的顶部由债务/收入与利息负担共同定义，越过顶部后财政与货币政策都被迫服务于债务滚动，而非稳定增长。漂亮去杠杆只在名义增长高于名义利率时成立，一旦边际融资成本越过增长，去杠杆就转成货币化与金融压制。范式会先失效、再重构：旧的对冲关系（股债负相关、现金是垃圾）在债务供给主导期都不再可靠。"
+readings:
+  - id: dl.debt_gdp
+    label: 联邦债务/GDP
+    unit: "%"
+    digits: 1
+    expr: "US_FED_DEBT / WB_US_GDP * 100"
+    source: 美国财政部债务表 + 世界银行名义 GDP
+    evidence: E2
+  - id: dl.deficit_gdp
+    label: 联邦赤字/GDP（TTM 年化）
+    unit: "%"
+    digits: 2
+    expr: "ma(US_MTS_DEFICIT, 252) * 12 / WB_US_GDP * 100"
+    source: 美国财政部月度收支表 + 世界银行名义 GDP
+    evidence: E2
+  - id: dl.interest_receipts
+    label: 利息/财政收入（TTM）
+    unit: "%"
+    digits: 1
+    expr: "ma(US_MTS_INTEREST, 252) / ma(US_MTS_RECEIPTS, 252) * 100"
+    source: 美国财政部月度收支表
+    evidence: E2
+  - id: dl.growth_gap
+    label: 名义增长 − 10 年期利率
+    unit: pp
+    digits: 2
+    expr: "yoy(WB_US_GDP) - US10Y"
+    source: 世界银行 + 纽约联储/财政部收益率曲线
+    evidence: E2
+  - id: dl.real10
+    label: 10 年期实际利率
+    unit: "%"
+    digits: 2
+    expr: "US10Y_REAL"
+    source: 美国财政部 TIPS
+    evidence: E1
+  - id: dl.cash_carry
+    label: 现金实际收益率
+    unit: pp
+    digits: 2
+    expr: "EFFR - US10Y_BE"
+    source: 纽约联储 EFFR + 美国财政部实际收益率曲线
+    evidence: E2
+  - id: dl.curve_30s10s
+    label: 30 年 − 10 年期限利差
+    unit: pp
+    digits: 2
+    expr: "US30Y - US10Y"
+    source: 美国财政部收益率曲线
+    evidence: E1
+  - id: dl.us10y_chg63
+    label: 10 年美债 63 日变化
+    unit: pp
+    digits: 2
+    expr: "chg(US10Y, 63)"
+    source: 美国财政部收益率曲线
+    evidence: E1
+  - id: dl.stock_bond_sum63
+    label: 60/40 组合 63 日滚动回报（久期 7 年近似）
+    unit: "%"
+    digits: 2
+    expr: "pct(SPX, 63) - chg(US10Y, 63) * 7"
+    source: 标普 500 + 美国财政部收益率曲线（久期近似）
+    evidence: E2
+  - id: dl.gold_momentum63
+    label: 金价 63 日动量
+    unit: "%"
+    digits: 1
+    expr: "pct(GC, 63)"
+    source: 纽约商品交易所黄金主力合约
+    evidence: E1
+  - id: dl.spx_chg63
+    label: 标普 500 63 日涨跌
+    unit: "%"
+    digits: 2
+    expr: "pct(SPX, 63)"
+    source: 标普 500 指数
+    evidence: E1
+  - id: dl.dxy_pctile
+    label: 美元指数 250 日分位
+    unit: "%"
+    digits: 0
+    expr: "pctile(DXY, 250) * 100"
+    source: ICE 美元指数
+    evidence: E1
+  - id: dl.cb_gold_chg12m
+    label: 全球央行持金 12 个月增量（吨）
+    unit: ""
+    digits: 0
+    expr: "chg(CB_GOLD_GLOBAL_TONNES, 250)"
+    source: WGC / IMF IFS 央行黄金存量（季度，吨）
+    evidence: E2
+  - id: dl.m2_gap
+    label: M2 增速 − 名义 GDP 增速
+    unit: pp
+    digits: 2
+    expr: "pct(US_M2, 250) - yoy(WB_US_GDP)"
+    source: 美联储 H.6 广义货币 + 世界银行名义 GDP
+    evidence: E2
+rules:
+  - id: DL1
+    name: 长债务周期末期确认
+    severity: warn
+    when:
+      all:
+        - {metric: dl.debt_gdp, field: value, op: ">", value: 130}
+        - {metric: dl.deficit_gdp, field: value, op: ">", value: 5}
+    message: 债务/GDP 越过 130% 且赤字率仍在 5% 以上（当前读数见 dl.debt_gdp 与 dl.deficit_gdp），财政进入债务自我强化段：新增融资主要用来付息而非投资，任何『整顿成功』的叙事先按失败定价。
+    falsifier: 若债务/GDP 回落到 130% 以下、赤字率降到 5% 以下并维持一年，则「已过顶部」的判断证伪。
+    assets: [long_bond, gold]
+    sources: ["S1", "S3"]
+  - id: DL2
+    name: 利息挤占财政
+    severity: watch
+    when:
+      all:
+        - {metric: dl.interest_receipts, field: value, op: ">", value: 22}
+    message: 利息支出已吃掉两成以上财政收入（当前读数见 dl.interest_receipts），财政被债券持有人定价主导，每 1pp 利率上行都直接砍掉可选支出；读数越过 28% 时本信号升级为 critical。
+    falsifier: 若利息/财政收入连续四个季度回落至 20% 以下（靠更低利率滚动或财政收入大增），则挤占叙事证伪。
+    assets: [long_bond, usd]
+    sources: ["S3", "S14"]
+  - id: DL3
+    name: 漂亮去杠杆条件 1 失效（边际口径）
+    severity: warn
+    when:
+      all:
+        - {metric: dl.growth_gap, field: value, op: "<", value: 0}
+    message: 名义 GDP 增速已低于 10 年期名义利率（当前读数见 dl.growth_gap），每滚动一笔债务都更贵，漂亮去杠杆的条件 1 在边际口径失效——不必等存量口径也破，滚动重定价本身就是空长债的理由。
+    falsifier: 若 10 年期利率重新低于名义 GDP 增速并维持一个季度，则条件 1 在边际口径恢复。
+    assets: [long_bond]
+    sources: ["S1", "S3"]
+  - id: DL4
+    name: 金融压制 / 债务货币化启动
+    severity: critical
+    when:
+      all:
+        - {metric: dl.real10, field: value, op: "<", value: 1.0}
+        - {metric: dl.deficit_gdp, field: value, op: ">", value: 8}
+    message: 实际利率跌破 1% 而赤字率仍高于 8%（当前读数见 dl.real10 与 dl.deficit_gdp），是债务货币化的典型组合：央行被动接盘、储蓄者被征收隐性贬值税，长债与现金都受损，实物与通胀挂钩资产相对受益。
+    falsifier: 若赤字率降到 5% 以下，或实际利率回到 1.5% 以上而赤字收敛，则该组合不构成金融压制。
+    assets: [gold, commodities, long_bond]
+    sources: ["S3", "S4"]
+  - id: DL5
+    name: 股债对冲失效（范式转移确认）
+    severity: watch
+    when:
+      all:
+        - {metric: dl.stock_bond_sum63, field: value, op: "<", value: -5}
+    message: 股票与债券同时下跌（60/40 组合 63 日滚动回报为负，当前读数见 dl.stock_bond_sum63），分散化的燃料从负相关变成了正相关，仓位应转向实物与短久期，而不是继续靠股债对冲。
+    falsifier: 若股债重新此消彼长、组合滚动回报回正且长端利率下行，则范式转移判断证伪。
+    assets: [us_equity, long_bond, gold]
+    sources: ["S7", "S13"]
+  - id: DL6
+    name: 黄金脱离实际利率锚
+    severity: info
+    when:
+      all:
+        - {metric: dl.gold_momentum63, field: value, op: ">", value: 10}
+        - {metric: dl.real10, field: value, op: ">", value: 1.5}
+    message: 正实际利率环境下金价仍涨超 10%（当前读数见 dl.gold_momentum63 与 dl.real10），说明定价已脱离持有成本锚、由央行需求与秩序溢价主导：这是持有实物金的理由，但同样意味着追高的容错很小。
+    falsifier: 若金价在正实际利率下回落、63 日动量转负，则「脱离锚」的迹象消失。
+    assets: [gold]
+    sources: ["S2", "S14"]
+  - id: DL7
+    name: 现金是垃圾 ↔ 现金有吸引力（双向）
+    severity: watch
+    when:
+      any:
+        - {metric: dl.cash_carry, field: value, op: "<", value: -1.5}
+        - {metric: dl.cash_carry, field: value, op: ">", value: 1.0}
+    message: 现金实际收益率越过某一端临界（当前读数见 dl.cash_carry）：低于 −1.5pp 时现金是垃圾、被迫承担风险；高于 +1.0pp 时现金反而是等待范式确认的期权，比无息黄金和低实际回报的长债都更有吸引力。
+    falsifier: 若现金实际收益率长期落在 −1.5pp 与 +1.0pp 之间，则两向判断都不成立，现金中性。
+    assets: [usd, long_bond, gold]
+    sources: ["S5", "S6"]
+  - id: DL8
+    name: 储备货币信任衰减
+    severity: critical
+    when:
+      all:
+        - {metric: dl.dxy_pctile, field: value, op: "<", value: 30}
+        - {metric: dl.cb_gold_chg12m, field: value, op: ">", value: 500}
+    message: 美元走弱（250 日分位低于 30%，当前读数见 dl.dxy_pctile）同时全球央行以每年 500 吨以上速度囤金（当前读数见 dl.cb_gold_chg12m），构成储备货币信任衰减的双确认——慢变量，但一旦转向就是不可逆的外部秩序转折。
+    falsifier: 若央行年度购金回落到 500 吨以下并持续两个季度，则外部秩序转折的双确认失效。
+    assets: [gold, usd, long_bond]
+    sources: ["S2", "S9"]
+  - id: DL9
+    name: 期限溢价失控（债务供给 > 需求）
+    severity: warn
+    when:
+      all:
+        - {metric: dl.curve_30s10s, field: value, op: ">", value: 0.5}
+        - {metric: dl.us10y_chg63, field: value, op: ">", value: 0.5}
+    message: 30s10s 陡化超 50bp 且 10 年期 63 日上行超 50bp（当前读数见 dl.curve_30s10s 与 dl.us10y_chg63），长端由债务供给而非增长定价——债券在定价财政风险，不是在定价经济过热。
+    falsifier: 若长端上行伴随短端下行以外的避险买盘、或通胀预期大幅回落，则供需叙事证伪。
+    assets: [long_bond, us_equity]
+    sources: ["S3", "S14"]
+  - id: DL10
+    name: 内部秩序 5→6 阶段代理
+    severity: critical
+    when:
+      all:
+        - {metric: dl.us10y_chg63, field: value, op: ">", value: 0}
+        - {metric: dl.dxy_pctile, field: value, op: ">", value: 90}
+        - {metric: dl.spx_chg63, field: value, op: "<", value: -5}
+    message: 利率上行 + 美元强势 + 股市 63 日跌超 5% 三条件同时成立（当前读数见 dl.us10y_chg63、dl.dxy_pctile、dl.spx_chg63），是内部秩序第 5→6 阶段的代理信号；代理只给方向不给时点，切勿据此择时。
+    falsifier: 若利率与美元同时回落而股市修复，则阶段推进的代理信号消失。
+    assets: [us_equity, long_bond, usd]
+    sources: ["S2", "S8"]
+  - id: DL11
+    name: 债务货币化提速（M2 超过产出）
+    severity: watch
+    when:
+      all:
+        - {metric: dl.m2_gap, field: value, op: ">", value: 0}
+    message: 广义货币增速已超过名义 GDP 增速（当前读数见 dl.m2_gap），按达里奥的恒等式「价格 = 支出 / 产量」，超出产出的货币最终流向实物资产与资产价格，而不是实体增长。
+    falsifier: 若 M2 增速回落到名义 GDP 增速以下并维持两个季度，则货币化提速的判断证伪。
+    assets: [gold, commodities, us_equity]
+    sources: ["S4", "S14"]
+scores:
+  # 正=看多。所有权重由「实际利率 / 期限溢价 / 结构需求」三组驱动拼装，量级 −2…+2。
+  us_equity: "-0.5*z(SPX, 250) - 0.3*z(US10Y_REAL, 250) - 0.2*z(US30Y, 63)"
+  gold: "-0.5*z(US10Y_REAL, 250) + 0.3*z(CB_GOLD_GLOBAL_TONNES, 250) + 0.2*z(US10Y_BE, 250)"
+  silver: "0.4*z(GC, 250) + 0.4*z(CU, 250) - 0.2*z(US10Y_REAL, 250)"
+  usd: "0.4*z(EFFR, 250) + 0.3*z(US10Y, 250) - 0.3*z(DXY, 250)"
+  # 中国股票用 HSI 代理 A 股：000300 是数字列名，表达式语言暂不能直接引用。
+  cn_equity: "-0.4*z(HSI, 250) - 0.3*z(USDCNH, 250) - 0.3*z(EFFR, 250)"
+  # long_bond 的方向 = 债券价格方向（正=看多价格），故收益率的 z 取负号。
+  long_bond: "-0.5*z(US10Y, 250) - 0.3*z(US10Y_BE, 250) - 0.2*z(US30Y, 63)"
+  commodities: "0.4*z(CL, 250) + 0.3*z(CU, 250) - 0.3*z(DXY, 250)"
+triggers:
+  - 10 年期美债收益率上行突破 5.5% 且 30s10s 继续陡化：长端进入「供给定价」失控段，债券先跌、政策后救。
+  - 季度再融资公告显示中长期国债发行占比上调而 Bills 占比下降：久期供给冲击落地，期限溢价被动走阔。
+  - 美联储重新扩表或重启国债购买、同时实际利率跌破 1%：债务货币化从预告进入执行。
+  - 央行购金与中国黄金储备连续两个月加速、而美元指数 250 日分位跌破 50%：储备货币替代进入快车道。
+  - 股债 60 日相关性由负转正并持续一个季度：60/40 与全天候的分散前提失效，该换仓而不是加杠杆。

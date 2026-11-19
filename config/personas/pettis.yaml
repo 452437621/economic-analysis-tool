@@ -1,0 +1,343 @@
+# 迈克尔·佩蒂斯透镜 —— 储蓄—投资失衡 / 国际收支（EPIC 第三透镜）
+#
+# 来源：docs/research/persona-pettis.md（MP1–MP12，2026-11-19）
+# 结构：readings（14 条读数）→ rules（MP1–MP12）→ scores（七类资产）→ triggers（人读摘要）
+# 表达式：只用 persona.py 声明的 z / pctile / chg / pct / yoy / ma / shift 与面板列名；
+#         所有 expr 单行双引号，不使用锚点与多行标量。
+# 窗口口径：z 统一 250 日（约 1 年）；中国利率与汇率用 63 日 / 20 日（约 3 个月 / 1 个月）；
+#           年频 WB_* 只取水平值（观测日稀疏，任何行位移都会落空，见下）。
+# 预算取舍：读数上限 14 条，故未纳入 CN10Y2Y、CN_GOLD_PREMIUM_PCT、I / CU、SPX、
+#           US30Y−US10Y 与 WB_US_UNEMPLOYMENT；笔记 MP6 / MP10 / MP11 / MP12 因此改以
+#           储蓄率、资本形成、经常账户与 M2 占 GDP 等可落库列参数化，编号沿用笔记原编号。
+# 数据口径（本地 panel 实测，2026-11-19）：
+#   WB_* 年频序列只在年度观测日附近几行有值、其余为 NaN，故只能取水平值；对它做 yoy / chg / z
+#   会因行位移落在 NaN 上而恒为空，MP4 / MP11 的 M2 腿因此用 M2/GDP 水平值加结构性阈值。
+#   MTS 是月频、按约 7 天一块铺进日频，年化必须用 252 行滚动（12 行滚动只等于当月值）。
+#   实测：赤字率 6.48%、利息/财政收入 19.4%、M2/GDP 227.7%、储蓄率 美 16.6% / 中 42.7%、
+#   经常账户 美 −3.8% / 中 +3.8%、资本形成 美 21.5% / 中 40.5%。
+id: pettis
+name: 迈克尔·佩蒂斯
+title: 北京大学金融学教授、前高盛/里昂证券经济学家
+school: 储蓄—投资失衡 / 国际收支
+key_question: 全球储蓄过剩还在压制实际利率，还是已经开始再平衡？
+
+# 静态论断：三条可直接落进推导 narrative 的句子。
+thesis: "经常账户余额恒等于国内储蓄减投资（S−I），贸易差额是残差而不是竞争力：关税与双边采购只改变逆差的来源国，不改变总量。顺差国的高储蓄来自被压低的家庭收入份额，其顺差是维持就业的政治必需品；逆差国（美国）只能把调整落在失业一侧或债务与资产价格一侧。全球实际利率是储蓄供给的价格，所以「低实际利率 + 强美元 + 美国高赤字」等于失衡仍在被容纳，「实际利率上行 + 美元转弱 + 赤字收缩」等于再平衡启动；中国再平衡是唯一健康路径（扩内需），但政治上最难，基准情形是债务维持现状加外部强制间歇升级。"
+
+# ── 读数：14 条，覆盖储蓄率 / 经常账户 / 资本形成（美中）、财政赤字率与利息负担、
+#     实际利率、美元、中国信用深化（M2/GDP）、中国利率动量、人民币与 A 股 ──
+readings:
+  - id: mp.us_savings_gdp
+    label: 美国国民储蓄率
+    unit: "%"
+    digits: 1
+    expr: "WB_US_SAVINGS_GDP"
+    source: "世界银行 WDI（NY.GNS.ICTR.ZS，年频）"
+    evidence: E2
+    note: "年频年度值；与 mp.us_capform_gdp 之差近似美国的储蓄—投资缺口（S−I）。"
+
+  - id: mp.cn_savings_gdp
+    label: 中国国民储蓄率
+    unit: "%"
+    digits: 1
+    expr: "WB_CN_SAVINGS_GDP"
+    source: "世界银行 WDI（NY.GNS.ICTR.ZS，年频）"
+    evidence: E1
+    note: "佩蒂斯框架的第一性变量：储蓄率高不是偏好，而是家庭收入份额被压低的结果（P14）。"
+
+  - id: mp.us_ca_gdp
+    label: 美国经常账户/GDP
+    unit: "%"
+    digits: 1
+    expr: "WB_US_CA_GDP"
+    source: "世界银行 WDI（BN.CAB.XOKA.GD.ZS，年频）"
+    evidence: E2
+    note: "恒等式的直接观测端；负值＝逆差，即美国在净吸收外国储蓄。"
+
+  - id: mp.cn_ca_gdp
+    label: 中国经常账户/GDP
+    unit: "%"
+    digits: 1
+    expr: "WB_CN_CA_GDP"
+    source: "世界银行 WDI（BN.CAB.XOKA.GD.ZS，年频）"
+    evidence: E2
+    note: "顺差的总量观测端；双边关税只改变逆差来源国，不改变这一列的符号（P6）。"
+
+  - id: mp.us_capform_gdp
+    label: 美国资本形成/GDP
+    unit: "%"
+    digits: 1
+    expr: "WB_US_CAPFORM_GDP"
+    source: "世界银行 WDI（NE.GDI.TOTL.ZS，年频）"
+    evidence: E2
+    note: "恒等式的投资端；美国储蓄低于投资，缺口只能靠资本净流入（＝逆差）补足。"
+
+  - id: mp.cn_capform_gdp
+    label: 中国资本形成/GDP
+    unit: "%"
+    digits: 1
+    expr: "WB_CN_CAPFORM_GDP"
+    source: "世界银行 WDI（NE.GDI.TOTL.ZS，年频）"
+    evidence: E2
+    note: "投资率居高不下＝消费占比被压低的镜像，也是「投资回报递减」的分母。"
+
+  - id: mp.us_deficit_gdp
+    label: 美国财政赤字率（12M 滚动）
+    unit: "%"
+    digits: 1
+    expr: "ma(US_MTS_DEFICIT, 252) * 12 / WB_US_GDP * 100"
+    source: "美国财政部 MTS（月频）+ 世界银行 GDP（年频）"
+    evidence: E2
+    note: "252 行滚动≈12 个月均值，乘 12 得年化赤字；分母 WB_US_GDP 为年频，本读数随年度 GDP 发布更新（实测 6.48%）。"
+
+  - id: mp.us_interest_ratio
+    label: 联邦利息支出/财政收入
+    unit: "%"
+    digits: 1
+    expr: "ma(US_MTS_INTEREST, 252) / ma(US_MTS_RECEIPTS, 252) * 100"
+    source: "美国财政部 MTS（月频）"
+    evidence: E2
+    note: "同为 252 行（≈12 个月）滚动；≥20% 表示财政空间被利息吞噬（实测 19.4%，正压在阈值上）。"
+
+  - id: mp.cn_m2_gdp
+    label: 中国 M2/GDP（信用深化程度）
+    unit: "%"
+    digits: 1
+    expr: "WB_CN_M2_GDP"
+    source: "世界银行 FSI（M2 占 GDP，年频）"
+    evidence: E2
+    note: "本地无社融与 DR001 日频，用 M2/GDP 水平值代理信贷扩张程度；年频观测日稀疏，不可做 yoy / chg。"
+
+  - id: mp.real10_z
+    label: 美国10年实际利率 z 分数
+    unit: "σ"
+    digits: 2
+    expr: "z(US10Y_REAL, 250)"
+    source: "FRED（TIPS 10 年实际利率）"
+    evidence: E2
+    note: "250 日（约 1 年）滚动 z；读数本身即 MP1 / MP2 / MP5 的阈值口径。"
+
+  - id: mp.dxy_z
+    label: 美元指数 z 分数
+    unit: "σ"
+    digits: 2
+    expr: "z(DXY, 250)"
+    source: "ICE DXY（本地 market_bars）"
+    evidence: E1
+    note: "强美元＋低实际利率＝美国仍在容纳储蓄；美元转弱＋实际利率上行＝再平衡启动。"
+
+  - id: mp.cn10y_chg63
+    label: 中国10年国债利率3个月变动
+    unit: "bp"
+    digits: 0
+    expr: "chg(CN10Y, 63) * 100"
+    source: "中债估值（本地 macro_series）"
+    evidence: E1
+    note: "下行＝内需弱与宽松预期（债务维持现状的价格）；上行＝再通胀与再平衡定价。"
+
+  - id: mp.cnh_ret20
+    label: 美元兑人民币20日变动
+    unit: "%"
+    digits: 2
+    expr: "pct(USDCNH, 20)"
+    source: "本地 market_bars（离岸人民币）"
+    evidence: E1
+    note: "正值＝人民币贬值；MP3 的校准阈值即 20 日贬值 2%（P11）。"
+
+  - id: mp.a_share_ret20
+    label: 沪深30020日涨跌幅
+    unit: "%"
+    digits: 2
+    expr: "pct(000300, 20)"
+    source: "本地 market_bars（沪深300）"
+    evidence: E2
+    note: "列名 000300 是数字代码，加载器需先替换列名再解析表达式（同 cycle/market.py 的口径）。"
+
+# ── 规则：MP1–MP12，编号与笔记一一对应；when 只用 all ──
+rules:
+  - id: MP1
+    name: 储蓄过剩压制实际利率
+    severity: watch
+    when:
+      all:
+        - {metric: mp.real10_z, field: value, op: "<=", value: -1.0}
+        - {metric: mp.dxy_z, field: value, op: ">=", value: 0.5}
+        - {metric: mp.us_deficit_gdp, field: value, op: ">=", value: 5.0}
+    message: "实际利率低于自身一年均值 1σ、美元高于均值 0.5σ、财政赤字率 ≥5%：全球储蓄仍在被美国吸纳，实际利率被压低而美元维持强势，这是失衡未调整的典型组合，黄金与长久期底仓不下调。"
+    falsifier: "US10Y_REAL 上行突破 1.5% 且 DXY 与实际利率同向走强（此时是紧缩定价，不是储蓄过剩）。"
+    assets: [gold, long_bond]
+    sources: ["S02", "S05"]
+
+  - id: MP2
+    name: 再平衡启动：实际利率上行与美元转弱
+    severity: warn
+    when:
+      all:
+        - {metric: mp.real10_z, field: value, op: ">=", value: 1.0}
+        - {metric: mp.dxy_z, field: chg, op: "<=", value: -0.5}
+        - {metric: mp.us_deficit_gdp, field: value, op: "<=", value: 5.0}
+    message: "实际利率高于均值 1σ、美元三个月内回落 0.5σ、赤字率降至 5% 以下：储蓄供给下降或美国限制容纳，佩蒂斯式再平衡启动，空长端美债、多黄金、多非美货币与中国消费类资产。"
+    falsifier: "实际利率上行但美元不弱、赤字率仍 ≥6%（避险或紧缩定价，不是再平衡启动）。"
+    assets: [gold, long_bond, cn_equity]
+    sources: ["S05", "S12"]
+
+  - id: MP3
+    name: 人民币贬值无效
+    severity: warn
+    when:
+      all:
+        - {metric: mp.cnh_ret20, field: value, op: ">=", value: 2.0}
+        - {metric: mp.a_share_ret20, field: value, op: "<=", value: 0.0}
+        - {metric: mp.cn10y_chg63, field: value, op: ">=", value: -10}
+    message: "人民币 20 日贬值 ≥2% 而沪深300 不涨、中国10年未下行：贬值既未改善增长预期也未打开宽松空间，符合贬值压低消费、加重失衡的判断，应读作中国风险溢价上升而非出口利好。"
+    falsifier: "USDCNH 贬值 ≥2% 但沪深300 上涨 ≥3%（市场把贬值读作出口利好且资本外流未恶化）。"
+    assets: [cn_equity, gold]
+    sources: ["P11"]
+
+  - id: MP4
+    name: 中国内需收缩确认（投资链走弱）
+    severity: warn
+    when:
+      all:
+        - {metric: mp.cn10y_chg63, field: value, op: "<=", value: -15}
+        - {metric: mp.cn_m2_gdp, field: value, op: ">=", value: 220.0}
+        - {metric: mp.cn_capform_gdp, field: value, op: ">=", value: 40.0}
+    message: "中国10年三个月下行 ≥15bp、M2/GDP 仍 ≥220%（信用深化未转向）、投资率仍 ≥40%：利率下行与信用存量高位同时出现而投资率居高不下，是储蓄过剩与内需不足的价格确认，政策对冲概率上升。"
+    falsifier: "投资率同步降至 38% 以下且 M2/GDP 回落至 210% 以下（转为扩内需，而非需求收缩）。"
+    assets: [long_bond, commodities]
+    sources: ["S15", "P5"]
+
+  - id: MP5
+    name: 美国债务路径加深（财政主导）
+    severity: warn
+    when:
+      all:
+        - {metric: mp.us_deficit_gdp, field: value, op: ">=", value: 6.0}
+        - {metric: mp.us_interest_ratio, field: value, op: ">=", value: 20.0}
+        - {metric: mp.real10_z, field: value, op: "<=", value: 0.5}
+    message: "赤字率 ≥6%、利息占财政收入 ≥20%、实际利率不高于均值 0.5σ：美国用低实际利率吸收赤字与全球储蓄，是「要么失业要么债务」的债务侧极端，长期不可持续。"
+    falsifier: "US10Y_REAL 三个月上行 ≥50bp 且 US5Y_BE 回落（赤字被真实利率吸收，风险释放）。"
+    assets: [gold, long_bond]
+    sources: ["S18", "P2"]
+
+  - id: MP6
+    name: 美国储蓄—投资缺口（容纳的会计形态）
+    severity: info
+    when:
+      all:
+        - {metric: mp.us_savings_gdp, field: value, op: "<=", value: 19.0}
+        - {metric: mp.us_capform_gdp, field: value, op: ">=", value: 20.0}
+        - {metric: mp.us_deficit_gdp, field: value, op: ">=", value: 5.0}
+    message: "美国储蓄率 ≤19%、投资率 ≥20%、赤字率 ≥5%：储蓄—投资缺口由财政赤字补足，这是美国被动容纳全球储蓄的会计形态，也是长端实际利率被压低的结构来源。"
+    falsifier: "美国储蓄率回升至 20% 以上且赤字率降至 5% 以下（容纳角色退坡，见 MP12）。"
+    assets: [us_equity, gold]
+    sources: ["S02", "S32"]
+
+  - id: MP7
+    name: 关税失败侧：双边协议不改变总量
+    severity: info
+    when:
+      all:
+        - {metric: mp.us_ca_gdp, field: value, op: "<=", value: -3.0}
+        - {metric: mp.cn_ca_gdp, field: value, op: ">=", value: 2.0}
+        - {metric: mp.dxy_z, field: chg, op: ">=", value: 0.5}
+    message: "美国经常账户逆差仍 ≥3% GDP、中国顺差仍 ≥2% GDP、美元三个月走强：双边关税没有改变失衡总量，只改变逆差来源国，判为佩蒂斯式关税失败侧。"
+    falsifier: "美国经常账户逆差收窄至 2.5% 以内且中国顺差降至 1.5% 以下（总量真在修正）。"
+    assets: [gold, commodities]
+    sources: ["P6", "S14"]
+
+  - id: MP8
+    name: 中国推迟再平衡（D 路径价格组合）
+    severity: watch
+    when:
+      all:
+        - {metric: mp.cn10y_chg63, field: value, op: "<=", value: -20}
+        - {metric: mp.cnh_ret20, field: value, op: ">=", value: 2.0}
+        - {metric: mp.a_share_ret20, field: value, op: ">=", value: 0.0}
+    message: "中国10年三个月下行 ≥20bp、人民币 20 日贬值 ≥2%、沪深300 不跌：贬值加宽松加政策预期同时出现，是债务维持现状（D 路径）的典型价格组合，失衡继续累积。"
+    falsifier: "沪深300 上涨 ≥10% 且中国10年转为上行 ≥20bp、人民币升值（转向 MP9 的再平衡路径）。"
+    assets: [cn_equity, long_bond, gold]
+    sources: ["P10", "S05"]
+
+  - id: MP9
+    name: 中国再平衡真实启动（A 路径）
+    severity: warn
+    when:
+      all:
+        - {metric: mp.cn_savings_gdp, field: value, op: "<=", value: 39.5}
+        - {metric: mp.cn10y_chg63, field: value, op: ">=", value: 20}
+        - {metric: mp.a_share_ret20, field: value, op: ">=", value: 5.0}
+        - {metric: mp.cnh_ret20, field: value, op: "<=", value: -1.0}
+    message: "中国储蓄率降至 39.5% 以下、10年三个月上行 ≥20bp、沪深300 20 日上涨 ≥5%、人民币升值：储蓄供给下降且利率与风险偏好同升，是唯一健康的再平衡组合，也是本透镜唯一翻多中国内需的条件。"
+    falsifier: "股指上涨但中国10年继续下行、人民币继续贬值（流动性或政策脉冲行情，见 MP11）。"
+    assets: [cn_equity, commodities]
+    sources: ["P7", "S05"]
+
+  - id: MP10
+    name: 中国储蓄过剩的会计确认
+    severity: info
+    when:
+      all:
+        - {metric: mp.cn_savings_gdp, field: value, op: ">=", value: 40.5}
+        - {metric: mp.cn_capform_gdp, field: value, op: ">=", value: 40.0}
+        - {metric: mp.cn_ca_gdp, field: value, op: ">=", value: 1.5}
+    message: "中国储蓄率 ≥40.5%、投资率 ≥40%、经常账户顺差 ≥1.5% GDP：储蓄与投资双高而外部仍净吸收，会计恒等式确认储蓄过剩未被修正，政策只改变价格、不改变失衡。"
+    falsifier: "家庭收入份额上升带动储蓄率降至 38% 以下且顺差收窄至 1% 以内。"
+    assets: [long_bond, commodities]
+    sources: ["S15", "P4"]
+
+  - id: MP11
+    name: 政策脉冲型反弹（非再平衡）
+    severity: info
+    when:
+      all:
+        - {metric: mp.cn_m2_gdp, field: value, op: ">=", value: 220.0}
+        - {metric: mp.a_share_ret20, field: value, op: ">=", value: 5.0}
+        - {metric: mp.cn10y_chg63, field: value, op: "<=", value: 0}
+    message: "M2/GDP ≥220%（债务驱动未变）、沪深300 20 日上涨 ≥5%、中国10年三个月未上行：信用存量高位托市而利率不涨，属推迟再平衡的股市形态，是流动性或政策脉冲，不是再通胀。"
+    falsifier: "同一组合下 M2/GDP 回落至 210% 以下且10年转为上行（政策脉冲转为真实内需扩张）。"
+    assets: [cn_equity, gold]
+    sources: ["P4", "S24"]
+
+  - id: MP12
+    name: 美国减少容纳（再平衡数量侧）
+    severity: info
+    when:
+      all:
+        - {metric: mp.us_savings_gdp, field: value, op: ">=", value: 19.5}
+        - {metric: mp.us_ca_gdp, field: value, op: ">=", value: -2.5}
+        - {metric: mp.us_deficit_gdp, field: value, op: "<=", value: 5.0}
+    message: "美国储蓄率回升至 19.5% 以上、经常账户逆差收窄至 2.5% 以内、赤字率降至 5% 以下：美国在减少容纳（限制容纳路径的数量侧），全球储蓄供给下降，美元长期转弱、长端承压。"
+    falsifier: "赤字率降至 5% 以下但储蓄率未回升、经常账户未改善（紧缩来自需求崩塌而非再平衡）。"
+    assets: [usd, long_bond]
+    sources: ["S05", "S07"]
+
+# ── 七类资产评分（-2…+2；long_bond 正 = 看多债券价格）──
+# 值必须是可求值表达式（常量即合法表达式）；引擎逐条求值后 clamp 到 ±2，理由写在紧邻注释里。
+# 基准态＝MP1 / MP5 / MP6 / MP10 所示的「储蓄过剩尚未再平衡」；再平衡由 MP2 / MP9 触发后按注释降档。
+scores:
+  # 本透镜对美国股指没有结构性方向：容纳延续时财政赤字托底名义增长（可上调到 +0.5），MP2 实际利率上行时降至 -1。
+  us_equity: "-0.5"
+  # 核心多头：储蓄过剩压低实际利率（MP1）、财政主导加深（MP5），S1 / S2 / S4 三个情景都偏多；MP9 中国再平衡真实启动时降至 -1。
+  gold: "2"
+  # 跟随黄金的货币属性，但多一层工业需求；MP4 中国投资链收缩时降为 0，流动性冲击中先被抛售。
+  silver: "1"
+  # 短期由容纳角色与利差支撑（MP1 / MP6）；MP2 / MP12 触发、再平衡启动后降至 -1。
+  usd: "1"
+  # 基准情形（D 路径）区间震荡：周期与出口链占优、消费偏弱；MP3 / MP8 降至 -1，MP9 翻多至 +2。
+  cn_equity: "0"
+  # 储蓄过剩压低长端实际收益率（价格看多），但赤字供给与期限溢价压制动量；MP2 触发翻空至 -2。
+  long_bond: "1"
+  # 结构分化：投资型（铜、铁矿）受中国投资边际递减拖累，消费型（油、农产品）受益于再平衡；MP9 触发转多至 +1。
+  commodities: "0"
+
+# ── 静态触发条件（人读摘要；机判由上面 rules 完成）──
+triggers:
+  - "美国财政主导（MP5）：赤字率 ≥6%、利息/收入 ≥20%、实际利率不高于均值 0.5σ → 黄金与长久期底仓不动，只做战术加减。"
+  - "失衡未调整（MP1）：实际利率低于均值 1σ、美元强、赤字率 ≥5% → 黄金多、长端区间、A 股区间。"
+  - "再平衡启动（MP2）：实际利率 ≥1σ、美元三个月回落 0.5σ、赤字率 <5% → 长债从多翻空的唯一组合。"
+  - "中国推迟再平衡（MP8）：中国10年三个月下行 ≥20bp、人民币 20 日贬值 ≥2%、A 股不跌 → 多中国利率债、黄金加仓、A 股区间。"
+  - "中国再平衡真实启动（MP9）：储蓄率 ≤39.5%、10年三个月上行 ≥20bp、沪深300 20 日 ≥+5%、人民币升值 → 唯一翻多中国内需的组合。"
+  - "贬值无效（MP3）：USDCNH 20 日贬值 ≥2% 且沪深300 ≤0 → 中国风险资产减仓、黄金加仓，不读作出口利好。"
+  - "关税与管制事件：新闻 RSS 出现关税、出口管制、资本管制且 MP7 同日成立 → 只做人工复核，不自动下单。"
+  - "年频约束：储蓄率、经常账户、资本形成、M2 占 GDP 每年只更新一次，年度发布后整体重算，不做日内解释。"

@@ -1,4 +1,5 @@
-"""结构性宏观数据源（离线）：IMF DataMapper / 美国财政部 Fiscal Data / 世界银行。
+"""结构性宏观数据源（离线）：IMF DataMapper / 美国财政部 Fiscal Data / 世界银行 /
+美联储 H.4.1 资产负债表 / 美联储 H.6 货币供应。
 
 所有网络调用都被 monkeypatch 掉，只验证解析、落库契约与降级行为。
 """
@@ -12,7 +13,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from app.ingest import pipeline
-from app.ingest.providers import imf_datamapper, treasury_fiscal, worldbank
+from app.ingest.providers import fed_h6, fed_h41, imf_datamapper, treasury_fiscal, worldbank
 from app.ingest.providers.errors import ProviderError
 from app.models.base import Base
 from app.models.core import MacroObs, MacroSeries
@@ -120,6 +121,37 @@ def _obs_count(factory) -> int:
         return int(session.scalar(select(func.count()).select_from(MacroObs)) or 0)
 
 
+def _stub_fed(monkeypatch, *, boom: bool = False) -> None:
+    """美联储 H.4.1 / H.6 的抓取函数替换（离线）。
+
+    H.4.1/H.6 只解析官方当前页，测试里必须 patch，否则会真实联网并把
+    ``stats["obs"]``/``stats["series"]`` 抬高。
+    """
+
+    if boom:
+        def _raise(*args, **kwargs):
+            raise ProviderError("network down")
+
+        monkeypatch.setattr(fed_h41, "fetch_current", _raise)
+        monkeypatch.setattr(fed_h41, "fetch_history", _raise)
+        monkeypatch.setattr(fed_h6, "fetch_current", _raise)
+        monkeypatch.setattr(fed_h6, "fetch_history", _raise)
+        return
+
+    monkeypatch.setattr(
+        fed_h41,
+        "fetch_current",
+        lambda **kwargs: {"asof": date(2026, 11, 11), "values": {"US_FED_ASSETS": 6.7e12}},
+    )
+    monkeypatch.setattr(fed_h41, "fetch_history", lambda **kwargs: {})
+    monkeypatch.setattr(
+        fed_h6,
+        "fetch_current",
+        lambda **kwargs: {"US_M2": {date(2026, 9, 1): 23.4e12}},
+    )
+    monkeypatch.setattr(fed_h6, "fetch_history", lambda **kwargs: {})
+
+
 def _latest_value(session, code: str) -> float | None:
     return session.scalar(
         select(MacroObs.value)
@@ -158,6 +190,7 @@ def test_collect_macro_persists_contract_series(macro_db, monkeypatch):
     monkeypatch.setattr(imf_datamapper, "_get_json", fake_imf_json)
     monkeypatch.setattr(treasury_fiscal, "_get_rows", fake_treasury_rows)
     monkeypatch.setattr(worldbank, "_get_json", fake_worldbank_json)
+    _stub_fed(monkeypatch)
 
     stats = pipeline.collect_macro()
     assert stats["obs"] > 0
@@ -186,6 +219,7 @@ def test_collect_macro_is_idempotent(macro_db, monkeypatch):
     monkeypatch.setattr(imf_datamapper, "_get_json", fake_imf_json)
     monkeypatch.setattr(treasury_fiscal, "_get_rows", fake_treasury_rows)
     monkeypatch.setattr(worldbank, "_get_json", fake_worldbank_json)
+    _stub_fed(monkeypatch)
 
     pipeline.collect_macro()
     first = _obs_count(macro_db)
@@ -200,6 +234,7 @@ def test_collect_macro_degrades_without_raising(macro_db, monkeypatch):
     monkeypatch.setattr(imf_datamapper, "_get_json", boom)
     monkeypatch.setattr(treasury_fiscal, "_get_rows", boom)
     monkeypatch.setattr(worldbank, "_get_json", boom)
+    _stub_fed(monkeypatch, boom=True)
 
     stats = pipeline.collect_macro()
     assert stats["obs"] == 0
