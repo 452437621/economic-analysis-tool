@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app.api.serializers import iso
 from app.models.v2 import TradeRecord
 from app.platform.db import get_session
 
@@ -199,8 +200,7 @@ def _compute_rr(
     return abs(target_price - entry_price) / risk
 
 
-def _iso(value) -> str | None:  # noqa: ANN001 - SQLite 返回的 datetime 可能为 naive
-    return value.isoformat() if value else None
+_iso = iso
 
 
 def _serialize(row: TradeRecord) -> dict:

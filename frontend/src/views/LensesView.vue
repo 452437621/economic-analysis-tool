@@ -13,7 +13,7 @@
         </h1>
         <span v-if="state?.run" class="gen-at">
           运行 {{ state.run.status }} · 耗时 {{ state.run.duration_ms ?? "—" }} ms ·
-          置信度 {{ pct(state.confidence) }} · 证据 {{ state.evidence_grade }}
+          置信度 {{ fmtRatioPct(state.confidence) }} · 证据 {{ state.evidence_grade }}
         </span>
       </div>
       <div class="page-actions">
@@ -157,7 +157,7 @@
                       {{ asset.direction === "up" ? "看涨" : asset.direction === "down" ? "看跌" : "震荡" }}
                     </span>
                   </td>
-                  <td class="mono">{{ pct(asset.probability) }}</td>
+                  <td class="mono">{{ fmtRatioPct(asset.probability) }}</td>
                   <td class="lens-advice">{{ asset.advice }}</td>
                 </tr>
               </tbody>
@@ -251,7 +251,7 @@
               <ul class="lens-components">
                 <li v-for="c in state.fed.state.stance_components" :key="c.label">
                   <span>{{ c.label }}</span>
-                  <span class="mono">{{ pct(c.percentile) }}</span>
+                  <span class="mono">{{ fmtRatioPct(c.percentile) }}</span>
                   <span class="lens-muted">权重 {{ c.weight }}</span>
                 </li>
               </ul>
@@ -266,8 +266,8 @@
               <div class="lens-kv"><span>Fed Put</span><strong>{{ state.fed.state.fed_put.label }}</strong></div>
               <p class="lens-muted">{{ state.fed.state.fed_put.note }}</p>
               <div class="lens-kv"><span>行权 / 现价</span><span class="mono">{{ fmtNumber(state.fed.state.fed_put.strike, 0) }} / {{ fmtNumber(state.fed.state.fed_put.spot, 0) }}</span></div>
-              <div class="lens-kv"><span>距离行权</span><span class="mono">{{ pct(state.fed.state.fed_put.distance_pct) }}</span></div>
-              <div class="lens-kv"><span>政策倾向</span><span>{{ state.fed.state.policy.bias }} · 3 个月降息概率 {{ pct(state.fed.state.policy.cut_probability_3m) }}</span></div>
+              <div class="lens-kv"><span>距离行权</span><span class="mono">{{ fmtRatioPct(state.fed.state.fed_put.distance_pct) }}</span></div>
+              <div class="lens-kv"><span>政策倾向</span><span>{{ state.fed.state.policy.bias }} · 3 个月降息概率 {{ fmtRatioPct(state.fed.state.policy.cut_probability_3m) }}</span></div>
             </div>
           </section>
 
@@ -300,7 +300,7 @@
                 <div v-if="r.value !== null" class="lens-reading-meta">
                   <span :class="trendClass(r.change)" class="mono">{{ fmtSigned(r.change, r.digits) }} {{ r.change_label }}</span>
                   <span class="mono">z {{ fmtSigned(r.z) }}</span>
-                  <span class="mono">分位 {{ pct(r.percentile) }}</span>
+                  <span class="mono">分位 {{ fmtRatioPct(r.percentile) }}</span>
                 </div>
                 <div v-else class="lens-reading-meta lens-muted">{{ r.missing_reason }}</div>
                 <div class="lens-reading-source">
@@ -373,7 +373,7 @@
                 <div v-if="r.value !== null" class="lens-reading-meta">
                   <span :class="trendClass(r.change)" class="mono">{{ fmtSigned(r.change, r.digits) }} {{ r.change_label }}</span>
                   <span class="mono">z {{ fmtSigned(r.z) }}</span>
-                  <span class="mono">分位 {{ pct(r.percentile) }}</span>
+                  <span class="mono">分位 {{ fmtRatioPct(r.percentile) }}</span>
                 </div>
                 <div v-else class="lens-reading-meta lens-muted">{{ r.missing_reason }}</div>
                 <div class="lens-reading-source">
@@ -416,7 +416,7 @@
                 <div class="lens-muted">{{ row.claim }}</div>
                 <div class="lens-deriv-links">
                   <span class="badge badge--sm">{{ row.evidence_grade }}</span>
-                  <span class="mono">置信 {{ pct(row.confidence) }}</span>
+                  <span class="mono">置信 {{ fmtRatioPct(row.confidence) }}</span>
                   <RouterLink class="lens-link" :to="`/pipeline?code=${row.code}`">证据抽屉 →</RouterLink>
                 </div>
               </div>
@@ -523,7 +523,7 @@
               <span class="badge badge--sm" :class="`lens-dir--${row.direction}`">{{ dirText(row.direction) }}</span>
               <span>{{ assetLabel(row.asset) }}</span>
               <span class="mono">目标 {{ row.target_date ?? "—" }}</span>
-              <span class="mono">p {{ pct(row.probability) }}</span>
+              <span class="mono">p {{ fmtRatioPct(row.probability) }}</span>
               <span class="badge badge--sm">{{ row.status === "open" ? "待验证" : row.status }}</span>
             </div>
           </div>
@@ -580,7 +580,7 @@ import type {
   LensTab,
 } from "../api/types";
 import { usePolling } from "../composables/usePolling";
-import { fmtDate, fmtNumber, fmtSigned, priceDigits, trendClass } from "../composables/useFormat";
+import { fmtDate, fmtNumber, fmtRatioPct, fmtSigned, priceDigits, trendClass } from "../composables/useFormat";
 import { useToast } from "../stores/toast";
 
 const TABS: Array<{ id: LensTab; label: string }> = [
@@ -649,10 +649,6 @@ const derivationRows = computed(() => {
   ];
 });
 
-function pct(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
-  return `${Math.round(value * 100)}%`;
-}
 function scoreClass(value: number | null | undefined): string {
   if (value === null || value === undefined) return "is-flat";
   return value >= 0.25 ? "is-up" : value <= -0.25 ? "is-down" : "is-flat";

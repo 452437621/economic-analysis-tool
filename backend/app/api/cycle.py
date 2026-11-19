@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.serializers import derivation_payload, iso
 from app.cycle.config import apply_alert_overrides, load_config
 from app.cycle.engine import run_cycle
 from app.cycle.phases import long_cycle, short_cycle
@@ -67,8 +68,7 @@ def _next_calibration(today: date | None = None) -> str:
 
 
 def _iso(value) -> str | None:  # noqa: ANN001
-    resolved = aware(value)
-    return resolved.isoformat() if resolved else None
+    return iso(value)
 
 
 def _latest(session: Session, code: str) -> Derivation | None:
@@ -81,22 +81,7 @@ def _payload(session: Session, code: str) -> dict | None:
     row = _latest(session, code)
     if row is None:
         return None
-    return {
-        "code": row.code,
-        "claim": row.claim,
-        "value": row.value,
-        "confidence": row.confidence,
-        "evidence_grade": row.evidence_grade,
-        "asof": _iso(row.asof),
-        "run_id": row.run_id,
-        "method_id": row.method_id,
-        "caveats": row.caveats or [],
-        "falsifiers": row.falsifiers or [],
-        "opposing": row.opposing or [],
-        "inputs": row.inputs or [],
-        "steps": row.steps or [],
-        "rules_hit": row.rules_hit or [],
-    }
+    return derivation_payload(row)
 
 
 def _normalize_state(value: dict | None) -> dict:

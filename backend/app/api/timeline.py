@@ -12,18 +12,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.serializers import iso
 from app.models.v2 import AnalysisRun, Derivation, PowerIndex, TimelineEvent
 from app.platform.db import get_session
-from app.provenance.engine import aware
 from app.timeline import dataset
 from app.timeline.engine import run_timeline
 
 router = APIRouter(prefix="/api/v2/timeline", tags=["timeline"])
 
 
-def _iso(value) -> str | None:  # noqa: ANN001
-    resolved = aware(value)
-    return resolved.isoformat() if resolved else None
+_iso = iso
 
 
 def _event_payload(row: TimelineEvent) -> dict:

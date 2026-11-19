@@ -35,6 +35,12 @@ export function fmtSigned(value: number | null | undefined, digits = 2): string 
   return `${value > 0 ? "+" : ""}${Number(value).toFixed(digits)}`;
 }
 
+/** 比率（0.123 → 12%），不带符号；用于概率、分位、置信度 */
+export function fmtRatioPct(value: number | null | undefined, digits = 0): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  return `${(Number(value) * 100).toFixed(digits)}%`;
+}
+
 /** 涨跌样式类：up / down / flat */
 export function trendClass(value: number | null | undefined): "up" | "down" | "flat" {
   if (value === null || value === undefined || !Number.isFinite(value) || value === 0) return "flat";

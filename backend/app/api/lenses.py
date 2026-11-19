@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.api.serializers import derivation_payload, iso, run_payload
 from app.lens.common import evaluate_rule
 from app.lens.engine import (
     ASSETS,
@@ -38,51 +39,11 @@ router = APIRouter(prefix="/api/v2/lenses", tags=["lenses"])
 ASSET_META = {row["id"]: row for row in ASSETS}
 
 
-def _iso(value: Any) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.isoformat()
-    return str(value)
+_iso = iso
+_derivation_payload = derivation_payload
 
 
-def _derivation_payload(row: Derivation) -> dict[str, Any]:
-    return {
-        "id": row.id,
-        "code": row.code,
-        "claim": row.claim,
-        "value": row.value,
-        "confidence": row.confidence,
-        "evidence_grade": row.evidence_grade,
-        "asof": _iso(row.asof),
-        "run_id": row.run_id,
-        "method_id": row.method_id,
-        "inputs": row.inputs or [],
-        "steps": row.steps or [],
-        "rules_hit": row.rules_hit or [],
-        "caveats": row.caveats or [],
-        "falsifiers": row.falsifiers or [],
-        "opposing": row.opposing or [],
-    }
-
-
-def _run_payload(row: AnalysisRun) -> dict[str, Any]:
-    return {
-        "id": row.id,
-        "kind": row.kind,
-        "subject": row.subject,
-        "asof": _iso(row.asof),
-        "status": row.status,
-        "method_id": row.method_id,
-        "code_version": row.code_version,
-        "started_at": _iso(row.started_at),
-        "finished_at": _iso(row.finished_at),
-        "duration_ms": row.duration_ms,
-        "degraded": row.degraded,
-        "degraded_reasons": row.degraded_reasons or [],
-        "summary": row.summary or {},
-        "error": row.error,
-    }
+_run_payload = run_payload
 
 
 def _persisted_rules(synth_value: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:

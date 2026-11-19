@@ -258,6 +258,64 @@ def build_reading(
     )
 
 
+def round_opt(value: float | None, digits: int = 2) -> float | None:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return None
+    return round(float(value), digits)
+
+
+def reading_from_catalog(
+    meta: dict[str, dict[str, Any]],
+    reading_id: str,
+    series: pd.Series,
+    **kwargs: Any,
+) -> Reading:
+    """Build a reading from catalog metadata (single source for unit/digits/evidence)."""
+    item = meta[reading_id]
+    kwargs.pop("digits", None)
+    kwargs.pop("unit", None)
+    return build_reading(
+        reading_id,
+        item["label"],
+        series,
+        unit=item.get("unit", ""),
+        digits=int(item.get("digits", 2)),
+        source=item.get("source", ""),
+        evidence=item.get("evidence", "E3"),
+        note=item.get("note", ""),
+        **kwargs,
+    )
+
+
+def missing_from_catalog(meta: dict[str, dict[str, Any]], reading_id: str) -> Reading:
+    """A placeholder reading for a series the local database does not carry."""
+    item = meta[reading_id]
+    return Reading(
+        id=reading_id,
+        label=item["label"],
+        unit=item.get("unit", ""),
+        digits=int(item.get("digits", 2)),
+        source=item.get("source", ""),
+        evidence=item.get("evidence", "E3"),
+        note=item.get("note", ""),
+        missing_reason="本地库缺该序列，需新增数据源",
+    )
+
+
+def low_freq_column(panel: Panel, code: str) -> pd.Series:
+    """Low-frequency macro column carried forward to the next release."""
+    if code not in panel.daily.columns:
+        return pd.Series(dtype="float64")
+    return pd.to_numeric(panel.daily[code], errors="coerce").ffill()
+
+
+def format_reading(reading: Reading) -> str:
+    """Compact display string used in narrative sentences."""
+    if reading.value is None:
+        return "缺"
+    return f"{reading.value:.{reading.digits}f}{reading.unit or ''}"
+
+
 def metric_map(readings: Iterable[Reading]) -> dict[str, dict[str, float | None]]:
     """Flatten readings for the rule evaluator: {id: {value, chg, z, pct}}."""
     out: dict[str, dict[str, float | None]] = {}

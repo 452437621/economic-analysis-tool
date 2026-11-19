@@ -35,13 +35,60 @@ KIND_GROUPS: dict[str, tuple[str, ...]] = {
 }
 
 
-def iso(value: datetime | None) -> str | None:
-    """Serialize DB datetimes as UTC ISO strings (SQLite returns naive values)."""
+def iso(value: datetime | str | None) -> str | None:
+    """Serialize DB datetimes as UTC ISO strings (SQLite returns naive values).
+
+    Strings are already serialized (e.g. a run payload re-used in the response)
+    and are returned unchanged so callers never need a second helper.
+    """
     if value is None:
         return None
+    if isinstance(value, str):
+        return value
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.isoformat()
+
+
+def run_payload(row: "AnalysisRun") -> dict:
+    """Canonical serialization of an ``AnalysisRun`` row for the V2 API."""
+    return {
+        "id": row.id,
+        "kind": row.kind,
+        "subject": row.subject,
+        "asof": iso(row.asof),
+        "status": row.status,
+        "method_id": row.method_id,
+        "code_version": row.code_version,
+        "started_at": iso(row.started_at),
+        "finished_at": iso(row.finished_at),
+        "duration_ms": row.duration_ms,
+        "degraded": bool(row.degraded),
+        "degraded_reasons": row.degraded_reasons or [],
+        "summary": row.summary or {},
+        "error": row.error,
+    }
+
+
+def derivation_payload(row: "Derivation") -> dict:
+    """Canonical serialization of a ``Derivation`` row for the V2 API."""
+    return {
+        "id": row.id,
+        "code": row.code,
+        "claim": row.claim,
+        "value": row.value,
+        "confidence": row.confidence,
+        "evidence_grade": row.evidence_grade,
+        "asof": iso(row.asof),
+        "run_id": row.run_id,
+        "method_id": row.method_id,
+        "caveats": row.caveats or [],
+        "falsifiers": row.falsifiers or [],
+        "opposing": row.opposing or [],
+        "inputs": row.inputs or [],
+        "steps": row.steps or [],
+        "rules_hit": row.rules_hit or [],
+    }
 
 
 def latest_quotes(session: Session) -> tuple[list[Instrument], dict[str, Quote]]:

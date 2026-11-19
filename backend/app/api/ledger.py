@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.serializers import iso
 from app.ledger.engine import (
     FORECAST_CODES,
     METHOD,
@@ -58,10 +59,7 @@ def _ensure(session: Session) -> AnalysisRun:
     return run
 
 
-def _iso(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    return aware(value).isoformat()
+_iso = iso
 
 
 def _counts(session: Session, run_id: str) -> dict:

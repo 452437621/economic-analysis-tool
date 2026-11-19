@@ -22,12 +22,15 @@ import pandas as pd
 from app.cycle.market import Panel
 from app.lens.common import (
     Reading,
-    build_reading,
     clamp,
     drawdown_pct,
+    format_reading,
     last_value,
+    low_freq_column,
     metric_map,
+    missing_from_catalog,
     ratio,
+    reading_from_catalog,
     rolling_corr,
     score_label,
     z_series,
@@ -229,41 +232,14 @@ _META = {item["id"]: item for item in CATALOG}
 
 
 def _reading(reading_id: str, series: pd.Series, **kwargs: Any) -> Reading:
-    meta = _META[reading_id]
-    kwargs.pop("digits", None)
-    kwargs.pop("unit", None)
-    return build_reading(
-        reading_id,
-        meta["label"],
-        series,
-        unit=meta.get("unit", ""),
-        digits=int(meta.get("digits", 2)),
-        source=meta.get("source", ""),
-        evidence=meta.get("evidence", "E3"),
-        note=meta.get("note", ""),
-        **kwargs,
-    )
+    return reading_from_catalog(_META, reading_id, series, **kwargs)
 
 
 def _missing(reading_id: str) -> Reading:
-    meta = _META[reading_id]
-    return Reading(
-        id=reading_id,
-        label=meta["label"],
-        unit=meta.get("unit", ""),
-        digits=int(meta.get("digits", 2)),
-        source=meta.get("source", ""),
-        evidence=meta.get("evidence", "E3"),
-        note=meta.get("note", ""),
-        missing_reason="本地库缺该序列，需新增数据源",
-    )
+    return missing_from_catalog(_META, reading_id)
 
 
-def _low_freq(panel: Panel, code: str) -> pd.Series:
-    """Low-frequency macro column carried forward to the next release."""
-    if code not in panel.daily.columns:
-        return pd.Series(dtype="float64")
-    return pd.to_numeric(panel.daily[code], errors="coerce").ffill()
+_low_freq = low_freq_column
 
 
 def _composite(panel: Panel) -> pd.Series:
@@ -545,8 +521,8 @@ def build_state(readings: list[Reading], panel: Panel) -> dict[str, Any]:
     narrative = (
         f"美联储透镜读数：政策立场 {stance if stance is not None else '—'}/100（{_stance_label(stance) if stance is not None else '未知'}），"
         f"经济象限为「{quadrant['label']}」。"
-        f"实际 10 年期利率 {_fmt(by_id['fed.real10'])}，2s10s {_fmt(by_id['fed.curve_2s10s'])}，"
-        f"标普距高点回撤 {_fmt(by_id['fed.spx_drawdown'])}。"
+        f"实际 10 年期利率 {format_reading(by_id['fed.real10'])}，2s10s {format_reading(by_id['fed.curve_2s10s'])}，"
+        f"标普距高点回撤 {format_reading(by_id['fed.spx_drawdown'])}。"
         f"看跌期权状态：{put['label']}；政策倾向：{policy_bias}。"
     )
 
@@ -575,13 +551,6 @@ def build_state(readings: list[Reading], panel: Panel) -> dict[str, Any]:
             "total": len(readings),
         },
     }
-
-
-def _fmt(reading: Reading) -> str:
-    if reading.value is None:
-        return "缺"
-    suffix = reading.unit or ""
-    return f"{reading.value:.{reading.digits}f}{suffix}"
 
 
 def build_fed(panel: Panel) -> dict[str, Any]:

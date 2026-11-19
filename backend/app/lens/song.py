@@ -21,13 +21,16 @@ import pandas as pd
 from app.cycle.market import Panel
 from app.lens.common import (
     Reading,
-    build_reading,
     clamp,
     drawdown_pct,
+    format_reading,
     last_value,
+    low_freq_column,
     metric_map,
+    missing_from_catalog,
     percentile_last,
     ratio,
+    reading_from_catalog,
     rolling_corr,
     score_label,
     ttm,
@@ -320,40 +323,14 @@ _META = {item["id"]: item for item in CATALOG}
 
 
 def _reading(reading_id: str, series: pd.Series, **kwargs: Any) -> Reading:
-    meta = _META[reading_id]
-    kwargs.pop("digits", None)
-    kwargs.pop("unit", None)
-    return build_reading(
-        reading_id,
-        meta["label"],
-        series,
-        unit=meta.get("unit", ""),
-        digits=int(meta.get("digits", 2)),
-        source=meta.get("source", ""),
-        evidence=meta.get("evidence", "E3"),
-        note=meta.get("note", ""),
-        **kwargs,
-    )
+    return reading_from_catalog(_META, reading_id, series, **kwargs)
 
 
 def _missing(reading_id: str) -> Reading:
-    meta = _META[reading_id]
-    return Reading(
-        id=reading_id,
-        label=meta["label"],
-        unit=meta.get("unit", ""),
-        digits=int(meta.get("digits", 2)),
-        source=meta.get("source", ""),
-        evidence=meta.get("evidence", "E3"),
-        note=meta.get("note", ""),
-        missing_reason="本地库缺该序列，需新增数据源",
-    )
+    return missing_from_catalog(_META, reading_id)
 
 
-def _low_freq(panel: Panel, code: str) -> pd.Series:
-    if code not in panel.daily.columns:
-        return pd.Series(dtype="float64")
-    return pd.to_numeric(panel.daily[code], errors="coerce").ffill()
+_low_freq = low_freq_column
 
 
 def _yoy_pct(series: pd.Series, periods: int | None = None) -> float | None:
@@ -747,7 +724,7 @@ def build_state(readings: list[Reading], panel: Panel) -> dict[str, Any]:
     narrative = (
         f"宋鸿兵透镜读数：美元环流处于「{phase['label']}」，美元 250 日分位 "
         f"{by_id['song.dxy_pct'].value if by_id['song.dxy_pct'].value is not None else '—'}%，"
-        f"同比 {_fmt(by_id['song.dxy_yoy'])}。"
+        f"同比 {format_reading(by_id['song.dxy_yoy'])}。"
         f"『美元心脏』为{heart['label']}（SOFR−EFFR {spread if spread is not None else '—'}bp，5 日脉冲 {spike if spike is not None else '—'}bp）。"
         f"收割风险 {harvest if harvest is not None else '—'}/100，债务货币化风险 {debt_risk if debt_risk is not None else '—'}/100；"
         f"黄金状态：{gold_regime['label']}。"
@@ -766,13 +743,6 @@ def build_state(readings: list[Reading], panel: Panel) -> dict[str, Any]:
             "total": len(readings),
         },
     }
-
-
-def _fmt(reading: Reading) -> str:
-    if reading.value is None:
-        return "缺"
-    suffix = reading.unit or ""
-    return f"{reading.value:.{reading.digits}f}{suffix}"
 
 
 def build_song(panel: Panel, gold_metric) -> dict[str, Any]:

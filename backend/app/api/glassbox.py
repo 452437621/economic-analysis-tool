@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.serializers import iso, run_payload
 from app.models.v2 import (
     AnalysisRun,
     AnalysisStep,
@@ -21,33 +22,16 @@ from app.models.v2 import (
     RuleHit,
 )
 from app.platform.db import get_session
-from app.provenance.engine import aware
 
 router = APIRouter(prefix="/api/v2", tags=["glassbox"])
 
 
 def _iso(value) -> str | None:  # noqa: ANN001
-    resolved = aware(value)
-    return resolved.isoformat() if resolved else None
+    return iso(value)
 
 
 def _run_dict(row: AnalysisRun) -> dict:
-    return {
-        "id": row.id,
-        "kind": row.kind,
-        "subject": row.subject,
-        "asof": _iso(row.asof),
-        "status": row.status,
-        "method_id": row.method_id,
-        "code_version": row.code_version,
-        "started_at": _iso(row.started_at),
-        "finished_at": _iso(row.finished_at),
-        "duration_ms": row.duration_ms,
-        "degraded": bool(row.degraded),
-        "degraded_reasons": row.degraded_reasons or [],
-        "summary": row.summary,
-        "error": row.error,
-    }
+    return run_payload(row)
 
 
 def _step_dict(row: AnalysisStep) -> dict:

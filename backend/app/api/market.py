@@ -21,7 +21,7 @@ from app.models.core import (
     Source,
     SourceHealth,
 )
-from app.api.serializers import snapshot_payload
+from app.api.serializers import iso, snapshot_payload
 from app.platform.db import get_session
 
 router = APIRouter(prefix="/api", tags=["market"])
@@ -29,13 +29,7 @@ router = APIRouter(prefix="/api", tags=["market"])
 ASSET_ORDER = ["metal", "energy", "black", "agri", "fx", "equity", "rate"]
 
 
-def _iso(dt: datetime | None) -> str | None:
-    """Serialize DB datetimes as UTC ISO strings (SQLite returns naive values)."""
-    if dt is None:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.isoformat()
+_iso = iso
 
 
 def _latest_quotes(session: Session) -> tuple[list[Instrument], dict[str, Quote]]:

@@ -21,9 +21,9 @@ from sqlalchemy.orm import Session
 from app.cycle.market import Panel, load_panel
 from app.lens import fed as fed_lens
 from app.lens import song as song_lens
-from app.lens.common import evaluate_rule, load_gold_series, score_label
+from app.lens.common import evaluate_rule, load_gold_series, round_opt as _round, score_label
 from app.models.v2 import Derivation, Forecast
-from app.provenance.engine import RunRecorder, new_id, record_observations
+from app.provenance.engine import RunRecorder, aware, new_id, record_observations
 
 logger = logging.getLogger(__name__)
 
@@ -198,12 +198,6 @@ def _synthesis(
         "cycle_context": cycle_context,
         "confidence": _synthesis_confidence(fed_state, song_state, rows),
     }
-
-
-def _round(value: float | None, digits: int = 2) -> float | None:
-    if value is None:
-        return None
-    return round(float(value), digits)
 
 
 def _agreement(fed: float | None, song: float | None, consensus: float | None) -> tuple[str, str]:
@@ -596,12 +590,12 @@ def run_lenses(session: Session, asof: datetime | None = None) -> dict[str, Any]
                 "id": run.id,
                 "kind": run.kind,
                 "subject": run.subject,
-                "asof": run.asof.isoformat() if run.asof else None,
+                "asof": aware(run.asof).isoformat() if run.asof else None,
                 "status": run.status,
                 "method_id": run.method_id,
                 "code_version": run.code_version,
-                "started_at": run.started_at.isoformat() if run.started_at else None,
-                "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+                "started_at": aware(run.started_at).isoformat() if run.started_at else None,
+                "finished_at": aware(run.finished_at).isoformat() if run.finished_at else None,
                 "duration_ms": run.duration_ms,
                 "degraded": bool(run.degraded),
                 "degraded_reasons": run.degraded_reasons or [],
@@ -686,7 +680,7 @@ def latest_state(session: Session) -> dict[str, Any] | None:
     run = synthesis.run_id
     return {
         "run_id": run,
-        "asof": synthesis.asof.isoformat() if synthesis.asof else None,
+        "asof": aware(synthesis.asof).isoformat() if synthesis.asof else None,
         "fed": fed,
         "song": song,
         "synthesis": synthesis,

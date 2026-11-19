@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.serializers import DAILY_KINDS, brief_payload, brief_summary, kind_filter
+from app.api.serializers import DAILY_KINDS, brief_payload, brief_summary, iso, kind_filter
 from app.knowledge.translate import MAX_ITEMS, prepare, text_hash, translate
 from app.models.core import Brief, Claim, Document, DocumentBody, DocumentSpan, Source
 from app.platform.db import get_session
@@ -25,10 +25,7 @@ class TranslateIn(BaseModel):
     texts: list[str] = Field(default_factory=list)
 
 
-def _iso(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    return value.isoformat()
+_iso = iso
 
 
 # A10: the brief body links news items as `[D:<document_id>]`; those documents

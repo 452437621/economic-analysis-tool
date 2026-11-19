@@ -24,6 +24,13 @@
 - **文档/配置**：修正 `docs/27` 的评分区间（−2…+2）、agreement 阈值、gold_regime 命名、`app.platform.db` 复现命令、财政脉冲口径与 S6/S14 未纳入原因；删除 `config/lens.yaml` 中未被消费的 `forecast_horizons`/`asset_order` 与不存在的 `lens-methodology.md` 引用；README/CHANGELOG 的规则数、测试数与未核实数改为可复现实测。
 - **测试**：`tests/test_m7.py` 日志列表改为按日期过滤，消除共享测试库导致的偶发失败；新增透镜预测结算用例。
 
+### 重构（去重与可读性，2026-11-19）
+
+- **API 序列化统一**：`backend/app/api/serializers.py` 的 `iso()` 支持 `datetime | str`，并新增 `run_payload()`、`derivation_payload()`；`cycle/glassbox/knowledge/ledger/market/timeline/trades/lenses` 八个路由删除各自的 `_iso` 与运行/推导字典构造，统一复用，时间戳统一为带 UTC 偏移的 ISO（naive 值补 `+00:00`）。
+- **透镜读数的目录元数据收口**：`backend/app/lens/common.py` 新增 `reading_from_catalog()` / `missing_from_catalog()` / `low_freq_column()` / `format_reading()` / `round_opt()`；`fed.py` 与 `song.py` 删除各自重复的 `_reading`、`_missing`、`_low_freq`、`_fmt` 实现（约 60 行重复），`engine.py` 复用 `round_opt`。
+- **前端格式化复用**：`useFormat.ts` 新增 `fmtRatioPct()`，`LensesView.vue` 删除本地 `pct()`。
+- **验证**：`scripts/lint.py` PASSED；`vue-tsc --noEmit` 0 error；`vite build` 成功；全量 `pytest -q --ignore=tests/test_frontend_build.py` **352 passed**，`tests/test_frontend_build.py` 5 passed。
+
 ### 改进（系统状态 · 数据质检列宽，2026-11-18）
 
 - `frontend/src/views/SystemView.vue`：「数据质检」表改为固定布局并加 `colgroup`——数据集列 132px 且 `white-space: nowrap`（超长省略并带 `title`），类型 / 状态列 84 / 72px 固定，明细列占剩余宽度并自动换行，长明细不再挤压数据集列。
