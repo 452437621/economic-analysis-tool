@@ -185,7 +185,7 @@
                 <th class="num" style="width: 152px">入场区</th>
                 <th class="num" style="width: 92px">止损</th>
                 <th class="num" style="width: 92px">T1</th>
-                <th class="num" style="width: 96px">手数</th>
+                <th class="num" style="width: 96px">标准手</th>
                 <th class="num" style="width: 100px">保证金</th>
                 <th class="num" style="width: 84px">手续费</th>
                 <th style="width: 98px">风控</th>
@@ -208,7 +208,9 @@
                   <td class="num">{{ fmtPrice(targetValue(plan, "T1")) }}</td>
                   <td class="num">
                     <template v-if="plan.size > 0">{{ fmtInt(plan.size) }}<span class="unit">手</span></template>
-                    <template v-else><b class="zero-lots">0 手</b><span class="zero-tag">资金不足</span></template>
+                    <template v-else>
+                      <b class="zero-lots">{{ fmtNumber(plan.size, 2) }} 手</b><span class="unit">标准</span>
+                    </template>
                   </td>
                   <td class="num">{{ fmtInt(plan.detail?.margin) }}<span class="unit">元</span></td>
                   <td class="num">{{ fmtNumber(plan.detail?.fee, 2) }}<span class="unit">元</span></td>
@@ -230,14 +232,21 @@
                   <td colspan="9">
                     <div class="plan-sub" :title="planSubtitle(plan)">
                       <span>
-                        仓位 <b>{{ fmtInt(plan.detail?.lots ?? plan.size) }}</b> 手（原值
-                        {{ fmtNumber(plan.detail?.raw_lots, 2) }} · 合约 ×{{ fmtNumber(plan.detail?.contract_size, 0) }} ·
-                        保证金率 {{ marginPctLabel(plan) }}）
+                        仓位 <b>{{ fmtNumber(plan.detail?.lots ?? plan.size, 2) }}</b> 标准手（基准权益
+                        {{ fmtInt(plan.detail?.base_equity) }} · 止损距离
+                        {{ fmtMacro(plan.detail?.stop_distance_pct, "%", 2) }} · 权重
+                        {{ fmtMacro(plan.detail?.weight_pct, "%", 1) }} · 杠杆
+                        {{ fmtNumber(plan.detail?.leverage, 1) }}×）
                       </span>
-                      <span v-if="plan.size <= 0" class="ps-warn">资金不足 · 手数向下取整为 0 · 风控拦截</span>
-                      <span>以损定量：单笔风险 <b>{{ fmtMacro(plan.risk_pct, "%", 2) }}</b> × 权益 <b>{{ fmtInt(plan.detail?.equity) }}</b></span>
+                      <span>
+                        风险金额 <b>{{ fmtInt(plan.detail?.risk_amount) }}</b> 元 · 盈亏比
+                        <b>{{ fmtNumber(plan.detail?.risk_reward, 2) }}</b>
+                      </span>
                       <span>时间止损 <b>{{ fmtInt(plan.time_stop_days) }}</b> 日 · 状态 <b>{{ plan.status }}</b></span>
                       <span class="ps-invalid">失效：{{ plan.invalidation ?? "—" }}</span>
+                    </div>
+                    <div v-if="plan.detail?.sizing_note" class="plan-sub plan-sub--note">
+                      <span>{{ plan.detail.sizing_note }}</span>
                     </div>
                   </td>
                 </tr>
@@ -249,8 +258,8 @@
         <div class="card-foot plan-foot">
           <svg class="ic"><use href="#i-info" /></svg>
           <span>
-            计划均为 <b>draft 草稿</b>，仅为按风险预算测算的建议，需人工确认后执行；手数按「以损定量」向下取整，资金不足时记
-            0 手并拦截。保证金 / 手续费为按合约乘数与保证金率估算。
+            计划均为 <b>draft 草稿</b>，仅为按风险预算测算的建议，需人工确认后执行；手数以「标准权益 10 万」为基准计算（可与整数手并存），
+            仓位/止损/权重由波动与共识强度推导，<b>与账户余额无关</b>，按自有权益等比缩放即可。保证金 / 手续费为按合约乘数与保证金率估算。
           </span>
         </div>
       </section>
@@ -612,15 +621,19 @@ function marginPctLabel(plan: TradePlan): string {
 
 function planSubtitle(plan: TradePlan): string {
   const items = [
-    `仓位 ${fmtInt(plan.detail?.lots ?? plan.size)} 手（原值 ${fmtNumber(plan.detail?.raw_lots, 2)} · 合约 ×${fmtNumber(
+    `仓位 ${fmtNumber(plan.detail?.lots ?? plan.size, 2)} 标准手（基准权益 ${fmtInt(plan.detail?.base_equity)} · 合约 ×${fmtNumber(
       plan.detail?.contract_size,
       0,
     )} · 保证金率 ${marginPctLabel(plan)}）`,
-    `以损定量：单笔风险 ${fmtMacro(plan.risk_pct, "%", 2)} × 权益 ${fmtInt(plan.detail?.equity)}`,
+    `止损 ${fmtMacro(plan.detail?.stop_distance_pct, "%", 2)} · 权重 ${fmtMacro(plan.detail?.weight_pct, "%", 1)} · 杠杆 ${fmtNumber(
+      plan.detail?.leverage,
+      1,
+    )}×`,
+    `风险金额 ${fmtInt(plan.detail?.risk_amount)} 元 · 盈亏比 ${fmtNumber(plan.detail?.risk_reward, 2)}`,
     `时间止损 ${fmtInt(plan.time_stop_days)} 日 · 状态 ${plan.status}`,
     `失效：${plan.invalidation ?? "—"}`,
   ];
-  if (plan.size <= 0) items.splice(1, 0, "资金不足 · 手数向下取整为 0 · 风控拦截");
+  if (plan.detail?.sizing_note) items.push(plan.detail.sizing_note);
   return items.join(" · ");
 }
 </script>
@@ -787,6 +800,12 @@ function planSubtitle(plan: TradePlan): string {
   font-size: 8.5px;
   font-weight: 400;
   color: var(--warn);
+}
+.plan-sub--note {
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px dashed var(--border);
+  color: var(--dim);
 }
 .plan-foot {
   line-height: 1.6;

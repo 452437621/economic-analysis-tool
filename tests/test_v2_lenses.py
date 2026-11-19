@@ -321,6 +321,27 @@ def test_run_lenses_end_to_end(db):
     assert synthesis["rule_metrics"], "synthesis 必须落库 rule_metrics 供只读接口重建规则"
     assert synthesis["layer_metrics"]["macro"], "宏观层指标需落库，供只读接口重建规则"
 
+    # 决策要素：每个资产都要有止损/仓位/权重说明，组合层给出总敞口与组合风险。
+    portfolio = synthesis["portfolio"]
+    assert portfolio["basis"]
+    assert 0 <= portfolio["gross_weight_pct"] <= 100
+    assert 0 <= portfolio["cash_weight_pct"] <= 100
+    assert portfolio["portfolio_risk_pct"] >= 0
+    assert len(portfolio["rules"]) >= 4
+    assert isinstance(portfolio["positions"], list)
+    for asset in synthesis["assets"]:
+        plan = asset["plan"]
+        assert plan["side"] in {"long", "short", "flat"}
+        assert 1.5 <= plan["stop_pct"] <= 8.0
+        assert plan["weight_pct"] >= 0
+        if plan["actionable"]:
+            assert abs(asset["consensus"]) >= 0.25
+            assert plan["risk_pct"] >= 0.3
+            assert plan["weight_pct"] <= 30.0
+            assert plan["stop_note"]
+        else:
+            assert plan["weight_pct"] == 0
+
     codes = {
         row.code
         for row in db.scalars(
@@ -488,3 +509,42 @@ def test_lens_forecast_settles_through_ledger(lens_db, db):
     db.refresh(row)
 
     assert row.status == "resolved"
+
+
+def test_position_layer_scales_down_to_risk_budget():
+    """组合权重必须被两个上限约束住：总敞口 ≤ 80%、组合风险 ≤ 6%。"""
+    from app.lens import position
+
+    rows = [
+        {"id": "us_equity", "label": "美股", "symbol": "SPX", "last": 5000.0,
+         "consensus": 1.8, "direction": "up", "agreement": "共振多"},
+        {"id": "gold", "label": "黄金", "symbol": "XAUUSD", "last": 3000.0,
+         "consensus": -1.6, "direction": "down", "agreement": "共振空"},
+        {"id": "silver", "label": "白银", "symbol": "SI", "last": 40.0,
+         "consensus": 1.2, "direction": "up", "agreement": "共振多"},
+        {"id": "usd", "label": "美元", "symbol": "DXY", "last": 100.0,
+         "consensus": 0.1, "direction": "flat", "agreement": "弱信号"},
+    ]
+    portfolio = position.build_decisions(rows, panel=None)
+
+    assert portfolio["gross_weight_pct"] <= position.MAX_GROSS_PCT + 0.05
+    assert portfolio["portfolio_risk_pct"] <= position.MAX_PORTFOLIO_RISK_PCT + 0.05
+    assert portfolio["cash_weight_pct"] >= 0
+    flat = next(row for row in rows if row["id"] == "usd")["plan"]
+    assert flat["actionable"] is False
+    long_plan = next(row for row in rows if row["id"] == "us_equity")["plan"]
+    assert long_plan["actionable"] is True
+    assert long_plan["side"] == "long"
+    assert long_plan["stop_level"] < rows[0]["last"]
+    short_plan = next(row for row in rows if row["id"] == "gold")["plan"]
+    assert short_plan["side"] == "short"
+    assert short_plan["stop_level"] > rows[1]["last"]
+
+
+def test_lens_synthesis_claim_mentions_portfolio(db):
+    """合成推导的 claim 必须把组合敞口写进结论，而不是只藏在 value 里。"""
+    result = lens_engine.run_lenses(db)
+    row = db.scalars(select(Derivation).where(Derivation.code == "lens.synthesis")).first()
+    assert row is not None
+    assert "组合建议总敞口" in row.claim
+    assert result["synthesis"]["portfolio"]["gross_weight_pct"] >= 0

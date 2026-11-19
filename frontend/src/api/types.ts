@@ -400,6 +400,7 @@ export interface RiskCheck {
 
 export interface PlanDetail {
   lots: number;
+  lots_int?: number;
   raw_lots: number;
   contract_size: number;
   margin_pct: number;
@@ -407,6 +408,13 @@ export interface PlanDetail {
   margin: number;
   fee: number;
   equity: number;
+  base_equity?: number;
+  risk_amount?: number;
+  stop_distance_pct?: number;
+  weight_pct?: number;
+  leverage?: number;
+  risk_reward?: number;
+  sizing_note?: string;
   checks?: RiskCheck[];
 }
 
@@ -1751,6 +1759,47 @@ export interface LensSongState {
   coverage: { available: number; total: number };
 }
 
+/** 单资产的决策说明：止损、风险预算与仓位权重（与账户余额无关）。 */
+export interface LensAssetPlan {
+  actionable: boolean;
+  side: "long" | "short" | "flat";
+  side_label: string;
+  stop_pct: number;
+  stop_level: number | null;
+  stop_note: string;
+  weight_pct: number;
+  risk_pct: number;
+  risk_at_pct: number;
+  vol_pct: number | null;
+  atr_pct: number | null;
+  rationale: string;
+}
+
+/** 组合层：总敞口、多空、现金与组合风险。 */
+export interface LensPortfolio {
+  basis: string;
+  gross_weight_pct: number;
+  long_weight_pct: number;
+  short_weight_pct: number;
+  net_weight_pct: number;
+  cash_weight_pct: number;
+  portfolio_risk_pct: number;
+  max_loss_pct: number;
+  positions: Array<{
+    asset: string;
+    label: string;
+    side: "long" | "short";
+    side_label: string;
+    weight_pct: number;
+    risk_pct: number;
+    stop_pct: number;
+    stop_level: number | null;
+  }>;
+  scale_applied: number;
+  rules: string[];
+  note: string;
+}
+
 export interface LensAsset {
   id: string;
   label: string;
@@ -1768,6 +1817,7 @@ export interface LensAsset {
   direction: "up" | "down" | "flat";
   probability: number | null;
   advice: string;
+  plan?: LensAssetPlan;
 }
 
 /** 宏观层：增长 / 通胀 / 流动性 / 财政 / 融资 / 美元 / 曲线 */
@@ -1881,6 +1931,7 @@ export interface LensRule {
 
 export interface LensSynthesis {
   assets: LensAsset[];
+  portfolio?: LensPortfolio;
   divergences: LensDivergence[];
   warnings: LensWarning[];
   consensus_count: number;
@@ -1945,6 +1996,7 @@ export interface LensStateResponse {
   } | null;
   personas: LensPersona[];
   synthesis: LensSynthesis;
+  portfolio?: LensPortfolio | null;
   rules: {
     fed: LensRule[];
     song: LensRule[];

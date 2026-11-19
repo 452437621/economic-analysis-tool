@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+### 新增（仓位/止损/组合权重与资金解耦，2026-11-19）
+
+- **决策要素**：新增 `backend/app/lens/position.py`——把资产方向翻译成可执行的下注：止损距离 `2×ATR(14)`（夹 1.5%–8%）、单笔风险预算 `1%×|共识分|`（夹 0.3%–2%）、权重 `风险预算/止损距离`（单资产 ≤30%），组合层强制总敞口 ≤80%、组合风险 ≤6%（超限等比缩放，权重向下取整到 0.1% 避免越界）。长债用收益率 bp 表达止损，其余资产用价格；每项都带 `stop_note` / `rationale` 可供复核。
+- **合成与取证**：`engine._synthesis` 为每个资产挂 `plan`，并输出 `portfolio`（`gross/long/short/net/cash`、`portfolio_risk_pct`、`positions`、五条规则、`note`）；`lens.synthesis` 的 claim 增加「组合建议总敞口/组合风险」，caveat 声明权重基准与账户余额无关，`persist` 步骤记录这两项输出。
+- **API**：`/api/v2/lenses/state` 与 `POST /run` 顶层新增 `portfolio`（同 `synthesis.portfolio`）；只读取到旧版推导（无 `portfolio`）时自动补算一次。
+- **前端**：`/lenses` 合成表新增「仓位 / 止损 / 权重」三列（带止损说明 tooltip），并新增「组合层 · 仓位 / 止损 / 权重」卡（总敞口、多空、净敞口、现金、组合风险、逐仓位表、规则与说明）。`LensAsset` 增 `plan`、`LensSynthesis` 与 `LensStateResponse` 增 `portfolio`。
+- **交易信号与资金解耦**（`backend/app/decision/plans.py`）：手数改按标准基准权益 10 万元计算并保留小数手，删除「手数 ≥ 1」「保证金占用 ≤ 50% 权益」两条拦截，改用 5 条与资金规模无关的检查（单笔风险 ≤0.3%、止损距离 ≤5%、组合权重 ≤25%、名义杠杆 ≤5×、手续费 ≤风险金额 20%）；新增 `weight_pct`/`stop_distance_pct`/`risk_amount`/`leverage`/`risk_reward`/`sizing_note`/`lots_int`/`base_equity`，`PlanDetail.payload` 同步。`/signals` 页去掉「资金不足」标签与页脚说明，改为展示标准手数、止损距离、权重、杠杆、风险金额与盈亏比。
+- **文档**：`docs/27` 新增 §12.6（止损/风险预算/权重/组合约束四项规则表与口径说明）；`docs/28` 的 E2「构建投资决策」由「部分达成」改为「达成」，弱项改为「仓位只到建议不到执行」。
+- **验证**：`tests/test_v2_lenses.py` 扩为 10 条（新增组合缩放与 claim 用例）；`tests/test_m5.py` 改写「昂贵合约手数 ≥1」旧断言，新增资金无关用例；`scripts/lint.py` PASSED；全量 `pytest -q` 通过。
+
 ### 新增（多透镜扩展与数据补全，2026-11-19）
 
 - **人物研究**：新增 9 份研究笔记 [`docs/research/persona-*.md`](docs/research)——达里奥（DL1–DL11）、德鲁肯米勒（SD1–SD11）、马克斯（HM1–HM12）、冈拉克（JG1–JG12）、埃里安（EE1–EE12）、波萨（ZP1–ZP10）、佩蒂斯（MP1–MP12）、辜朝明（RK1–RK11）、政策四人体（PA1–PA12，拉加德/植田和男/贝森特/潘功胜）；每份 300–400 行，含 14 条指标、可证伪规则（阈值 + 失效条件 + 资产映射）、2023–2026 观点验证、出处分级与数据缺口。

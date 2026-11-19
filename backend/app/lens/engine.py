@@ -22,6 +22,7 @@ from app.cycle.market import Panel, load_panel
 from app.lens import fed as fed_lens
 from app.lens import layers as layer_builder
 from app.lens import persona as persona_engine
+from app.lens import position as position_engine
 from app.lens import song as song_lens
 from app.lens.common import evaluate_rule, load_gold_series, round_opt as _round, score_label
 from app.models.v2 import Derivation, Forecast
@@ -259,8 +260,10 @@ def _synthesis(
     )
 
     outlook = _outlook(states.get("fed") or {}, states.get("song") or {}, rows, warnings)
+    portfolio = position_engine.build_decisions(rows, panel)
     return {
         "assets": rows,
+        "portfolio": portfolio,
         "divergences": divergences,
         "warnings": warnings,
         "consensus_count": consensus_count,
@@ -709,6 +712,8 @@ def run_lenses(session: Session, asof: datetime | None = None) -> dict[str, Any]
                 "strong": synth_value["strong_count"],
                 "divergences": len(synth_value["divergences"]),
                 "confidence": synth_value["confidence"],
+                "gross_weight_pct": synth_value["portfolio"]["gross_weight_pct"],
+                "portfolio_risk_pct": synth_value["portfolio"]["portfolio_risk_pct"],
             }
 
         with rec.step("persist", kind="write") as step:
@@ -864,12 +869,16 @@ def run_lenses(session: Session, asof: datetime | None = None) -> dict[str, Any]
             synth_deriv = rec.derive(
                 code="lens.synthesis",
                 claim=(
-                    f"双透镜合成：{synth_value['consensus_count']} 项共振、"
+                    f"多透镜合成：{synth_value['consensus_count']} 项共振、"
                     f"{len(synth_value['divergences'])} 项分歧；"
                     + (
-                        f"最强共识 {strongest['label']} {strongest['consensus']:+.2f}"
+                        f"最强共识 {strongest['label']} {strongest['consensus']:+.2f}；"
                         if strongest
-                        else "无可用共识"
+                        else "无可用共识；"
+                    )
+                    + (
+                        f"组合建议总敞口 {synth_value['portfolio']['gross_weight_pct']:.0f}%、"
+                        f"组合风险 {synth_value['portfolio']['portfolio_risk_pct']:.2f}%"
                     )
                 ),
                 value=synth_value,
@@ -896,6 +905,8 @@ def run_lenses(session: Session, asof: datetime | None = None) -> dict[str, Any]
                     f"合成为 {synth_value['lens_count']} 套透镜加权（权重见 config/lens.yaml 的 synthesis.weights），"
                     "缺某一透镜分数时只用其余透镜加权，不把缺失当 0。",
                     "规则命中是条件成立，不是方向保证；分歧项必须等催化剂。",
+                    "仓位、止损与组合权重由风险预算推导（2×ATR 止损、单笔风险 ≤2%、组合风险 ≤6%），"
+                    "以总权益为基准，与账户余额无关。",
                 ],
                 falsifiers=synth_value["outlook"]["invalidators"],
                 opposing=["多套透镜可能同时犯同一个错：把美元流动性当成唯一自变量，低估财政/供给冲击。"],

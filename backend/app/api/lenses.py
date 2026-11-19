@@ -148,6 +148,7 @@ def _payload(
         "micro": micro,
         "personas": personas,
         "synthesis": synthesis,
+        "portfolio": synthesis.get("portfolio"),
         "rules": rules,
         "data_gaps": data_gaps,
         "disclaimer": config.get("disclaimer", ""),
@@ -225,11 +226,15 @@ def get_state(
     if refresh:
         return _payload_from_result(run_lenses(session))
     try:
-        return _payload_from_persisted(session)
+        payload = _payload_from_persisted(session)
     except HTTPException as exc:
         if exc.status_code != 404:
             raise
         return _payload_from_result(run_lenses(session))
+    if payload.get("portfolio") is None:
+        # 旧版推导没有仓位/组合权重（升级后首次打开），补算一次。
+        return _payload_from_result(run_lenses(session))
+    return payload
 
 
 @router.post("/run")

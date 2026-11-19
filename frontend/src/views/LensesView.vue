@@ -119,16 +119,17 @@
       <template v-if="activeTab === 'synthesis'">
         <section class="card lens-card">
           <div class="card-head">
-            <span class="card-title">七类资产 · 两镜共振表</span>
+            <span class="card-title">七类资产 · 多透镜共振表</span>
             <span class="spacer"></span>
-            <span class="lens-muted">综合分 −2…+2；方向按 |共识| ≥ 0.25 判定</span>
+            <span class="lens-muted">综合分 −2…+2；方向按 |共识| ≥ 0.25 判定；仓位按风险预算推导</span>
           </div>
           <div class="lens-table-wrap">
             <table class="lens-table">
               <thead>
                 <tr>
                   <th>资产</th><th>最新</th><th>美联储</th><th>宋鸿兵</th>
-                  <th>共识</th><th>一致度</th><th>方向</th><th>胜率</th><th>操作建议</th>
+                  <th>共识</th><th>一致度</th><th>方向</th><th>胜率</th>
+                  <th>仓位</th><th>止损</th><th>权重</th><th>操作建议</th>
                 </tr>
               </thead>
               <tbody>
@@ -158,10 +159,78 @@
                     </span>
                   </td>
                   <td class="mono">{{ fmtRatioPct(asset.probability) }}</td>
+                  <td class="mono" :class="asset.plan?.actionable ? `lens-dir lens-dir--${asset.direction}` : 'lens-muted'">
+                    {{ asset.plan?.actionable ? asset.plan.side_label : "观望" }}
+                  </td>
+                  <td class="mono lens-muted" :title="asset.plan?.stop_note || ''">
+                    {{ asset.plan?.actionable ? `${asset.plan.stop_pct.toFixed(1)}%` : "—" }}
+                  </td>
+                  <td class="mono">{{ asset.plan?.actionable ? `${asset.plan.weight_pct.toFixed(1)}%` : "—" }}</td>
                   <td class="lens-advice">{{ asset.advice }}</td>
                 </tr>
               </tbody>
             </table>
+          </div>
+        </section>
+
+        <section v-if="portfolio" class="card lens-card">
+          <div class="card-head">
+            <span class="card-title">组合层 · 仓位 / 止损 / 权重</span>
+            <span class="spacer"></span>
+            <span class="lens-muted">{{ portfolio.basis }}</span>
+          </div>
+          <div class="card-body">
+            <div class="lens-metrics">
+              <div class="lens-metric">
+                <span class="lens-metric-label">总敞口</span>
+                <span class="mono">{{ portfolio.gross_weight_pct.toFixed(1) }}%</span>
+              </div>
+              <div class="lens-metric">
+                <span class="lens-metric-label">多 / 空</span>
+                <span class="mono">
+                  {{ portfolio.long_weight_pct.toFixed(1) }}% / {{ portfolio.short_weight_pct.toFixed(1) }}%
+                </span>
+              </div>
+              <div class="lens-metric">
+                <span class="lens-metric-label">净敞口</span>
+                <span class="mono">{{ portfolio.net_weight_pct.toFixed(1) }}%</span>
+              </div>
+              <div class="lens-metric">
+                <span class="lens-metric-label">现金</span>
+                <span class="mono">{{ portfolio.cash_weight_pct.toFixed(1) }}%</span>
+              </div>
+              <div class="lens-metric">
+                <span class="lens-metric-label">组合风险</span>
+                <span class="mono lens-warn">{{ portfolio.portfolio_risk_pct.toFixed(2) }}%</span>
+              </div>
+            </div>
+            <div class="lens-table-wrap" style="margin-top: 12px">
+              <table class="lens-table">
+                <thead>
+                  <tr><th>资产</th><th>方向</th><th>权重</th><th>风险</th><th>止损距离</th><th>止损位</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="position in portfolio.positions" :key="position.asset">
+                    <td>{{ position.label }}</td>
+                    <td>
+                      <span class="lens-dir" :class="`lens-dir--${position.side === 'long' ? 'up' : 'down'}`">
+                        {{ position.side_label }}
+                      </span>
+                    </td>
+                    <td class="mono">{{ position.weight_pct.toFixed(1) }}%</td>
+                    <td class="mono">{{ position.risk_pct.toFixed(2) }}%</td>
+                    <td class="mono">{{ position.stop_pct.toFixed(1) }}%</td>
+                    <td class="mono">
+                      {{ position.stop_level === null ? "—" : fmtNumber(position.stop_level, priceDigits(position.stop_level)) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="lens-muted" style="margin-top: 10px">{{ portfolio.note }}</div>
+            <ul class="lens-rules-inline">
+              <li v-for="rule in portfolio.rules" :key="rule">{{ rule }}</li>
+            </ul>
           </div>
         </section>
 
@@ -814,6 +883,7 @@ const macroLayer = computed(() => state.value?.macro ?? null);
 const microLayer = computed(() => state.value?.micro ?? null);
 const macroScores = computed(() => toScoreEntries(state.value?.macro?.scores));
 const microScores = computed(() => toScoreEntries(state.value?.micro?.scores));
+const portfolio = computed(() => state.value?.portfolio ?? state.value?.synthesis.portfolio ?? null);
 
 /** 人物评分矩阵：行=人物透镜，列=七类资产 */
 const personaMatrix = computed(() =>
@@ -1085,6 +1155,35 @@ onMounted(() => {
 .lens-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .lens-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .lens-table-wrap { overflow-x: auto; }
+.lens-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+.lens-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.lens-metric-label { font-size: 10.5px; color: var(--dim); }
+.lens-warn { color: var(--warn); }
+.lens-rules-inline {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.lens-rules-inline li {
+  font-size: 10.5px;
+  color: var(--dim);
+}
+.lens-rules-inline li::before { content: "· "; }
 .lens-table {
   width: 100%;
   border-collapse: collapse;
