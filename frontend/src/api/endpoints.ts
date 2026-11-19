@@ -308,3 +308,59 @@ export const updateTrade = (id: string, body: Partial<TradeInput>) =>
 export const deleteTrade = (id: string) =>
   deleteJson<{ deleted: boolean; id: string }>(`/api/trades/${encodeURIComponent(id)}`);
 export const getTradeStats = () => getJson<TradeStats>("/api/trades/stats");
+
+import type {
+  LensCommentary,
+  LensForecast,
+  LensForecastCode,
+  LensForecastList,
+  LensPing,
+  LensStateResponse,
+} from "./types";
+
+// ── 双透镜 ────────────────────────────────────────────────────────────
+export function getLensState(refresh = false): Promise<LensStateResponse> {
+  return getJson<LensStateResponse>("/api/v2/lenses/state", {
+    params: refresh ? { refresh: true } : undefined,
+  });
+}
+
+export function runLenses(): Promise<LensStateResponse> {
+  return postJson<LensStateResponse>("/api/v2/lenses/run", {}, { timeout: 90000 });
+}
+
+export function getLensForecastCodes(): Promise<{ items: LensForecastCode[] }> {
+  return getJson<{ items: LensForecastCode[] }>("/api/v2/lenses/forecast-codes");
+}
+
+export function getLensForecasts(status?: string): Promise<LensForecastList> {
+  return getJson<LensForecastList>("/api/v2/lenses/forecasts", {
+    params: status ? { status } : undefined,
+  });
+}
+
+export function createLensForecast(payload: {
+  asset: string;
+  direction: "up" | "down" | "flat";
+  horizon_days: number;
+  probability?: number | null;
+  baseline_value?: number | null;
+  notes?: string | null;
+}): Promise<LensForecast> {
+  return postJson<LensForecast>("/api/v2/lenses/forecasts", payload);
+}
+
+export function getLensPing(): Promise<LensPing> {
+  return getJson<LensPing>("/api/v2/lenses/ping");
+}
+
+export function postLensCommentary(
+  question?: string,
+  refresh = false,
+): Promise<LensCommentary> {
+  return postJson<LensCommentary>(
+    "/api/v2/lenses/commentary",
+    { question: question ?? null },
+    { params: refresh ? { refresh: true } : undefined, timeout: 120000 },
+  );
+}

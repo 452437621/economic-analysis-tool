@@ -6,6 +6,24 @@
 
 ## [Unreleased]
 
+### 新增（双透镜：美联储一脉与宋鸿兵框架，2026-11-18）
+
+- **研究笔记**：新增 `docs/research/fed-chair-framework.md`（格林斯潘/伯南克/耶伦/鲍威尔：哲学演变、反应函数、26 指标、R1–R15、8 案例、2025–26 预警、S1–S27 出处与 20 处【未核实】）与 `docs/research/song-hongbing-framework.md`（《货币战争》理论骨架、资产映射、25 指标可得性、S1–S14、T1–T8、2023–2026 研判验证、N01–N50 出处）。新增设计说明 [`docs/27-双透镜-美联储与宋鸿兵.md`](docs/27-双透镜-美联储与宋鸿兵.md)。
+- **后端引擎**：新增 `backend/app/lens/`——`common.py`（读数/规则求值/分位/z/相关）、`fed.py`（21 条读数、stance 加权分位、增长×通胀四象限、Fed Put 行权距离、7 类资产评分）、`song.py`（31 条读数、SOFR−EFFR「美元心脏」三态、热/冷环流相位、收割与债务风险、黄金状态）、`engine.py`（`run_lenses` 六步编排、三条推导、observations 幂等、透镜预测直写 Forecast）。新增 `config/lens.yaml`（F1–F12、12 条 S 规则、权重、数据缺口与免责声明；S6/S14 因缺可计算指标未纳入）。
+- **API**：新增 `/api/v2/lenses`——`GET /state`、`POST /run`、`GET /forecast-codes`、`GET/POST /forecasts`、`GET /ping`、`POST /commentary`；`/state` 无落库数据时懒运行一次，并支持从落库推导的 `rule_metrics` 重建全部规则状态（含 miss/unknown）。方法注册新增 `lens.engine.v1`、`lens.fed.v1`、`lens.song.v1`、`lens.synthesis.v1`；`RunRecorder` 的 kind 白名单加入 `lens`。
+- **前端**：新增 `/lenses`「双透镜」页（合成研判 / 美联储透镜 / 宋鸿兵透镜 / 规则与证据四页签，7 类资产共识表、预警与分歧、90 天三情景、21+31 条读数网格、F/S 规则 trace、预测登记、AI 解读），路由与侧栏「专题」组接入；`api/types.ts` 与 `endpoints.ts` 同步。
+- **验证**：新增 `tests/test_v2_lenses.py` 7 条（配置、端到端、幂等、只读状态、预测与运行、预测结算、LLM ping）；`scripts/lint.py` PASSED；`vue-tsc --noEmit` 0 error；`vite build` 成功（`LensesView-*.js` 29.3KB）；全量 `pytest -q --ignore=tests/test_frontend_build.py` **352 passed**。
+- **已知边界**：COMEX 白银库存、IMF COFER、CIPS/人民币跨境、HY OAS、M2、财政脉冲（payload）6 项未接入，对应规则显示 `unknown`；合成概率为启发式映射，尚未校准。
+
+### 修复（双透镜审核意见，2026-11-19）
+
+- **血缘**：`lens.fed.state` 的 `subject` 由拼写错误的 `lens:feded` 改为 `lens.fed`；运行返回补齐 `kind/subject/started_at/duration_ms/error`，与只读路径同形。
+- **契约**：`/api/v2/lenses/synthesis.divergences` 补齐 `spread` 与 `reading`，前端按 `asset` 作 key；`LensDivergence` 类型与后端一致；`gold_regime` 颜色映射改为实际枚举（`strategic/accumulate/avoid`）。
+- **结算**：`ledger.engine.actual_value` 增加 `lens.<asset>` → 标的收盘价（长债 → US30Y 收益率）映射，透镜预测到期可真正结算，不再永久 `pending`。
+- **API**：`GET /state` 无落库数据时懒运行；`GET /forecasts` 的 `status` 下推 SQL 并限定 `open/resolved`；`commentary` 的时间窗改读 `outlook.horizon_days`；`POST /run` 不再把内部异常明文回传；`_payload_from_persisted` 与 `_payload_from_result` 合并为同一 `_payload`，规则分组直接按配置，不再用编号前缀猜测。
+- **文档/配置**：修正 `docs/27` 的评分区间（−2…+2）、agreement 阈值、gold_regime 命名、`app.platform.db` 复现命令、财政脉冲口径与 S6/S14 未纳入原因；删除 `config/lens.yaml` 中未被消费的 `forecast_horizons`/`asset_order` 与不存在的 `lens-methodology.md` 引用；README/CHANGELOG 的规则数、测试数与未核实数改为可复现实测。
+- **测试**：`tests/test_m7.py` 日志列表改为按日期过滤，消除共享测试库导致的偶发失败；新增透镜预测结算用例。
+
 ### 改进（系统状态 · 数据质检列宽，2026-11-18）
 
 - `frontend/src/views/SystemView.vue`：「数据质检」表改为固定布局并加 `colgroup`——数据集列 132px 且 `white-space: nowrap`（超长省略并带 `title`），类型 / 状态列 84 / 72px 固定，明细列占剩余宽度并自动换行，长明细不再挤压数据集列。

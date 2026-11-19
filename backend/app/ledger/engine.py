@@ -549,9 +549,23 @@ def _latest_gold_score(session: Session) -> float | None:
     return float(score) if isinstance(score, (int, float)) else None
 
 
+LENS_ACTUALS: dict[str, tuple[str, str]] = {
+    "lens.us_equity": ("bar", "SPX"),
+    "lens.gold": ("bar", "XAUUSD"),
+    "lens.silver": ("bar", "SI"),
+    "lens.usd": ("bar", "DXY"),
+    "lens.cn_equity": ("bar", "000300"),
+    "lens.commodities": ("bar", "BZ"),
+    "lens.long_bond": ("macro", "US30Y"),
+}
+
+
 def actual_value(session: Session, code: str, metrics: dict[str, float]) -> float | None:
     if code.startswith("cycle."):
         return metrics.get(code.split(".", 1)[1])
+    if code in LENS_ACTUALS:
+        kind, target = LENS_ACTUALS[code]
+        return _latest_market_value(session, target) if kind == "bar" else _latest_macro_value(session, target)
     if code == "gold.score":
         return _latest_gold_score(session)
     if code in {"xauusd", "usdcnh"}:

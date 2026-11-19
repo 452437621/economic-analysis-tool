@@ -21,6 +21,7 @@ from app.api import (
     journal,
     knowledge,
     ledger,
+    lenses,
     market,
     overview,
     system,
@@ -110,6 +111,7 @@ app.include_router(glassbox.router)
 app.include_router(cycle.router)
 app.include_router(timeline.router)
 app.include_router(ledger.router)
+app.include_router(lenses.router)
 app.include_router(trades.router)
 
 if WEB_DIR.exists():

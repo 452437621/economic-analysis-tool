@@ -1,0 +1,305 @@
+# 双透镜（美联储主席透镜 + 宋鸿兵透镜）配置
+#
+# 这里只放「可被人审阅的规则与权重」，不放任何计算结果。
+# 所有数值读数由 backend/app/lens/{fed,song}.py 从本地库计算，
+# 规则由 backend/app/lens/engine.py 逐条求值，命中情况写入 RuleHit，
+# 结论写入 Derivation（方法 id: lens.fed.v1 / lens.song.v1 / lens.synthesis.v1）。
+version: "1.0.0"
+disclaimer: >-
+  本模块是研究工具，不是投资建议。两套透镜都只是对既有文本的显式化与可计算化，
+  规则命中表示「该框架下的条件成立」，不表示市场一定按该框架运行。
+  证据等级 E0–E4 见 docs/27-双透镜-美联储与宋鸿兵.md「证据等级」一节。
+
+# 合成权重：两镜等权。任何调整都必须同时改这里与 docs，保证可复现。
+synthesis:
+  weights:
+    fed: 0.5
+    song: 0.5
+
+# 数据缺口：这些指标算不出来，UI 必须显式展示，不能静默省略。
+data_gaps:
+  - id: song.comex_silver
+    label: COMEX 白银库存
+    reason: 本地库无白银库存日频序列，宋鸿兵 S9（20 日净流出 ≥5000 万盎司）无法计算。
+    impact: 这是其框架中唯一被事后验证过的规则，缺失意味着「白银闪崩」预警只能人工跟踪 CME 数据。
+  - id: song.reserve_share
+    label: 美元全球外储份额（IMF COFER）
+    reason: 季度数据，未接入。
+    impact: 去美元化斜率只能用央行购金与中国储备同比间接代理。
+  - id: song.cips
+    label: CIPS 日均处理金额
+    reason: 需手工月更，未接入。
+    impact: 「金融高边疆」只能定性描述。
+  - id: fed.hy_oas
+    label: 高收益债利差
+    reason: 未接入 ICE BofA 序列。
+    impact: 金融条件指数缺信用腿，用 SOFR−EFFR 与股指回撤替代，灵敏度下降。
+  - id: fed.m2
+    label: M2 同比
+    reason: 未接入 FRED M2SL。
+    impact: 货币数量论口径缺失，不影响政策反应函数打分。
+  - id: fed.payload
+    label: 财政脉冲
+    reason: 本地只有月度 MTS 收支，无季度财政脉冲口径。
+    impact: 财政对增长的边际贡献只能看赤字/GDP。
+
+# ── 美联储透镜规则 ────────────────────────────────────────────────────
+# 设计原则：每条规则都对应主席们在讲话/著作中反复出现的反应函数，
+# 且必须能被后续数据证伪（falsifier）。
+fed_rules:
+  - id: F1
+    name: 实际利率转正且继续上行
+    severity: warn
+    when:
+      all:
+        - {metric: fed.real10, field: value, op: ">", value: 1.5}
+        - {metric: fed.real10, field: chg, op: ">", value: 0.3}
+    message: 10 年期实际利率高于 1.5% 且三个月内继续上行，紧缩仍在传导；黄金与长久期的分母端没有缓和。
+    falsifier: 实际利率继续上行但金价与长债同步创新高（说明驱动已切换为财政/秩序风险）。
+    assets: [gold, long_bond, us_equity]
+    sources: ["Greenspan 1966《Gold and Economic Freedom》", "Bernanke 2013 Taper 讲话"]
+  - id: F2
+    name: 实际利率深度为负（金融抑制）
+    severity: watch
+    when:
+      all:
+        - {metric: fed.real10, field: value, op: "<", value: -0.5}
+    message: 10 年期实际利率低于 −0.5%，持有现金的机会成本为负，黄金的货币属性压过商品属性。
+    falsifier: 实际利率深度为负但金价连续三个月下跌（说明流动性挤兑主导）。
+    assets: [gold, silver]
+    sources: ["Greenspan 2005 央行行长讲话", "Bernanke 2012『金融抑制』论述"]
+  - id: F3
+    name: 收益率曲线倒挂
+    severity: warn
+    when:
+      all:
+        - {metric: fed.curve_2s10s, field: value, op: "<", value: -30}
+    message: 2s10s 倒挂超过 30bp，紧缩已进入限制性区间；历史上衰退与降息预期会在此后 6–18 个月兑现。
+    falsifier: 倒挂持续超过 24 个月且衰退未至（说明期限溢价结构已变）。
+    assets: [us_equity, long_bond]
+    sources: ["Greenspan 2000 年『倒挂是紧缩证据』", "Bernanke 2006 倒挂辩论"]
+  - id: F4
+    name: 曲线由倒挂转正（衰退确认）
+    severity: watch
+    when:
+      all:
+        - {metric: fed.curve_cross_up, field: value, op: ">=", value: 1}
+    message: 2s10s 在过去半年内由负转正，历史上这通常不是「软着陆」而是衰退确认的开始。
+    falsifier: 转正后 12 个月增长代理持续为正且失业率未上行。
+    assets: [us_equity, long_bond]
+    sources: ["Powell 2023『倒挂的衰退信号』问答"]
+  - id: F5
+    name: 金融条件急剧收紧
+    severity: warn
+    when:
+      all:
+        - {metric: fed.fci, field: chg, op: ">", value: 0.8}
+    message: 金融条件指数三个月内上升超过 0.8σ，股指、美元、实际利率与融资利差在同步收紧；联储的「第三使命」开始起作用。
+    falsifier: 条件收紧但信用利差未走阔、股指再创新高（说明是分母端重定价而非信用收缩）。
+    assets: [us_equity, commodities]
+    sources: ["Greenspan 1996『非理性繁荣』讲话", "Bernanke 2013 缩减恐慌"]
+  - id: F6
+    name: 标普回撤进入看跌期权行权区
+    severity: critical
+    when:
+      all:
+        - {metric: fed.spx_drawdown, field: value, op: ">=", value: 10}
+    message: 标普距 52 周高点回撤 ≥10%，「格林斯潘/伯南克看跌期权」进入行权区；宽松预期会先于实际降息被交易。
+    falsifier: 回撤 ≥10% 但联储官员连续两次会议明确排除宽松（如 2022 年）。
+    assets: [us_equity, gold]
+    sources: ["Greenspan 2002 Jackson Hole", "Bernanke 2008 危机应对", "Powell 2018『put』否认"]
+  - id: F7
+    name: 通胀预期失控
+    severity: critical
+    when:
+      all:
+        - {metric: fed.be10, field: value, op: ">", value: 2.8}
+    message: 10 年期盈亏平衡通胀高于 2.8%，联储的信誉定价开始松动；实际利率的分子（名义利率）会被迫追赶。
+    falsifier: 盈亏平衡 >2.8% 但联储连续降息且通胀回落（说明是供给冲击的一次性定价）。
+    assets: [gold, long_bond, usd]
+    sources: ["Volcker 1979 讲话", "Bernanke 2022『通胀是头号威胁』"]
+  - id: F8
+    name: 增长代理转弱
+    severity: watch
+    when:
+      all:
+        - {metric: fed.growth, field: value, op: "<", value: -1}
+    message: 铜金比 z 低于 −1，增长定价在转弱；联储的反应函数会从通胀单目标切回双目标。
+    falsifier: 增长代理转弱但铜价随后三个月反弹 >10%（说明是供给扰动）。
+    assets: [commodities, cn_equity]
+    sources: ["Bernanke 2015 加息框架", "Powell 2019 保险式降息"]
+  - id: F9
+    name: 强美元=被动紧缩
+    severity: watch
+    when:
+      all:
+        - {metric: fed.dxy, field: chg, op: ">", value: 5}
+    message: 美元指数三个月升值超过 5%，等于联储被动收紧；新兴市场与大宗是最先承压的腿。
+    falsifier: 美元走强但新兴市场资金持续净流入、大宗同步上涨（说明是全球同步复苏）。
+    assets: [cn_equity, commodities, gold]
+    sources: ["Greenspan 2004『双赤字』讲话", "Bernanke 2015 美元与通胀"]
+  - id: F10
+    name: 黄金与实际利率脱钩（秩序溢价模式）
+    severity: warn
+    when:
+      all:
+        - {metric: fed.gold_real_corr, field: value, op: ">", value: 0}
+    message: 黄金与实际利率的 252 日相关性转正，市场在按「货币秩序风险」而不是「机会成本」给黄金定价；此时用实际利率做空黄金是危险的。
+    falsifier: 相关性转正后连续两个季度金价与实际利率恢复强负相关。
+    assets: [gold, silver]
+    sources: ["Greenspan 1999 年黄金与货币讲话", "2025-04-07 美元-美债脱钩事件"]
+  - id: F11
+    name: 科技拥挤度极端
+    severity: watch
+    when:
+      all:
+        - {metric: fed.ndx_ratio, field: z, op: ">", value: 1.5}
+    message: 纳指/标普比值处于一年期 z >1.5，AI/科技拥挤；同样的利率冲击下，纳指的回撤弹性大于标普。
+    falsifier: 拥挤度极端但纳指在随后回撤中跑赢标普（说明盈利兑现消化了估值）。
+    assets: [us_equity]
+    sources: ["Greenspan 1996『非理性繁荣』", "Powell 2024 AI 与生产率讲话"]
+  - id: F12
+    name: 衰退式降息组合
+    severity: critical
+    when:
+      all:
+        - {metric: fed.growth, field: value, op: "<", value: -1}
+        - {metric: fed.inflation, field: value, op: "<", value: 0}
+    message: 增长与通胀代理同步转负，降息交易成立；久期与黄金优于周期股。
+    falsifier: 双负出现后联储反而加息（说明通胀预期已脱锚）。
+    assets: [long_bond, gold, us_equity]
+    sources: ["Bernanke 2008", "Powell 2020 疫情应对"]
+
+# ── 宋鸿兵透镜规则 ────────────────────────────────────────────────────
+# 研究笔记的 S1–S14 中，S6（「三变六反」再通胀判据，需 60 年通胀序列）与
+# S14（中国房地产长周期，需房价/销售数据）因本地库无可计算指标，暂不纳入；
+# 其余 12 条按 S1–S5、S7–S13 编号保留，不另编号。
+song_rules:
+  - id: S1
+    name: 热环流做多风险资产
+    severity: info
+    when:
+      all:
+        - {metric: song.dxy_pct, field: value, op: "<", value: 30}
+        - {metric: song.sofr_effr, field: value, op: "<", value: 5}
+    message: 美元 250 日分位低于 30% 且回购市场无摩擦 → 热环流，增配 A 股/新兴市场/铜。
+    falsifier: 弱美元但铜金比同步下行超过 1σ（衰退型弱美元）。
+    assets: [cn_equity, commodities, us_equity]
+    sources: ["宋鸿兵 2023-12-27《大逆转》", "宋鸿兵 2024-07-27 演讲"]
+  - id: S2
+    name: 冷环流防御
+    severity: warn
+    when:
+      all:
+        - {metric: song.dxy_pct, field: value, op: ">", value: 70}
+        - {metric: song.sofr_effr, field: value, op: ">", value: 10}
+    message: 强美元 + 回购摩擦 → 冷环流；降低高杠杆/高估值暴露（AI、白银、加密），提高现金与短债。
+    falsifier: 强美元但美股创新高且信用利差未走阔（美国例外论型强美元）。
+    assets: [us_equity, silver, cn_equity]
+    sources: ["宋鸿兵 2025-09-15 微博", "宋鸿兵 2024-12 复盘"]
+  - id: S3
+    name: 美元心脏心梗
+    severity: critical
+    when:
+      any:
+        - {metric: song.sofr_effr, field: value, op: ">", value: 15}
+        - {metric: song.sofr_spike, field: value, op: ">", value: 8}
+    message: SOFR−EFFR 超过 15bp 或 5 日脉冲超过 8bp → 心肌梗塞；机构会卖一切换流动性（含黄金），48 小时内先降贝塔。
+    falsifier: 跳升后 5 个交易日内回购利率回落且金价未跌（技术性摩擦）。
+    assets: [us_equity, silver, gold, cn_equity]
+    sources: ["宋鸿兵 2024『美元心脏』三态", "宋鸿兵 2025-01-24 年终盛典"]
+  - id: S4
+    name: 黄金进入秩序溢价模式
+    severity: warn
+    when:
+      all:
+        - {metric: song.real10, field: chg, op: ">", value: 0}
+        - {metric: song.gold, field: chg, op: ">", value: 0}
+    message: 实际利率上行而金价同涨 → 秩序溢价模式；改用央行购金 + 地缘 + 美元武器化事件驱动，停止用实际利率做空黄金。
+    falsifier: 连续两个季度实际利率与金价恢复强负相关。
+    assets: [gold, silver]
+    sources: ["宋鸿兵 2026-01-30《金银遭暴击》", "宋鸿兵《货币战争》黄金论"]
+  - id: S5
+    name: 60 年大轮回：长端冬季
+    severity: warn
+    when:
+      all:
+        - {metric: song.us10y_pct, field: value, op: ">", value: 80}
+        - {metric: song.us_cpi, field: value, op: ">", value: 2.5}
+    message: 10Y 美债处于 5 年分位 >80%（60 年分位数据缺失，降级使用）且 CPI >2.5% → 长端国债只做交易性多头，不做趋势性多头。
+    falsifier: 10Y 在 12 个月内回落 >150bp 且通胀回到 2% 以下。
+    assets: [long_bond, gold]
+    sources: ["宋鸿兵 2025-01《60 年大轮回》PPT", "宋鸿兵 2025-09 微博"]
+  - id: S7
+    name: 债务货币化进入主升段
+    severity: critical
+    when:
+      all:
+        - {metric: song.interest_receipts, field: value, op: ">", value: 30}
+    message: 联邦利息支出/财政收入超过 30%，财政主导（fiscal dominance）成立；黄金进入主升段，长端利率被人为压低。
+    falsifier: 利息占比 >30% 但金价不涨、实际利率继续上行（市场仍信任美元）。
+    assets: [gold, silver, long_bond]
+    sources: ["宋鸿兵 2011《货币战争》2035 推导", "宋鸿兵 2025-01 盛典"]
+  - id: S8
+    name: 2035 美元体系路径检验
+    severity: watch
+    when:
+      all:
+        - {metric: song.debt_gdp, field: value, op: ">", value: 130}
+        - {metric: song.interest_receipts, field: value, op: ">", value: 30}
+    message: 债务/GDP >130% 且利息/财政收入 >30%，正在沿「1939 英国」路径走；距其 200%/46% 的终局阈值仍有距离。
+    falsifier: 2035 年前债务/GDP 稳定在 130% 以下或美元外储份额止跌回升。
+    assets: [gold, usd]
+    sources: ["宋鸿兵 2011 年访谈", "宋鸿兵 2025-12 演讲"]
+  - id: S9
+    name: 白银实物挤兑（数据缺失，规则保留）
+    severity: critical
+    when:
+      all:
+        - {metric: song.comex_silver, field: value, op: "<", value: -50}
+    message: COMEX 白银库存 20 日净流出 ≥5000 万盎司 → 银价 10%–30% 暴跌，ETF 大赎回则最大 50%。本库缺白银库存序列，规则无法触发，只能人工跟踪 CME。
+    falsifier: 库存流出触发阈值但银价未跌 >10%（挤兑被实物溢价吸收）。
+    assets: [silver]
+    sources: ["宋鸿兵 2026-01-24 年终盛典原话", "2026-01 底白银 -35% 验证"]
+  - id: S10
+    name: 金银比极值
+    severity: watch
+    when:
+      all:
+        - {metric: song.gold_silver, field: value, op: ">", value: 85}
+    message: 金银比 >85，按宋的历史锚（16:1）白银相对低估；但 2025–2026 出现「比值高位继续上行」，均值回归可能失效。
+    falsifier: 金银比 >85 持续 12 个月且继续上行（结构性短缺定价取代均值回归）。
+    assets: [silver, gold]
+    sources: ["宋鸿兵 2011 年白银目标价", "宋鸿兵 2026-01 盛典"]
+  - id: S11
+    name: A 股热钱三段式
+    severity: info
+    when:
+      all:
+        - {metric: song.dxy_pct, field: value, op: "<", value: 30}
+        - {metric: song.usdcnh, field: chg, op: "<", value: 0}
+        - {metric: song.csi_spx, field: chg, op: ">", value: 0}
+    message: 弱美元 + 人民币企稳 + A 股/标普相对走强 → 热钱三段式成立，未来 6–12 个月 A 股有估值修复。
+    falsifier: 热环流启动但外资持续净流出，或出现「指数涨、创业板跌 40%+」的结构性背离（2026 年即反例）。
+    assets: [cn_equity]
+    sources: ["宋鸿兵 2024-07-27 演讲", "宋鸿兵 2026 复盘"]
+  - id: S12
+    name: 战争冲击的油金背离
+    severity: watch
+    when:
+      all:
+        - {metric: song.geo_divergence, field: value, op: ">", value: 1}
+    message: 油强金弱的背离（地缘溢价被压制）出现；短期跟随油/美元，中期金银补涨概率高。
+    falsifier: 冲突持续 3 个月金银仍未创新高（压制是结构性的，如流动性挤兑）。
+    assets: [gold, commodities]
+    sources: ["宋鸿兵 2026-03 伊朗战争后复盘"]
+  - id: S13
+    name: 长端利率刺破高估值
+    severity: warn
+    when:
+      all:
+        - {metric: song.us10y, field: chg, op: ">", value: 0.5}
+    message: 10Y 美债一年内上行超过 50bp，AI/科技的高估值首先承压；这是宋「AI 债务地雷」的利率触发条件。
+    falsifier: 长端上行但纳指继续创新高且盈利上修覆盖估值。
+    assets: [us_equity]
+    sources: ["宋鸿兵 2025-09-15『AI 泡沫』", "宋鸿兵 2025-11-30 微课堂"]

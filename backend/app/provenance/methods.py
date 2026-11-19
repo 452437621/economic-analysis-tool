@@ -82,6 +82,38 @@ METHOD_SPECS: tuple[dict, ...] = (
         "module": "app.ledger.engine",
         "description": "26 条原则按当前读数核对命中/接近/不成立，预测登记、到期对账与 Brier 校准。",
     },
+    {
+        "method_id": "lens.engine.v1",
+        "name": "双透镜引擎",
+        "version": "1.0",
+        "kind": "pipeline",
+        "module": "app.lens.engine",
+        "description": "加载本地面板，计算美联储透镜与宋鸿兵透镜读数，评估规则并合成七类资产评分。",
+    },
+    {
+        "method_id": "lens.fed.v1",
+        "name": "美联储主席透镜",
+        "version": "1.0",
+        "kind": "model",
+        "module": "app.lens.fed",
+        "description": "格林斯潘—伯南克—耶伦—鲍威尔反应函数：实际利率、金融条件、看跌期权与增长/通胀象限。",
+    },
+    {
+        "method_id": "lens.song.v1",
+        "name": "宋鸿兵透镜",
+        "version": "1.0",
+        "kind": "model",
+        "module": "app.lens.song",
+        "description": "美元环流温度、美元心脏三态、债务货币化、黄金熵值与资产映射。",
+    },
+    {
+        "method_id": "lens.synthesis.v1",
+        "name": "双透镜合成与研判",
+        "version": "1.0",
+        "kind": "model",
+        "module": "app.lens.engine",
+        "description": "两镜等权合成共识分、一致度、分歧/共振清单、七类资产评分与情景推演。",
+    },
 )
 
 

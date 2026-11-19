@@ -1692,3 +1692,238 @@ export interface TradeStats extends TradeSummary {
   by_asset_class: TradeAssetClassStat[];
   by_month: TradeMonthStat[];
 }
+
+// ── 双透镜（美联储主席 / 宋鸿兵）─────────────────────────────────────
+export type LensTab = "synthesis" | "fed" | "song" | "evidence";
+export type LensEvidence = "E0" | "E1" | "E2" | "E3" | "E4";
+
+export interface LensReading {
+  id: string;
+  label: string;
+  value: number | null;
+  unit: string;
+  digits: number;
+  asof: string | null;
+  change: number | null;
+  change_label: string;
+  z: number | null;
+  percentile: number | null;
+  source: string;
+  evidence: string;
+  note: string;
+  missing_reason: string | null;
+}
+
+export interface LensScore {
+  score: number | null;
+  label: string;
+  why: string;
+}
+
+export interface LensFedState {
+  stance: number | null;
+  stance_label: string;
+  stance_components: Array<{ label: string; percentile: number | null; weight: number }>;
+  regime: { id: string; label: string; note: string };
+  fed_put: {
+    id: string;
+    label: string;
+    drawdown: number | null;
+    note: string;
+    strike: number | null;
+    spot: number | null;
+    distance_pct: number | null;
+  };
+  policy: { bias: string; cut_probability_3m: number | null };
+  asset_scores: Record<string, LensScore>;
+  narrative: string;
+  coverage: { available: number; total: number };
+}
+
+export interface LensSongState {
+  phase: { id: string; label: string; note: string };
+  dollar_heart: { id: string; label: string; level_bp: number | null; spike_bp: number | null; note: string };
+  harvest_risk: number | null;
+  debt_risk: number | null;
+  gold_regime: { id: string; label: string; note: string };
+  asset_scores: Record<string, LensScore>;
+  narrative: string;
+  coverage: { available: number; total: number };
+}
+
+export interface LensAsset {
+  id: string;
+  label: string;
+  symbol: string;
+  unit: string;
+  note: string;
+  last: number | null;
+  fed: number | null;
+  song: number | null;
+  consensus: number | null;
+  label_consensus: string;
+  agreement: string;
+  direction: "up" | "down" | "flat";
+  probability: number | null;
+  advice: string;
+}
+
+export interface LensWarning {
+  id: string;
+  severity: "info" | "watch" | "warn" | "critical";
+  title: string;
+  detail: string;
+}
+
+export interface LensDivergence {
+  asset: string;
+  label: string;
+  fed: number | null;
+  song: number | null;
+  spread: number | null;
+  reading: string;
+  catalyst: string;
+}
+
+export interface LensOutlook {
+  horizon_days: number;
+  base_case: string;
+  bull_case: string;
+  bear_case: string;
+  triggers: LensWarning[];
+  invalidators: string[];
+}
+
+export interface LensCycleContext {
+  asof: string | null;
+  long_cycle?: { phase: string; phase_id: string; score: number | null; meaning: string };
+  short_cycle?: { state: string; state_name?: string };
+  liquidity?: { state: string; value: number | null };
+  political?: { window: string } | null;
+}
+
+export interface LensDerivation {
+  id: string;
+  code: string;
+  claim: string;
+  value: Record<string, unknown>;
+  confidence: number | null;
+  evidence_grade: string;
+  asof: string | null;
+  run_id: string | null;
+  method_id: string | null;
+  inputs: string[];
+  steps: Array<Record<string, unknown>>;
+  rules_hit: Array<{ id: string; message: string; severity: string }>;
+  caveats: string[];
+  falsifiers: string[];
+  opposing: string[];
+}
+
+export interface LensRule {
+  id: string;
+  name: string;
+  severity: "info" | "watch" | "warn" | "critical";
+  fired: boolean;
+  status: "fired" | "miss" | "unknown";
+  message: string;
+  falsifier: string | null;
+  assets: string[];
+  sources: string[];
+  trace: Array<{ condition: string; met: boolean }>;
+}
+
+export interface LensSynthesis {
+  assets: LensAsset[];
+  divergences: LensDivergence[];
+  warnings: LensWarning[];
+  consensus_count: number;
+  narrative: string;
+  outlook: LensOutlook;
+  cycle_context: LensCycleContext;
+  confidence: number | null;
+  derivation: LensDerivation;
+}
+
+export interface LensStateResponse {
+  asof: string | null;
+  run: {
+    id: string;
+    status: string;
+    asof: string | null;
+    finished_at: string | null;
+    degraded: boolean;
+    degraded_reasons: Array<{ code: string; message: string; severity?: string }>;
+    summary: Record<string, unknown>;
+    duration_ms: number | null;
+  } | null;
+  fed: {
+    state: LensFedState;
+    readings: LensReading[];
+    catalog: string[];
+    coverage: { available: number; total: number };
+    derivation: LensDerivation;
+    method_id: string | null;
+  };
+  song: {
+    state: LensSongState;
+    readings: LensReading[];
+    catalog: string[];
+    coverage: { available: number; total: number };
+    derivation: LensDerivation;
+    method_id: string | null;
+  };
+  synthesis: LensSynthesis;
+  rules: { fed: LensRule[]; song: LensRule[] };
+  data_gaps: Array<{ id: string; label: string; reason: string; impact: string }>;
+  disclaimer: string;
+  config_version: string | null;
+  confidence: number | null;
+  evidence_grade: string;
+}
+
+export interface LensForecast {
+  id: string;
+  code: string;
+  asset: string;
+  subject: string;
+  direction: "up" | "down" | "flat";
+  horizon_days: number;
+  made_at: string | null;
+  target_date: string | null;
+  probability: number | null;
+  point: number | null;
+  status: string;
+  baseline_value: number | null;
+  notes: string | null;
+  derivation_id: string | null;
+}
+
+export interface LensForecastList {
+  items: LensForecast[];
+  open: LensForecast[];
+  resolved: LensForecast[];
+}
+
+export interface LensForecastCode {
+  code: string;
+  asset: string;
+  label: string;
+  symbol: string;
+}
+
+export interface LensPing {
+  available: boolean;
+  model: string;
+  budget_usd: number;
+  hint: string | null;
+}
+
+export interface LensCommentary {
+  text: string;
+  model: string;
+  cached: boolean;
+  tokens_in: number;
+  tokens_out: number;
+  cost_usd: number;
+}

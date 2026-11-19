@@ -42,7 +42,7 @@ def test_journal_api_roundtrip():
         created = resp.json()
         assert created["created"] in (True, False)
         assert created["item"]["content"] == "测试日志内容"
-        listing = client.get("/api/journal?limit=5").json()["items"]
+        listing = client.get("/api/journal?date_from=2026-11-09&date_to=2026-11-09&limit=5").json()["items"]
         assert any(entry["content"] == "测试日志内容" for entry in listing)
 
 

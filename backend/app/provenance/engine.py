@@ -164,7 +164,7 @@ class RunRecorder:
         asof: datetime | None = None,
         code_version: str = "m3.0",
     ) -> None:
-        if kind not in {"analytics", "gold", "cycle", "timeline", "ledger", "forecast", "ingest"}:
+        if kind not in {"analytics", "gold", "cycle", "timeline", "ledger", "forecast", "ingest", "lens"}:
             raise ValueError(f"unknown run kind: {kind}")
         self.session = session
         self.kind = kind

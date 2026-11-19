@@ -74,6 +74,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: "黄金研判", group: "专题" },
   },
   {
+    path: "/lenses",
+    name: "lenses",
+    component: () => import("@/views/LensesView.vue"),
+    meta: { title: "双透镜", group: "专题" },
+  },
+  {
     path: "/theses",
     name: "theses",
     component: () => import("@/views/ThesesView.vue"),
