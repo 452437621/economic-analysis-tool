@@ -41,6 +41,5 @@ Thumbs.db
 pytest-of-*/
 /.idea/
 
-# DSH 工作区技能包：只纳入 skills/（便于跨机器共享），其余运行时状态不入库
-.dsh/*
-!.dsh/skills/
+# DSH 工作区目录（技能包、会话与本地运行时状态），由 harness 自行管理，不入库
+.dsh/
