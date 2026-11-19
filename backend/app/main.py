@@ -7,7 +7,7 @@ import logging
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.api import (
@@ -30,6 +30,7 @@ from app.api import (
     trades,
     watchlist,
 )
+from app.platform import api_docs
 from app.platform.config import ROOT_DIR, settings
 from app.platform.db import SessionLocal, init_db
 from app.platform.logging import setup_logging
@@ -94,6 +95,10 @@ app = FastAPI(
     title=f"{settings.app_name} - 个人市场分析工具",
     version=settings.app_version,
     lifespan=lifespan,
+    # 默认 /docs 依赖 cdn.jsdelivr.net 的 swagger-ui 资源，受限网络下会白屏；
+    # 改用 app/platform/api_docs.py 的本地自托管页面（见下方 /docs 路由）。
+    docs_url=None,
+    redoc_url=None,
 )
 app.include_router(system.router)
 app.include_router(overview.router)
@@ -123,6 +128,12 @@ if WEB_DIR.exists():
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
     return _web_index()
+
+
+@app.get("/docs", include_in_schema=False)
+def api_docs_page() -> HTMLResponse:
+    """本地自托管的接口文档（不依赖外部 CDN）。"""
+    return HTMLResponse(api_docs.render_html(settings.app_name, settings.app_version))
 
 
 @app.get("/favicon.ico", include_in_schema=False)

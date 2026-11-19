@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+### 修复与文档（README 对齐、自托管 /docs、全页截图，2026-11-19）
+
+- **`/docs` 白屏修复**：FastAPI 默认文档页从 `cdn.jsdelivr.net` 加载 swagger-ui，本机网络下不可达导致空白。新增 `backend/app/platform/api_docs.py`（零依赖自托管文档页：读取 `/openapi.json` 按 tag 分组渲染端点、搜索、参数/请求体/响应表与 curl 片段），`main.py` 改为 `FastAPI(docs_url=None, redoc_url=None)` 并显式挂 `/docs`，离线可用。
+- **README 重写为实测口径**：状态行、数据表、架构图、目录树、质量表与历史区块全部改为 2026-11-19 真值——17 个页面（19 条路由）、API 端点 114 个（`/api/v2` 38 个）、361 条 pytest、35 标的、84,237 根日线、35,624 条宏观观测（57 序列）、2,645 条日历、299 篇新闻、3,790 条断言、13 品种 3,120 行持仓；新增「界面一览」19 张 1600×1150 截图与 `scripts/screenshots.ps1` 生成脚本；`/docs` 说明改为自托管。
+- **截图重拍**：新增 `scripts/screenshots.ps1`（本机 Chrome 无头模式逐页截图，自动探测 Chrome/Edge，参数 `-BaseUrl/-OutDir/-Width/-Height/-BudgetMs`）；`docs/assets/vue/` 19 张全部为 2026-11-19 实拍（含新增 `/lenses` 与 `/docs`），删除已无对应页面的 `vue-evidence.png`、`vue-settings.png`、`vue-watchlist.png`。
+- **文档一致性**：`docs/05` 新增「2.9 宏观与流动性补全」并把「宏观 22 条序列」改为 57 条；`docs/08` 重写页面说明（17 页）与定时任务表（30 个作业的真实时间）；`docs/26` 补多透镜权威页；`docs/07` 新增 2026-11-19 进度节；`docs/15`、`docs/27`、`docs/28`、`docs/16` 修正页签数、截张数与 `/docs` 说明。
+- **验证**：`scripts/lint.py` PASSED；全量 `pytest -q` **361 passed**；`vue-tsc --noEmit` 0 error；`vite build` 成功；线上 `/docs` 与 `/api/v2/lenses/state` 均 200。
+
 ### 新增（仓位/止损/组合权重与资金解耦，2026-11-19）
 
 - **决策要素**：新增 `backend/app/lens/position.py`——把资产方向翻译成可执行的下注：止损距离 `2×ATR(14)`（夹 1.5%–8%）、单笔风险预算 `1%×|共识分|`（夹 0.3%–2%）、权重 `风险预算/止损距离`（单资产 ≤30%），组合层强制总敞口 ≤80%、组合风险 ≤6%（超限等比缩放，权重向下取整到 0.1% 避免越界）。长债用收益率 bp 表达止损，其余资产用价格；每项都带 `stop_note` / `rationale` 可供复核。
@@ -24,7 +32,7 @@
 - **合成升级**：`backend/app/lens/engine.py` 从 2 套透镜扩到 13 套（美联储、宋鸿兵、宏观、微观 + 9 人物），`_synthesis` 改为加权合成（权重取 `config/lens.yaml`，合计 1.000；缺失透镜不计 0），一致度升级为多镜共振（≥2 套同向 min≥0.25）/共振强信号（≥3 套且 |consensus|≥0.6）/分歧（正负各≥0.35）/单一透镜；分歧按「最强多 vs 最强空」成对输出；推导从 3 条增至 14 条（`lens.macro.state`、`lens.micro.state`、9 条 `lens.persona.<id>.state`），方法注册新增 `lens.macro.v1`/`lens.micro.v1`/`lens.persona.v1`。
 - **数据源补全**：新增 `backend/app/ingest/providers/fed_h41.py`（美联储 H.4.1 资产负债表 6 条周频序列）、`fed_h6.py`（M1/M2/货币基础）、`nyfed_money.py`（TGCR/BGCR/OBFR 与隔夜逆回购余额）；`pipeline.py` 新增 `SOURCE_FED_RESEARCH`、`MACRO_SERIES_META` 19 个 code、世界银行 5 个结构性指标（经常账户、储蓄率、M2/GDP、资本形成、实际增长），并把联邦债务回补到 1800 天、财政部月度收支回补到 109 个月。`macro_series` 34 → **57 条**。
 - **API**：`/api/v2/lenses/*` 暴露 `macro`/`micro`/`personas` 与 `rules.{macro,micro,personas}`，人物条目补 `name/title/school/key_question/thesis`；`lenses` 新增每日 16:25 作业（`runner.py`、`scheduler.py`、`catchup.py`、`init_db.py` 种子同步）。
-- **前端**：`/lenses` 页签扩为 6 个（合成研判 / 美联储 / 宋鸿兵 / 宏观 / 微观 / 人物透镜 / 规则与证据），新增宏观象限卡、微观结构卡、两层读数网格、人物卡与人物评分矩阵，资产表增透镜数与逐镜分数。
+- **前端**：`/lenses` 页签扩为 6 个（合成研判 / 美联储 / 宋鸿兵 / 宏观·微观 / 人物透镜 / 规则与证据），新增宏观象限卡、微观结构卡、两层读数网格、人物卡与人物评分矩阵，资产表增透镜数与逐镜分数。
 - **文档**：新增 [`docs/28-原始需求达成度审计.md`](docs/28-原始需求达成度审计.md)（原始需求逐条判定与证据、未达成清单、P0–P2 路线）与 [`docs/29-数据源与数据完整性.md`](docs/29-数据源与数据完整性.md)（provider→序列→覆盖、缺口与替代、完整性机制、新增数据源做法）；更新 `docs/27` 缺口表、README 状态与页面表。
 - **验证**：`tests/test_v2_lenses.py` 扩为 8 条（含人物规格校验）；`tests/test_macro_sources.py` 补 H.4.1/H.6 离线 stub；`scripts/lint.py` PASSED；`vue-tsc --noEmit` 0 error；`vite build` 成功；全量 `pytest -q` **358 passed**。
 

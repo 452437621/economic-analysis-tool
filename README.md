@@ -2,11 +2,11 @@
 
 > **Economic Positioning, Intelligence & Cycles** —— 本地运行、以证据为中心的个人宏观—市场—交易决策工作台。
 >
-> 状态：**V2.0.0 — 多透镜宏观研判台（2026-11-19 增量）**：在 V2.0.0（玻璃盒血缘、EPIC-C 2.0 周期引擎、1500–2026 世界长河、预测台账与原则库、交易台账）之上，把「双透镜」扩展为**13 套研判透镜**——美联储一脉、宋鸿兵框架、宏观层、微观层，加上达里奥/德鲁肯米勒/马克斯/冈拉克/埃里安/波萨/佩蒂斯/辜朝明与政策四人体（拉加德/植田和男/贝森特/潘功胜）；**17 个路由页面**、**V2.0 API 端点族 39+ 条**、**361 条后端 pytest**。数据快照（2026-11-19）：**35 标的**、约 **8.4 万根日线**、约 **3.4 万条宏观观测 / 57 条宏观序列**（利率汇率 + 美联储 H.4.1 资产负债表 / H.6 货币供应 / 纽约联储货币市场 / 美国财政部 Fiscal Data / 世界银行 / IMF WEO）、**2,600+ 财经日历**、**13 品种会员持仓（Top20 多空明细）**、约 **290 篇官方新闻 / 4,000 条断言**；**黄金监控 22 指标**（20 项自动采集 + 2 项手动录入，17 项参与评分，coverage 100%）；周期引擎 7 条结构性读数中 3 条已由实时序列供给；LLM 待 Key。多透镜把每套框架做成可计算读数、可证伪规则与加权合成研判，输出 7 类资产共识、多镜共振/分歧对、90 天三情景与规则命中的预警（见 [`docs/27`](docs/27-多透镜研判-美联储宋鸿兵与九位思想者.md)、[`docs/28`](docs/28-原始需求达成度审计.md)、[`docs/29`](docs/29-数据源与数据完整性.md)）。
+> 状态：**V2.0.0 — 多透镜宏观研判台（2026-11-19 增量）**：在 V2.0.0（玻璃盒血缘、EPIC-C 2.0 周期引擎、1500–2026 世界长河、预测台账与原则库、交易台账）之上，把「双透镜」扩展为**13 套研判透镜**——美联储一脉、宋鸿兵框架、宏观层、微观层，加上达里奥/德鲁肯米勒/马克斯/冈拉克/埃里安/波萨/佩蒂斯/辜朝明与政策四人体（拉加德/植田和男/贝森特/潘功胜）；**17 个页面（19 条路由）**、**API 端点 114 个（其中 `/api/v2` 38 个）**、**361 条后端 pytest**。数据快照（2026-11-19）：**35 标的**、**84,237 根日线**、**35,624 条宏观观测 / 57 条宏观序列**（利率汇率 + 美联储 H.4.1 资产负债表 / H.6 货币供应 / 纽约联储货币市场 / 美国财政部 Fiscal Data / 世界银行 / IMF WEO）、**2,645 条财经日历**、**13 品种会员持仓（Top20 多空明细）**、**299 篇官方新闻 / 3,790 条断言**；**黄金监控 22 指标**（20 项自动采集 + 2 项手动录入，17 项参与评分，coverage 100%）；周期引擎 7 条结构性读数中 3 条已由实时序列供给；LLM 待 Key。多透镜把每套框架做成可计算读数、可证伪规则与加权合成研判，输出 7 类资产共识、多镜共振/分歧对、仓位/止损/组合权重、90 天三情景与规则命中的预警（见 [`docs/27`](docs/27-多透镜研判-美联储宋鸿兵与九位思想者.md)、[`docs/28`](docs/28-原始需求达成度审计.md)、[`docs/29`](docs/29-数据源与数据完整性.md)）。
 
-![V1.1 总览](docs/assets/vue/vue-overview.png)
+![总览（2026-11-19）：数据时点、跨资产热力图、利率快照](docs/assets/vue/vue-overview.png)
 
-![V1.3 黄金研判](docs/assets/vue/vue-gold.png)
+![多透镜研判（2026-11-19）：13 套框架加权共识与组合仓位](docs/assets/vue/vue-lenses.png)
 
 ---
 
@@ -32,7 +32,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
 ```
 
 - 前端：**http://127.0.0.1:8765**
-- FastAPI 交互式 API 文档：**http://127.0.0.1:8765/docs**
+- API 文档：**http://127.0.0.1:8765/docs**（自托管渲染 `/openapi.json`，不依赖外网 CDN，离线可用；原始规格在 `/openapi.json`）
 
 首次安装约 2–5 分钟（取决于网络）。已在运行时再次 `start` 只提示、不会起第二个实例；端口被其他程序占用时**拒绝启动**并打印占用进程。
 
@@ -102,7 +102,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 
 ---
 
-## 已接入的数据（2026-11-15 快照）
+## 已接入的数据（2026-11-19 快照）
 
 | 数据 | 来源 | 覆盖 |
 |---|---|---|
@@ -117,6 +117,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 | 美债利率 | 美国财政部 CSV | 2/5/10/30Y、5/10Y 实际利率、5/10Y 盈亏平衡，近 5 年日频 |
 | 日/德国债 | 日本财务省 / 欧洲央行 | JP2Y/10Y/30Y、DE2Y/10Y、FR10Y（月频），近 4 年 |
 | 中国国债 | 东方财富 | CN2Y/5Y/10Y/30Y、10Y-2Y 利差（源实际约 2 年日频） |
+| 美联储资产负债表 | 美联储 H.4.1（周频） | 总资产、持有国债、MBS、准备金余额、TGA、流通货币，回补 288 周（2021-02 起） |
+| 货币供应 | 美联储 H.6（月频） | M1、M2、货币基础 17 个月（归档页 2020 年后下线，仅取当前发布页） |
+| 货币市场与回购 | 纽约联储 | TGCR / BGCR / OBFR / 隔夜逆回购（RRP）规模，2021-11 起日频 |
+| 财政与结构性 | 美国财政部 Fiscal Data | 联邦债务（1,800 天）、月度收支四项（109 个月：收入/支出/赤字/利息） |
+| 全球结构性指标 | 世界银行 / IMF WEO | GDP、CPI、失业、债务/GDP、经常账户、储蓄率、M2/GDP、资本形成、实际增长；年频，本地库兜底 |
 | 财经日历 | 东方财富 | 过去 180 天 + 未来 14 天经济数据（中/美/欧/日等），每 6 小时更新 |
 | 会员持仓 | 上期所 / 郑商所 / 新浪（大商所） | 铜铝锌镍金银铅锡 + 棉花白糖 + 豆粕棕榈铁矿，共 13 品种 Top20 多空（日频） |
 | 新闻政策 | 官方 RSS/HTML | 美联储、欧洲央行、日本央行、EIA、USTR、国家统计局（6 源） |
@@ -125,7 +130,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 
 > 限制：Yahoo / FRED / BLS 国内直连不可用（403/超时）；LME 无免费官方日线（外盘以新浪替代）；BIS 无公开可机读黄金序列（掉期/存储两项权重 0、保留手动录入）；CME 官网本机不可达，COMEX 库存读 MetalCharts 镜像（需署名）；上金所不公布库存，改以上期所黄金仓单、上金所 3M 租借费率作代理。更多见 [05 数据源与接口清单](docs/05-数据源与接口清单.md)、[07 开发进度](docs/07-开发进度.md)。
 >
-> 数据量随每日采集增长，上表与状态栏为 2026-11-15 数据库快照（35 标的 / 65,485 根日线 / 21,919 条宏观观测 / 2,584 条日历 / 268 篇新闻 / 3,729 条断言），黄金指标 22 项（20 自动 / 2 手动，17 计分）。
+> 数据量随每日采集增长，上表与状态栏为 **2026-11-19** 数据库快照（35 标的 / **84,237 根日线** / **35,624 条宏观观测（57 条序列）** / **2,645 条日历** / **299 篇新闻** / **3,790 条断言** / 13 品种 3,120 行会员持仓），黄金指标 22 项（20 自动 / 2 手动，17 计分，底层 `gold_metrics` 20 个 code）。
 
 ---
 
@@ -150,10 +155,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 | `/` | 总览 | 单请求聚合（健康/简报/快照/自选含迷你走势/利率/告警/日历/任务）、Hero 简报入口、打印 |
 | `/market` | 市场行情 | 35 标的快照（显示单位、延迟徽标）、外盘/国内分表、会员持仓 Top20、历史走势弹窗 |
 | `/rates` | 利率与流动性 | 美/日/德/法/中利率、实际利率、盈亏平衡、SOFR−EFFR 利差与解读 |
-| `/analysis` | 分析引擎 | 市场风向、周期、定价归因、相关性、历史类比、领先滞后、事件研究、黄金评分卡 |
+| `/analysis` | 分析引擎 | 市场风向、周期、相关性、定价归因、历史类比、异动品种、财经日历（含黄金评分卡） |
 | `/signals` | 交易信号 | 规则信号、草稿计划（标准手数/止损距离/权重/杠杆/风控）、含成本回测、预测校准（Brier）；手数与资金脱钩，不因余额不足拦截 |
 | `/lenses` | 多透镜研判 | 13 套框架：美联储一脉、宋鸿兵、宏观层、微观层、达里奥/德鲁肯米勒/马克斯/冈拉克/埃里安/波萨/佩蒂斯/辜朝明/政策四人体；合计 36 条内置规则 + 9×8–12 条人物规则、7 类资产加权共识与多镜分歧对、仓位/止损/组合权重、90 天三情景、预测登记与 AI 解读 |
-| `/gold` | 黄金研判 | 综合评分环、5 组因子卡、5 个 ECharts（时间范围 1月–全部，可按图叠加金价对比）、因子明细、数据源监控、手动录入、方法论 |
+| `/gold` | 黄金研判 | 综合评分环、22 项因子分 6 组（央行购金 / ETF / 租赁掉期存储 / 库存与实物 / 做市商持仓 / 价格与宏观驱动）、5 个 ECharts（时间范围 1 月–全部，可按图叠加金价对比）、因子明细、数据源监控、手动录入、方法论 |
 | `/theses` | 分析依据 | 新闻/事件/日历筛选、原文快照、断言高亮、事件→证据跳转、论点与情景管理 |
 | `/briefs` | 简报与日志 | 日报/周报/月报、历史期次（上一期/下一期）、Markdown 导出、打印/PDF、关联证据（交易日志已独立为 `/trades`） |
 | `/system` | 系统状态 | 健康、数据量、数据源、数据质检、任务、验收自检（14 项 DoD） |
@@ -186,6 +191,32 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 
 ---
 
+## 界面一览（2026-11-19 实拍）
+
+全部截图由 `scripts/screenshots.ps1` 用本机 Chrome 无头模式按 1600×1150 逐页拍摄，源文件在 `docs/assets/vue/`（19 张）；数据来源于同一天的 `data/epic.db`，会随每日采集变化，重拍即可更新。
+
+| 页面 | 截图 |
+|---|---|
+| 总览（浅色主题） | <img src="docs/assets/vue/vue-overview-light.png" width="780" alt="总览浅色"> |
+| 市场行情 | <img src="docs/assets/vue/vue-market.png" width="780" alt="市场行情"> |
+| 利率与流动性 | <img src="docs/assets/vue/vue-rates.png" width="780" alt="利率与流动性"> |
+| 分析引擎 | <img src="docs/assets/vue/vue-analysis.png" width="780" alt="分析引擎"> |
+| 交易信号 | <img src="docs/assets/vue/vue-signals.png" width="780" alt="交易信号"> |
+| 黄金研判 | <img src="docs/assets/vue/vue-gold.png" width="780" alt="黄金研判"> |
+| 周期罗盘 | <img src="docs/assets/vue/vue-cycle.png" width="780" alt="周期罗盘"> |
+| 预警台 | <img src="docs/assets/vue/vue-alerts.png" width="780" alt="预警台"> |
+| 分析过程（玻璃盒） | <img src="docs/assets/vue/vue-pipeline.png" width="780" alt="分析过程"> |
+| 世界长河 | <img src="docs/assets/vue/vue-history.png" width="780" alt="世界长河"> |
+| 预测台账 | <img src="docs/assets/vue/vue-ledger.png" width="780" alt="预测台账"> |
+| 原则库 | <img src="docs/assets/vue/vue-principles.png" width="780" alt="原则库"> |
+| 交易 | <img src="docs/assets/vue/vue-trades.png" width="780" alt="交易"> |
+| 简报与日志 | <img src="docs/assets/vue/vue-briefs.png" width="780" alt="简报与日志"> |
+| 分析依据 | <img src="docs/assets/vue/vue-theses.png" width="780" alt="分析依据"> |
+| 系统状态 | <img src="docs/assets/vue/vue-system.png" width="780" alt="系统状态"> |
+| API 文档（自托管） | <img src="docs/assets/vue/vue-docs.png" width="780" alt="API 文档"> |
+
+---
+
 ## 文档索引
 
 | 文档 | 内容 |
@@ -209,7 +240,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 | [17 黄金监控与综合研判](docs/17-黄金监控与综合研判.md) | 央行购金/ETF/租赁掉期存储/三地库存/做市商指标、数据源与口径替代、评分算法、API 与页面 |
 | [CHANGELOG](CHANGELOG.md) | 版本变更记录与发布约定 |
 
-### V2.0 改造方案（规划中，2026-11-17）
+### V2.0 改造方案（2026-11-17 实施，已全部落地）
 
 | 文档 | 内容 |
 |---|---|
@@ -222,6 +253,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 | [24 原则库与当下研判](docs/24-原则库与当下研判.md) | 26 条原则（原理/指标/信号/失效条件）、2026-11-17 五层周期定位、四情景、12 条预警规则、决策检查清单 |
 | [研究笔记：TradingEconomics 标杆](docs/research/tradingeconomics-benchmark.md) | IA/卡片/API/付费墙实测、值得抄 10 条与不抄 5 条 |
 | [研究笔记：达利欧框架](docs/research/dalio-framework.md) | 《债务危机》《原则》原文出处、48 案例、五层周期、指标映射、C 级标注、未核实清单 |
+| [研究笔记：美联储一脉](docs/research/fed-chair-framework.md) | 格林斯潘/伯南克/耶伦/鲍威尔四任主席的反应函数、26 指标、15 条可证伪规则、8 个案例、20 处【未核实】 |
+| [研究笔记：宋鸿兵框架](docs/research/song-hongbing-framework.md) | 《货币战争》系列与近年讲话：美元环流与「美元心脏」三态、25 指标、12 条 S 规则、出处 N01–N50 |
+| [研究笔记：九位思想者](docs/research/persona-dalio.md) | `docs/research/persona-*.md` 共 9 份：达里奥 / 德鲁肯米勒 / 马克斯 / 冈拉克 / 埃里安 / 波萨 / 佩蒂斯 / 辜朝明 / 政策四人体，各 300–400 行、14 项指标、8–12 条带阈值的可证伪规则、2023–2026 观点验证、出处分级 |
 | [研究笔记：1500–2026 历史核实](docs/research/history-1500-2026.md) | MPD2023 GDP 份额、储备份额数据、62 条危机与战争、周期长度的学术检验、24 节点 JSON |
 | [研究笔记：代码库审计](docs/research/codebase-audit.md) | 63 端点/40 表/算法逐个说明/调度/EPIC-C 差距/10 条技术债/10 条工程建议 |
 | [V2.0 交互原型](docs/design/mockup-v2/index.html) | 单文件 HTML 原型：周期罗盘 / 世界长河 / 透明管线 / 预警台 / 为什么抽屉 / 浅色，含 6 张 1440×1000 截图 |
@@ -236,6 +270,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 | [27 多透镜研判：美联储一脉、宋鸿兵与九位思想者](docs/27-多透镜研判-美联储宋鸿兵与九位思想者.md) | 13 套框架的分工与加权合成、21+31+14+14 条读数与九位人物各 14 条、F1–F12 / 12 条 S / M1–M6 / P1–P6 与人物规则、美元心脏三态、一致度与置信度、仓位止损组合权重、血缘与接口、数据缺口、使用与复现 |
 | [28 原始需求达成度审计](docs/28-原始需求达成度审计.md) | 原始需求逐条拆解与达成度判定（达成/部分达成/未达成 + 证据位置）、未达成与弱项清单、下一步优先级（决策落地与预测校准为 P0） |
 | [29 数据源与数据完整性](docs/29-数据源与数据完整性.md) | provider→序列→频率→覆盖清单、本轮新增 H.4.1/H.6/纽约联储货币市场与世界银行 5 指标、缺口与替代方案、完整性机制、新增数据源标准做法 |
+| [scripts/screenshots.ps1](scripts/screenshots.ps1) | 页面截图：本机 Chrome 无头模式按 1600×1150 逐页拍摄到 `docs/assets/vue/`（19 张，需服务已启动；可用 `-BaseUrl`/`-OutDir`/`-Width` 覆盖） |
 | [scripts/snapshot.ps1](scripts/snapshot.ps1) | 破坏性操作前的工作区快照：`head.txt` / `status.txt` / `worktree.patch` / `index.patch` / `untracked/`，产物写 `data/backups/snapshot-<时间戳>/` |
 
 ---
@@ -261,14 +296,17 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 
 ```
 浏览器（Vue 3 SPA，web/ 构建产物）
-   │ HTTP 127.0.0.1:8765（SPA 回退 + /api + /docs）
-FastAPI（12 组路由 / 63 个端点：api / 导出 / 打印）
+   │ HTTP 127.0.0.1:8765（SPA 回退 + /api + /docs + /openapi.json）
+FastAPI（18 组路由 / 114 个端点，其中 /api/v2 38 个；/docs 为自托管渲染）
    │
-├─ 采集适配层  sina / eastmoney / treasury / jgb(mof) / ecb / nyfed / frankfurter / czce / shfe / rss（限速、重试、快照、健康）
+├─ 采集适配层  sina / eastmoney / treasury / treasury_fiscal / fed_h41 / fed_h6 / nyfed / nyfed_money / jgb(mof) / ecb / worldbank / imf / frankfurter / czce / shfe / rss（限速、重试、快照、健康）
 ├─ 知识层      documents / claims / events / theses / evidence（M2）
 ├─ 分析层      regime / attribution / correlation / analogs / wind / leadlag / calendar_study（M3）
 ├─ 决策层      signals / plans / backtest / predictions / review（M4）
-├─ 黄金监控    registry / providers / scoring / runner（V1.3，10 个数据源）
+├─ 周期引擎    cycle/{market,indicators,composite,phases,sustainability,world,analogs,scenarios,alerts,structural}（EPIC-C 2.0）
+├─ 多透镜      lens/{fed,song,layers,persona,position,engine}（13 套框架 → 加权共识 + 仓位/止损/组合权重）
+├─ 透明化      provenance/{engine,methods}（analysis_runs / analysis_steps / derivations / rule_hits / observations / method_registry）
+├─ 黄金监控    gold/{registry,providers,scoring,runner}（V1.3，10 个数据源）
 ├─ LLM 编排    DeepSeek（M2，待 Key）
 └─ 存储        SQLite（WAL）+ data/raw 原文快照 + 导出/日志文件
 ```
@@ -293,20 +331,21 @@ FastAPI（12 组路由 / 63 个端点：api / 导出 / 打印）
 | V1.3 | 黄金监控与综合研判（22 指标 / 17 项计分、10 个 provider、gold API、`/gold` 页面、分析页评分卡） | ✅ 完成（2026-11-14 首发；2026-11-15 补全 5 项数据源后 coverage 100%；127 tests；见 [17](docs/17-黄金监控与综合研判.md)） |
 | V1.4 | LLM 全链路实跑、港股/A 股扩展、组合级风控、PDF 服务端渲染、大商所持仓/LME 日线、黄金 BIS 掉期/存储解析与权重回测 | 🟡 计划中（见 CHANGELOG `Unreleased`） |
 | **V2.0** | 可审计的宏观研判台：玻璃盒透明化（13 表血缘 + 7 端点）、EPIC-C 周期引擎 2.0（六分量/五层周期/四情景/历史类比）、世界长河 1500–2026（73 事件/6 霸权）、预测台账与 26 条原则库、六新页 | ✅ **完成**（2026-11-17；M0–M5 六个提交 `161a266`→`7ebdc34`→`e5bd1bb`→`d33fae1`→`649185f`→`38eb7dd`+`fdb1d83`；266 tests；见 [18](docs/18-V2.0改造总案.md)–[24](docs/24-原则库与当下研判.md)） |
+| V2.0 增量 | 多透镜研判台（13 套框架）、宏观/微观两层、九位思想者 YAML 规格、仓位/止损/组合权重与资金解耦、6 类数据源补全、自托管 `/docs`、全页截图重拍 | ✅ **完成**（2026-11-19；361 tests；见 [27](docs/27-多透镜研判-美联储宋鸿兵与九位思想者.md)–[29](docs/29-数据源与数据完整性.md)） |
 
 ---
 
 ## 目录
 
 ```
-backend/app/        FastAPI 应用（api / ingest / jobs / platform / models / analytics / decision / knowledge / llm / gold / narrative）
+backend/app/        FastAPI 应用（api / ingest / jobs / platform / models / analytics / decision / knowledge / llm / gold / narrative / cycle / lens / provenance / ledger / timeline / decision）
 frontend/           Vue 3 + TS + Vite 源码（src/{api,components,composables,layouts,router,stores,styles,utils,views}）
 web/                前端构建产物（index.html + assets/*，由 FastAPI 托管；不入版本库，需先构建）
-config/             默认配置（关注清单、品种、LLM、数据延迟；宏观序列/新闻源实际以 backend/app/ingest/pipeline.py 为准）
-docs/               设计与进度文档（含 Vue 版截图 docs/assets/vue/）
+config/             cycle.yaml（周期指标/规则/情景）、lens.yaml（13 套权重/规则/数据缺口）、personas/*.yaml（九位人物规格）、default.yaml、translations.zh.json
+docs/               设计与进度文档 + docs/research 人物/框架研究笔记 + 界面截图 docs/assets/vue/（19 张，2026-11-19）
 prompts/            LLM 提示词模板（断言抽取 / 简报编辑）
-scripts/            setup / build / dev / start / stop / restart / backup / restore / selfcheck / check_acceptance / ci / maintain / lint
-tests/              pytest（解析器离线测试 + smoke + 前端源码/产物）
+scripts/            setup / build / dev / start / stop / restart / backup / restore / selfcheck / check_acceptance / ci / maintain / lint / screenshots / snapshot
+tests/              pytest（解析器离线测试 + smoke + 前端源码/产物 + 透镜/周期/台账）
 data/               运行时数据（gitignore：SQLite、raw 快照、日志、备份）
 .github/            CI（lint + pytest + 前端构建 + 打包导入冒烟）
 ```
@@ -321,6 +360,7 @@ data/               运行时数据（gitignore：SQLite、raw 快照、日志�
 - **回补时长**：数据采集类 bootstrap 在启动后约 3–55 秒触发，分析/决策类约 4–5 分钟；全部回补完成时间取决于网络与数据源响应。
 - **备份与数据**：`data/` 不纳入版本库；重要节点请执行 `scripts\backup.ps1`（保留 14 份）。
 - **运行环境**：目标环境为 Windows 单机、个人研究用途；一键脚本与自检门禁均按 Windows PowerShell 编写。
+- **数字与截图口径**：README 中的数据量、端点与测试条数均为 2026-11-19 快照；`/openapi.json` 是端点数量的权威口径，`README` 的界面截图为同日实拍，重拍请运行 `.\scripts\screenshots.ps1`（需服务已启动）。
 
 ---
 
