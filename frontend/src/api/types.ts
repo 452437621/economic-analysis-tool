@@ -1701,7 +1701,7 @@ export interface TradeStats extends TradeSummary {
   by_month: TradeMonthStat[];
 }
 
-// ── 双透镜（美联储主席 / 宋鸿兵）─────────────────────────────────────
+// ── 多透镜研判（美联储 / 宋鸿兵 / 宏观层 / 微观层 / 九位思想者）────────
 export type LensTab = "synthesis" | "fed" | "song" | "layers" | "personas" | "evidence";
 export type LensEvidence = "E0" | "E1" | "E2" | "E3" | "E4";
 

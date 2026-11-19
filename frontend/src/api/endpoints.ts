@@ -318,7 +318,7 @@ import type {
   LensStateResponse,
 } from "./types";
 
-// ── 双透镜 ────────────────────────────────────────────────────────────
+// ── 多透镜研判（13 套框架合成）────────────────────────────────────────
 export function getLensState(refresh = false): Promise<LensStateResponse> {
   return getJson<LensStateResponse>("/api/v2/lenses/state", {
     params: refresh ? { refresh: true } : undefined,

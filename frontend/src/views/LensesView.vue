@@ -3,13 +3,15 @@
     <div class="page-head">
       <div>
         <div class="page-eyebrow">
-          专题 · 双透镜
+          专题 · 多透镜
           <template v-if="state?.asof"> · 数据截至 {{ fmtDate(state.asof) }}</template>
           <template v-if="state?.config_version"> · 配置 v{{ state.config_version }}</template>
         </div>
         <h1 class="page-h1">
-          双透镜研判
-          <span class="page-sub">美联储主席一脉的反应函数 × 宋鸿兵的美元环流与债务货币化</span>
+          多透镜研判
+          <span class="page-sub">
+            美联储一脉 · 宋鸿兵 · 宏观 / 微观两层 · 九位思想者 —— 13 套框架加权共振
+          </span>
         </h1>
         <span v-if="state?.run" class="gen-at">
           运行 {{ state.run.status }} · 耗时 {{ state.run.duration_ms ?? "—" }} ms ·
@@ -20,7 +22,7 @@
         <span v-if="state?.run?.degraded" class="badge badge--warn badge--sm">降级运行</span>
         <button class="btn btn--sm btn--primary" type="button" :disabled="running" @click="runNow()">
           <svg class="ic" :class="{ spin: running }"><use href="#i-refresh" /></svg>
-          {{ running ? "重算中" : "重算双透镜" }}
+          {{ running ? "重算中" : "重算多透镜" }}
         </button>
         <button class="btn btn--sm btn--ghost" type="button" :disabled="loading" @click="reload()">
           <svg class="ic" :class="{ spin: loading }"><use href="#i-refresh" /></svg>刷新
@@ -45,7 +47,7 @@
     <section v-else-if="!state" class="card">
       <ErrorState :error="error" @retry="bootstrap()" />
       <div class="lens-empty-hint">
-        首次打开需要先运行一次双透镜；点击「重算双透镜」或上方重试。
+        首次打开需要先运行一次多透镜；点击「重算多透镜」或上方重试。
       </div>
     </section>
 
@@ -87,12 +89,13 @@
         </section>
 
         <section class="card lens-stat">
-          <div class="lens-stat-label">双镜合成</div>
+          <div class="lens-stat-label">多镜合成</div>
           <div class="lens-stat-value">
             {{ state.synthesis.consensus_count }}<small>项共振</small>
           </div>
           <div class="lens-stat-meta">
             <span class="badge badge--sm">{{ state.synthesis.divergences.length }} 项分歧</span>
+            <span class="mono">参与 {{ state.synthesis.lens_count ?? 13 }} 套</span>
             <span class="mono">{{ state.synthesis.outlook.horizon_days }} 天</span>
           </div>
           <div class="lens-stat-note">{{ state.synthesis.narrative }}</div>
@@ -121,13 +124,16 @@
           <div class="card-head">
             <span class="card-title">七类资产 · 多透镜共振表</span>
             <span class="spacer"></span>
-            <span class="lens-muted">综合分 −2…+2；方向按 |共识| ≥ 0.25 判定；仓位按风险预算推导</span>
+            <span class="lens-muted">
+              综合分 −2…+2 由 {{ state.synthesis.lens_count ?? 13 }} 套透镜加权；
+              方向按 |共识| ≥ 0.25 判定；仓位按风险预算推导
+            </span>
           </div>
           <div class="lens-table-wrap">
             <table class="lens-table">
               <thead>
                 <tr>
-                  <th>资产</th><th>最新</th><th>美联储</th><th>宋鸿兵</th>
+                  <th>资产</th><th>最新</th><th>美联储</th><th>宋鸿兵</th><th>参与</th>
                   <th>共识</th><th>一致度</th><th>方向</th><th>胜率</th>
                   <th>仓位</th><th>止损</th><th>权重</th><th>操作建议</th>
                 </tr>
@@ -141,6 +147,9 @@
                   <td class="mono">{{ fmtNumber(asset.last, priceDigits(asset.last)) }}</td>
                   <td class="mono" :class="scoreClass(asset.fed)">{{ fmtSigned(asset.fed) }}</td>
                   <td class="mono" :class="scoreClass(asset.song)">{{ fmtSigned(asset.song) }}</td>
+                  <td class="mono lens-muted" title="参与该资产共识的透镜数量（两套主透镜之外的宏观、微观与人物透镜计入共识分）">
+                    {{ asset.lenses ?? 2 }}
+                  </td>
                   <td>
                     <div class="lens-score-cell">
                       <span class="mono" :class="scoreClass(asset.consensus)">{{ fmtSigned(asset.consensus) }}</span>
@@ -267,7 +276,7 @@
               </ul>
               <EmptyState
                 v-else
-                text="两镜当前没有明显分歧"
+                text="当前没有明显分歧"
                 hint="没有分歧时以共振项为仓位来源；出现分歧时单一透镜的结论只能做研究。"
               />
             </div>
@@ -459,7 +468,7 @@
       <!-- 宏观层 / 微观层 -->
       <template v-else-if="activeTab === 'layers'">
         <div v-if="!state.macro && !state.micro" class="card lens-card">
-          <EmptyState text="尚无宏观/微观层推导" hint="点击「重算双透镜」生成宏观层与微观层。" />
+          <EmptyState text="尚无宏观/微观层推导" hint="点击「重算多透镜」生成宏观层与微观层。" />
         </div>
         <div v-else class="lens-grid lens-grid--2">
           <section v-if="state.macro" class="card lens-card">
@@ -943,7 +952,7 @@ async function bootstrap(): Promise<void> {
   if (!data.value) {
     try {
       override.value = await runLenses();
-      toast.ok("双透镜已首次运行");
+      toast.ok("多透镜已首次运行");
     } catch (err) {
       toast.bad(`运行失败：${errText(err)}`);
     }
@@ -956,7 +965,7 @@ async function runNow(): Promise<void> {
   running.value = true;
   try {
     override.value = await runLenses();
-    toast.ok("双透镜已重算");
+    toast.ok("多透镜已重算");
     void loadForecasts();
   } catch (err) {
     toast.bad(`重算失败：${errText(err)}`);

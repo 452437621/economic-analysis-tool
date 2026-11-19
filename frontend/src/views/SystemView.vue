@@ -671,7 +671,7 @@ onMounted(() => {
 .table-wrap {
   overflow-x: auto;
 }
-/* 系统状态页的表格全部展开：作业 28 条、数据源 18 条、验收 14 项都要能直接看到，
+/* 系统状态页的表格全部展开：作业、数据源、验收清单都要能直接看到，
    不套全站 table-wrap 的 411px 内部滚动（否则最后一行会被裁掉半行）。 */
 .sys-wrap {
   max-height: none;

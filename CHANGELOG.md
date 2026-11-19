@@ -30,7 +30,7 @@
 
 ### 新增（双透镜：美联储一脉与宋鸿兵框架，2026-11-18）
 
-- **研究笔记**：新增 `docs/research/fed-chair-framework.md`（格林斯潘/伯南克/耶伦/鲍威尔：哲学演变、反应函数、26 指标、R1–R15、8 案例、2025–26 预警、S1–S27 出处与 20 处【未核实】）与 `docs/research/song-hongbing-framework.md`（《货币战争》理论骨架、资产映射、25 指标可得性、S1–S14、T1–T8、2023–2026 研判验证、N01–N50 出处）。新增设计说明 [`docs/27-双透镜-美联储与宋鸿兵.md`](docs/27-双透镜-美联储与宋鸿兵.md)。
+- **研究笔记**：新增 `docs/research/fed-chair-framework.md`（格林斯潘/伯南克/耶伦/鲍威尔：哲学演变、反应函数、26 指标、R1–R15、8 案例、2025–26 预警、S1–S27 出处与 20 处【未核实】）与 `docs/research/song-hongbing-framework.md`（《货币战争》理论骨架、资产映射、25 指标可得性、S1–S14、T1–T8、2023–2026 研判验证、N01–N50 出处）。新增设计说明 [`docs/27-多透镜研判-美联储宋鸿兵与九位思想者.md`](docs/27-多透镜研判-美联储宋鸿兵与九位思想者.md)。
 - **后端引擎**：新增 `backend/app/lens/`——`common.py`（读数/规则求值/分位/z/相关）、`fed.py`（21 条读数、stance 加权分位、增长×通胀四象限、Fed Put 行权距离、7 类资产评分）、`song.py`（31 条读数、SOFR−EFFR「美元心脏」三态、热/冷环流相位、收割与债务风险、黄金状态）、`engine.py`（`run_lenses` 六步编排、三条推导、observations 幂等、透镜预测直写 Forecast）。新增 `config/lens.yaml`（F1–F12、12 条 S 规则、权重、数据缺口与免责声明；S6/S14 因缺可计算指标未纳入）。
 - **API**：新增 `/api/v2/lenses`——`GET /state`、`POST /run`、`GET /forecast-codes`、`GET/POST /forecasts`、`GET /ping`、`POST /commentary`；`/state` 无落库数据时懒运行一次，并支持从落库推导的 `rule_metrics` 重建全部规则状态（含 miss/unknown）。方法注册新增 `lens.engine.v1`、`lens.fed.v1`、`lens.song.v1`、`lens.synthesis.v1`；`RunRecorder` 的 kind 白名单加入 `lens`。
 - **前端**：新增 `/lenses`「双透镜」页（合成研判 / 美联储透镜 / 宋鸿兵透镜 / 规则与证据四页签，7 类资产共识表、预警与分歧、90 天三情景、21+31 条读数网格、F/S 规则 trace、预测登记、AI 解读），路由与侧栏「专题」组接入；`api/types.ts` 与 `endpoints.ts` 同步。

@@ -77,7 +77,7 @@ const routes: RouteRecordRaw[] = [
     path: "/lenses",
     name: "lenses",
     component: () => import("@/views/LensesView.vue"),
-    meta: { title: "双透镜", group: "专题" },
+    meta: { title: "多透镜研判", group: "专题" },
   },
   {
     path: "/theses",

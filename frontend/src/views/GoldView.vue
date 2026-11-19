@@ -5,7 +5,7 @@
         <div class="page-eyebrow">研究分析 · 黄金 · 数据截至 {{ earliestFactorAsOf }}</div>
         <h1 class="page-h1">
           黄金研判
-          <span class="page-sub">央行购金 · 全球 ETF · 租赁/掉期 · 库存 · 做市商持仓</span>
+          <span class="page-sub">央行购金 · 全球 ETF · 租赁/掉期/存储 · 库存与实物 · 做市商持仓 · 价格与宏观驱动</span>
         </h1>
         <span class="gen-at">（生成于 {{ updatedLabel }}）</span>
       </div>

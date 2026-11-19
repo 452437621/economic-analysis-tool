@@ -148,8 +148,19 @@ def _last_close(panel: Panel, symbol: str) -> float | None:
 
 
 def _lens_scores(lens_value: dict[str, Any]) -> dict[str, float | None]:
-    """把一份透镜（人/层）的资产评分摊平成 ``{asset_id: score}``。"""
-    scores = lens_value.get("scores") or lens_value.get("asset_scores") or {}
+    """把一份透镜的资产评分摊平成 ``{asset_id: score}``。
+
+    人物透镜与宏观/微观层的评分在顶层 ``scores``；美联储与宋鸿兵透镜的评分在
+    ``state.asset_scores``，这里两种结构都接受，避免主透镜被静默排除在合成之外。
+    """
+    state = lens_value.get("state") or {}
+    scores = (
+        lens_value.get("scores")
+        or lens_value.get("asset_scores")
+        or state.get("scores")
+        or state.get("asset_scores")
+        or {}
+    )
     out: dict[str, float | None] = {}
     for asset in ASSETS:
         item = scores.get(asset["id"]) or {}
@@ -456,7 +467,7 @@ def _outlook(
         "invalidators": [
             "若 10Y 实际利率在 3 个月内下行 >50bp 而金价不涨，则『实际利率→黄金』的映射失效。",
             "若 SOFR−EFFR 回落至 5bp 以下且 DXY 250 日分位跌破 30%，冷环流判断失效。",
-            "若两镜连续 20 个交易日同向且资产价格反向，视为框架失效，需降权而不是加仓。",
+            "若多数透镜连续 20 个交易日同向且资产价格反向，视为框架失效，需降权而不是加仓。",
         ],
     }
 

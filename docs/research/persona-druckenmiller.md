@@ -238,7 +238,7 @@
 
 ## 7. 与美联储透镜、宋鸿兵透镜的差异与互补
 
-### 7.1 与美联储透镜（`docs/research/fed-chair-framework.md`、`docs/27-双透镜`）
+### 7.1 与美联储透镜（`docs/research/fed-chair-framework.md`、`docs/27-多透镜研判`）
 
 | 维度 | 美联储透镜 | 德鲁肯米勒透镜 |
 |---|---|---|

@@ -1,10 +1,12 @@
-"""双透镜 API：美联储主席透镜 / 宋鸿兵透镜。
+"""多透镜 API：13 套框架（美联储 / 宋鸿兵 / 宏观层 / 微观层 / 九位人物）。
 
 ``GET /state`` 读取最近一次落库推导；无落库数据时懒运行一次，``refresh=true``
 强制重算，``POST /run`` 显式重算。推导写入 ``lens.fed.state`` /
-``lens.song.state`` / ``lens.synthesis``，读数写入 ``observations``
-（``lens.fed.*`` / ``lens.song.*`` / ``lens.score.*``），规则命中写入
-``rule_hits``（``lens.F*`` / ``lens.S*``）。
+``lens.song.state`` / ``lens.macro.state`` / ``lens.micro.state`` /
+``lens.persona.<id>.state`` / ``lens.synthesis``，读数写入 ``observations``
+（``lens.<透镜>.<读数>`` / ``lens.score.*`` / ``lens.<透镜>.lean``），
+规则命中写入 ``rule_hits``（``lens.F*`` / ``lens.S*`` / ``lens.M*`` /
+``lens.P*`` / ``lens.<人物前缀>*``）。
 """
 
 from __future__ import annotations
@@ -376,11 +378,11 @@ def post_commentary(
             detail="未配置 DEEPSEEK_API_KEY：透镜的读数、规则与综合评分不依赖 LLM，只有这段解读需要。",
         )
     system = (
-        "你是 EPIC 双透镜的市场解读助手。只能基于给定的读数、规则命中与资产评分作答，"
-        "不得编造数据；区分「事实/推断/未知」，引用规则编号（F*/S*）与证据等级；"
-        "回答用中文，先给结论，再给三条以内的依据，最后给一条失效条件。"
+        "你是 EPIC 多透镜研判台的市场解读助手。只能基于给定的读数、规则命中与资产评分作答，"
+        "不得编造数据；区分「事实/推断/未知」，引用规则编号（F*/S*/M*/P* 与人物的 DL/SD/HM/JG/EE/ZP/MP/RK/PA 前缀）"
+        "与证据等级；回答用中文，先给结论，再给三条以内的依据，最后给一条失效条件。"
     )
-    question = payload.question or "请用 300 字以内解读当前双透镜状态，指出最重要的三个信号与一个风险。"
+    question = payload.question or "请用 300 字以内解读当前多透镜状态，指出最重要的三个信号与一个风险。"
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": f"{_commentary_context(state)}\n\n问题：{question}"},

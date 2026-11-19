@@ -5,7 +5,7 @@
         <div class="page-eyebrow">研究分析 · 分析引擎 · 数据截至 {{ asofLabel }}</div>
         <h1 class="page-h1">
           分析引擎
-          <span class="page-sub">市场风向 · 周期 · 相关性 · 归因 · 类比 · 日历</span>
+          <span class="page-sub">市场风向 · 周期 · 相关性 · 归因 · 类比 · 异动 · 日历</span>
         </h1>
         <span class="gen-at">（生成于 {{ updatedLabel }}）</span>
       </div>

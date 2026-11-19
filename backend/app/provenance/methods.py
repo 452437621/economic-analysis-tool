@@ -84,11 +84,14 @@ METHOD_SPECS: tuple[dict, ...] = (
     },
     {
         "method_id": "lens.engine.v1",
-        "name": "双透镜引擎",
+        "name": "多透镜引擎",
         "version": "1.0",
         "kind": "pipeline",
         "module": "app.lens.engine",
-        "description": "加载本地面板，计算美联储透镜与宋鸿兵透镜读数，评估规则并合成七类资产评分。",
+        "description": (
+            "加载本地面板，计算美联储、宋鸿兵、宏观层、微观层与人物透镜共 13 套读数，"
+            "评估规则、按权重合成七类资产评分并给出仓位与组合约束。"
+        ),
     },
     {
         "method_id": "lens.fed.v1",
@@ -107,12 +110,36 @@ METHOD_SPECS: tuple[dict, ...] = (
         "description": "美元环流温度、美元心脏三态、债务货币化、黄金熵值与资产映射。",
     },
     {
+        "method_id": "lens.macro.v1",
+        "name": "宏观层",
+        "version": "1.0",
+        "kind": "model",
+        "module": "app.lens.layers",
+        "description": "增长/通胀四象限、净流动性、财政主导与融资压力，输出宏观状态与七类资产评分。",
+    },
+    {
+        "method_id": "lens.micro.v1",
+        "name": "微观层",
+        "version": "1.0",
+        "kind": "model",
+        "module": "app.lens.layers",
+        "description": "风险偏好、黄金实物紧张度与拥挤度（基差/溢价/租借/ETF/持仓/金银比）。",
+    },
+    {
+        "method_id": "lens.persona.v1",
+        "name": "人物透镜引擎",
+        "version": "1.0",
+        "kind": "model",
+        "module": "app.lens.persona",
+        "description": "读取 config/personas/*.yaml，在 AST 沙箱内求值读数与规则，输出九位思想者各自的倾向与评分。",
+    },
+    {
         "method_id": "lens.synthesis.v1",
-        "name": "双透镜合成与研判",
+        "name": "多透镜合成与研判",
         "version": "1.0",
         "kind": "model",
         "module": "app.lens.engine",
-        "description": "两镜等权合成共识分、一致度、分歧/共振清单、七类资产评分与情景推演。",
+        "description": "13 套透镜按权重合成共识分、一致度、分歧/共振清单、七类资产评分、情景推演与组合仓位约束。",
     },
 )
 
