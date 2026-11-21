@@ -259,7 +259,7 @@ def _summary(rows: Sequence[TradeRecord]) -> dict:
         "avg_pnl": sum(closed_pnls) / len(closed_pnls) if closed_pnls else 0.0,
         "avg_win": gross_profit / wins if wins else 0.0,
         "avg_loss": gross_loss / losses if losses else 0.0,
-        "profit_factor": gross_profit / abs(gross_loss) if gross_loss else 0.0,
+        "profit_factor": gross_profit / abs(gross_loss) if gross_loss else None,
         "avg_rr": sum(rr_values) / len(rr_values) if rr_values else 0.0,
         "total_fee": sum(fees),
     }

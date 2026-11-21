@@ -1,32 +1,23 @@
-﻿param([int]$Port = 5173)
-# 前端开发模式：Vite dev server（/api 代理到 127.0.0.1:8765）。
-# 若后端未运行，会先用 scripts\start.ps1 -NoBrowser 拉起。
-# 约定：文件以 UTF-8 BOM 保存，兼容 Windows PowerShell 5.1 与 pwsh 7。
+﻿# EPIC dev wrapper. All logic lives in scripts/epic.py; this file only maps flags.
+param(
+  [int]$Port = 5173,
+  [int]$BackendPort = 0,
+  [switch]$NoBrowser,
+  [switch]$NoBackend,
+  [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest
+)
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$frontend = Join-Path $root "frontend"
+$venvPy = Join-Path $root ".venv\Scripts\python.exe"
+if (Test-Path -LiteralPath $venvPy) { $py = $venvPy }
+elseif (Get-Command py -ErrorAction SilentlyContinue) { $py = "py" }
+else { $py = "python" }
 
-function Test-Backend {
-  try {
-    $response = Invoke-WebRequest -Uri "http://127.0.0.1:8765/healthz" -UseBasicParsing -TimeoutSec 3
-    return $response.StatusCode -eq 200
-  } catch {
-    return $false
-  }
-}
-
-if (-not (Test-Backend)) {
-  Write-Host "[dev] 后端未运行，先启动（无浏览器）..." -ForegroundColor Cyan
-  & (Join-Path $PSScriptRoot "start.ps1") -NoBrowser | Out-Host
-  Start-Sleep -Seconds 2
-}
-
-Write-Host ("[dev] Vite dev server -> http://127.0.0.1:{0}" -f $Port) -ForegroundColor Green
-Write-Host "[dev] API 代理 -> http://127.0.0.1:8765/api" -ForegroundColor DarkGray
-Push-Location $frontend
-try {
-  & npm.cmd run dev -- --port $Port --strictPort
-} finally {
-  Pop-Location
-}
+$targetArgs = @((Join-Path $root "scripts\epic.py"), "dev")
+$targetArgs += @("--port", "$Port")
+if ($BackendPort -gt 0) { $targetArgs += @("--backend-port", "$BackendPort") }
+if ($NoBrowser) { $targetArgs += "--no-browser" }
+if ($NoBackend) { $targetArgs += "--no-backend" }
+& $py @targetArgs @Rest
+exit $LASTEXITCODE

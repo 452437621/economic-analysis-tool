@@ -370,7 +370,7 @@ def run_cycle(session: Session, today: date | None = None) -> dict:
             step.outputs = {"internal": (world.get("us_internal") or {}).get("stage_name")}
 
         with rec.step("analogs", kind="compute") as step:
-            analogs = analog_match.find_analogs(hist.zscores, hist.scores)
+            analogs = analog_match.find_cycle_analogs(hist.zscores, hist.scores)
             step.outputs = {"available": analogs.get("available"), "top": analogs.get("analogs", [])[:1]}
 
         with rec.step("scenarios", kind="compute") as step:

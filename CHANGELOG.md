@@ -6,6 +6,20 @@
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-11-21
+
+### 结构整理（V3.0.0）
+
+- **打包**：`pyproject.toml` 改用 `[tool.setuptools.packages.find]` 打包 `app` 全部子包；补齐 `app/cycle/__init__.py`；新增 wheel 内容与全模块导入回归测试。
+- **死代码**：删除无引用的 `app/jobs/catchup.py` 兼容包装（实现早已在 `app/jobs/supervisor.py`）。
+- **ingest 拆分**：新增 `ingest/sources.py`（单一数据源注册表）与 `ingest/macro_meta.py`；`ingest/pipeline.py` 拆为 `ingest/collectors/*`，原模块保留为 facade，旧导入路径不变。
+- **lens 拆分**：`fed`/`song`/`layers`/`persona`/`engine` 拆为 catalog/readings/state 等实现模块，原模块保留 facade。
+- **前端**：`api/types.ts` 按域拆分并保留 barrel；`Cycle`/`Gold`/`Analysis`/`Lenses`/`Pipeline`/`System`/`History` 大视图提取组件、composable 与纯函数工具；新增 vitest 测试。
+- **脚本**：新增标准库实现的 `scripts/epic.py` 统一核心，16 个动作各配 `.ps1`/`.cmd`/`.sh` 三套包装，支持 Windows PowerShell 5.1/7、cmd.exe 与 Linux bash；移除 `_common.ps1`。
+- **测试**：按领域重组 `tests/`（unit/integration/release），重命名并拆分 `test_m2`–`test_m21`，共享 fixtures/helpers，接入 marker 与 `pytest-cov`，补齐未覆盖模块和管理端点。
+- **验证**：后端 `495 passed / 1 skipped`；前端 `36 passed`；`vue-tsc` 0 error；`vite build` 成功；`scripts/lint.py` PASSED；本地行覆盖率估算 **76.3%**；Windows PowerShell/CMD 启停冒烟通过（8877/8878 隔离端口）。
+- **CI/文档**：新增 Windows 生命周期与 Linux Shell 检查；README/使用手册/交付清单更新为三平台命令表。
+
 ### 新增（系统状态四项加固：调度自检、数据源备用、质检处置、验收说明，2026-11-21）
 
 - **调度自检**：新增 `backend/app/jobs/plan.py`（作业计划单一事实源）与 `backend/app/jobs/supervisor.py`（启动/周期自检）。按「定点作业取最近应执行时点、间隔作业取 last_run + 周期」判断逾期；启动后先补采集，再评估数据就绪，随后按依赖补质检、分析、周期、透镜、决策、论点、台账、简报；数据不可用时下游写 `skipped` + `blocked_by`，不再硬跑。删除 `analyze/decide/theses` 等启动 bootstrap，避免与补跑重复；注册 `backfill_history`（周日 09:00）与 `repair_data`（15:55）。新增 `schedule_checks` 表与 `GET/POST /api/system/schedule-check`、`GET /api/system/schedule`、`POST /api/system/jobs/{name}/run`。

@@ -15,63 +15,22 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ingest.failover import breaker_state, chain_stats
+from app.ingest.sources import (
+    SOURCE_ECB,
+    SOURCE_EM,
+    SOURCE_FED_RESEARCH,
+    SOURCE_FRANKFURTER,
+    SOURCE_FRED,
+    SOURCE_IMF,
+    SOURCE_JGB,
+    SOURCE_NYFED,
+    SOURCE_SINA,
+    SOURCE_TENCENT,
+    SOURCE_TREASURY,
+    SOURCE_TREASURY_FISCAL,
+    SOURCE_WORLDBANK,
+)
 from app.models.core import Source
-
-SOURCE_SINA = dict(
-    name="新浪财经", kind="market", tier="S2", reliability=0.85, base_url="https://finance.sina.com.cn"
-)
-SOURCE_EM = dict(
-    name="东方财富", kind="market", tier="S2", reliability=0.85, base_url="https://quote.eastmoney.com"
-)
-SOURCE_TENCENT = dict(
-    name="腾讯财经", kind="market", tier="S2", reliability=0.8, base_url="https://gu.qq.com"
-)
-SOURCE_TREASURY = dict(
-    name="美国财政部", kind="official", tier="S1", reliability=0.95, base_url="https://home.treasury.gov"
-)
-SOURCE_JGB = dict(
-    name="日本财务省", kind="official", tier="S1", reliability=0.95, base_url="https://www.mof.go.jp"
-)
-SOURCE_ECB = dict(
-    name="欧洲央行", kind="official", tier="S1", reliability=0.95, base_url="https://data.ecb.europa.eu"
-)
-SOURCE_NYFED = dict(
-    name="纽约联储", kind="official", tier="S1", reliability=0.95, base_url="https://markets.newyorkfed.org"
-)
-SOURCE_FRANKFURTER = dict(
-    name="Frankfurter(ECB参考汇率)",
-    kind="market",
-    tier="S2",
-    reliability=0.9,
-    base_url="https://api.frankfurter.app",
-)
-SOURCE_IMF = dict(
-    name="IMF DataMapper", kind="official", tier="S1", reliability=0.9, base_url="https://www.imf.org"
-)
-SOURCE_WORLDBANK = dict(
-    name="世界银行", kind="official", tier="S1", reliability=0.9, base_url="https://data.worldbank.org"
-)
-SOURCE_TREASURY_FISCAL = dict(
-    name="美国财政部FiscalData",
-    kind="official",
-    tier="S1",
-    reliability=0.95,
-    base_url="https://fiscaldata.treasury.gov",
-)
-SOURCE_FED_RESEARCH = dict(
-    name="美联储H.4.1/H.6",
-    kind="official",
-    tier="S1",
-    reliability=0.95,
-    base_url="https://www.federalreserve.gov",
-)
-SOURCE_FRED = dict(
-    name="FRED",
-    kind="official",
-    tier="S1",
-    reliability=0.9,
-    base_url="https://fred.stlouisfed.org",
-)
 
 
 @dataclass(frozen=True)

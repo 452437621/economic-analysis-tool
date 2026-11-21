@@ -60,7 +60,7 @@
           <span class="kpi-label">盈亏比</span>
         </div>
         <div class="kpi-value">{{ fmtNumber(summary?.avg_rr, 2) }}</div>
-        <div class="kpi-sub">盈利因子 {{ fmtNumber(summary?.profit_factor, 2) }}（均盈 / 均亏）</div>
+        <div class="kpi-sub">盈利因子 {{ fmtNumber(summary?.profit_factor, 2) }}（总盈利 / 总亏损）</div>
       </section>
 
       <section class="card kpi">

@@ -163,7 +163,11 @@ def _web_index() -> FileResponse:
     if not index_file.exists():
         raise HTTPException(
             status_code=503,
-            detail="前端尚未构建：请运行 scripts\\build.ps1（或 npm run build）",
+            detail=(
+                "前端尚未构建：请运行 build 脚本"
+                "（scripts\\build.ps1、scripts\\build.cmd、./scripts/build.sh）"
+                "或 python scripts/epic.py build"
+            ),
         )
     return FileResponse(index_file)
 

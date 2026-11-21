@@ -98,7 +98,7 @@ METHOD_SPECS: tuple[dict, ...] = (
         "name": "美联储主席透镜",
         "version": "1.0",
         "kind": "model",
-        "module": "app.lens.fed",
+        "module": "app.lens.fed_state",
         "description": "格林斯潘—伯南克—耶伦—鲍威尔反应函数：实际利率、金融条件、看跌期权与增长/通胀象限。",
     },
     {
@@ -106,7 +106,7 @@ METHOD_SPECS: tuple[dict, ...] = (
         "name": "宋鸿兵透镜",
         "version": "1.0",
         "kind": "model",
-        "module": "app.lens.song",
+        "module": "app.lens.song_state",
         "description": "美元环流温度、美元心脏三态、债务货币化、黄金熵值与资产映射。",
     },
     {
@@ -114,7 +114,7 @@ METHOD_SPECS: tuple[dict, ...] = (
         "name": "宏观层",
         "version": "1.0",
         "kind": "model",
-        "module": "app.lens.layers",
+        "module": "app.lens.layers_macro",
         "description": "增长/通胀四象限、净流动性、财政主导与融资压力，输出宏观状态与七类资产评分。",
     },
     {
@@ -122,7 +122,7 @@ METHOD_SPECS: tuple[dict, ...] = (
         "name": "微观层",
         "version": "1.0",
         "kind": "model",
-        "module": "app.lens.layers",
+        "module": "app.lens.layers_micro",
         "description": "风险偏好、黄金实物紧张度与拥挤度（基差/溢价/租借/ETF/持仓/金银比）。",
     },
     {
@@ -130,7 +130,7 @@ METHOD_SPECS: tuple[dict, ...] = (
         "name": "人物透镜引擎",
         "version": "1.0",
         "kind": "model",
-        "module": "app.lens.persona",
+        "module": "app.lens.persona_engine",
         "description": "读取 config/personas/*.yaml，在 AST 沙箱内求值读数与规则，输出九位思想者各自的倾向与评分。",
     },
     {
@@ -138,7 +138,7 @@ METHOD_SPECS: tuple[dict, ...] = (
         "name": "多透镜合成与研判",
         "version": "1.0",
         "kind": "model",
-        "module": "app.lens.engine",
+        "module": "app.lens.synthesis",
         "description": "13 套透镜按权重合成共识分、一致度、分歧/共振清单、七类资产评分、情景推演与组合仓位约束。",
     },
 )

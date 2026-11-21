@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.core import Instrument, MacroObs, MacroSeries, MarketBar
+from app.platform.frames import pivot_series_rows
 
 
 @dataclass
@@ -30,14 +31,6 @@ class Panel:
         return self.daily[code].dropna()
 
 
-def _frame(rows, columns: list[str]) -> pd.DataFrame:
-    if not rows:
-        return pd.DataFrame(columns=columns)
-    frame = pd.DataFrame(rows, columns=columns)
-    frame["date"] = pd.to_datetime(frame["ts"], utc=True).dt.tz_convert("UTC").dt.tz_localize(None).dt.normalize()
-    return frame
-
-
 def load_panel(session: Session) -> Panel:
     """Load a daily close frame indexed by UTC date."""
     macro_rows = session.execute(
@@ -45,21 +38,19 @@ def load_panel(session: Session) -> Panel:
             MacroSeries, MacroSeries.id == MacroObs.series_id
         )
     ).all()
-    macro = _frame(macro_rows, ["code", "ts", "value"])
+    macro = pivot_series_rows(macro_rows, key="code", ts="ts", value="value", aggfunc="last")
     bar_rows = session.execute(
         select(Instrument.symbol, MarketBar.ts_utc, MarketBar.close)
         .join(Instrument, Instrument.id == MarketBar.instrument_id)
         .where(MarketBar.timeframe == "1d")
     ).all()
-    bars = _frame(bar_rows, ["code", "ts", "value"])
+    bars = pivot_series_rows(bar_rows, key="code", ts="ts", value="value", aggfunc="last")
 
     daily = pd.DataFrame()
     if not macro.empty:
-        daily = macro.pivot_table(index="date", columns="code", values="value", aggfunc="last").sort_index()
-        daily = daily.ffill(limit=7)
+        daily = macro.ffill(limit=7)
     if not bars.empty:
-        close = bars.pivot_table(index="date", columns="code", values="value", aggfunc="last").sort_index()
-        close = close.ffill(limit=5)
+        close = bars.ffill(limit=5)
         daily = close if daily.empty else daily.join(close, how="outer").sort_index()
 
     if daily.empty:

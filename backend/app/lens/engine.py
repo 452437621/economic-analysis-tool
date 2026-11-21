@@ -3,578 +3,70 @@
 The engine is a pure "read local panel → compute → record" pipeline.  It never
 fetches data, so a run is reproducible from the database snapshot and every
 derivation carries the code hash of the lens modules that produced it.
+
+The orchestrator lives here; reusable pieces live in :mod:`app.lens.config`,
+:mod:`app.lens.helpers`, :mod:`app.lens.synthesis` and :mod:`app.lens.state`.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta, timezone
-from functools import lru_cache
-from pathlib import Path
+from datetime import datetime, timezone
 from typing import Any
 
-import pandas as pd
-import yaml
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.cycle.market import Panel, load_panel
+from app.cycle.market import load_panel
 from app.lens import fed as fed_lens
 from app.lens import layers as layer_builder
 from app.lens import persona as persona_engine
 from app.lens import position as position_engine
 from app.lens import song as song_lens
-from app.lens.common import evaluate_rule, load_gold_series, round_opt as _round, score_label
-from app.models.v2 import Derivation, Forecast
+from app.lens.config import CONFIG_PATH, _load_config_cached, load_config
+from app.lens.helpers import (
+    ASSETS,
+    GOLD_COLUMNS,
+    METHOD_ENGINE,
+    METHOD_FED,
+    METHOD_MACRO,
+    METHOD_MICRO,
+    METHOD_PERSONA,
+    METHOD_SONG,
+    METHOD_SYNTHESIS,
+    _ASSET_META,
+    _advice,
+    _agreement,
+    _agreement_multi,
+    _curve_cross_up_metric,
+    _data_gaps,
+    _divergence_catalyst,
+    _evaluate_rules,
+    _gold_metric_loader,
+    _last_close,
+    _latest_cycle_context,
+    _lens_confidence,
+    _lens_label,
+    _lens_scores,
+    _observation_rows,
+    _panel_summary,
+    _reading_steps,
+    _record_rule_hits,
+    _rule_severity,
+    _warning_list,
+)
+from app.lens.state import (
+    _latest_derivation,
+    create_forecast,
+    forecast_payload,
+    latest_forecasts,
+    latest_state,
+)
+from app.lens.synthesis import _outlook, _synthesis, _synthesis_confidence
 from app.platform.quality_gate import assess as assess_quality
 from app.platform.quality_gate import confidence_factor
 from app.provenance.engine import RunRecorder, aware, new_id, record_observations
 
 logger = logging.getLogger(__name__)
-
-CONFIG_PATH = Path(__file__).resolve().parents[3] / "config" / "lens.yaml"
-METHOD_ENGINE = "lens.engine.v1"
-METHOD_FED = "lens.fed.v1"
-METHOD_SONG = "lens.song.v1"
-METHOD_SYNTHESIS = "lens.synthesis.v1"
-METHOD_MACRO = "lens.macro.v1"
-METHOD_MICRO = "lens.micro.v1"
-METHOD_PERSONA = "lens.persona.v1"
-
-# 表达式求值需要的黄金实物列（面板里没有，来自 gold_metrics）。
-GOLD_COLUMNS: tuple[str, ...] = (
-    "GOLD_PRICE_USD",
-    "CN_GOLD_PREMIUM_PCT",
-    "COMEX_GOLD_BASIS_PCT",
-    "SGE_GOLD_LEASE_3M_PCT",
-    "GOLD_LEASE_PROXY_PCT",
-    "CB_GOLD_GLOBAL_TONNES",
-    "CN_GOLD_RESERVES_USD",
-    "ETF_GLOBAL_TONNES",
-    "COMEX_GOLD_INVENTORY_TONNES",
-    "LBMA_GOLD_TONNES",
-    "LBMA_SILVER_TONNES",
-    "COT_MONEY_NET",
-    "COT_SWAP_NET",
-    "MM_BANK_GOLD_NET",
-    "SHFE_GOLD_STOCK_TONNES",
-    "ETF_FLOW_1M_TONNES",
-    "GOLD_MOM_20D_PCT",
-)
-
-ASSETS: list[dict[str, str]] = [
-    {"id": "us_equity", "label": "美股（标普 500）", "symbol": "SPX", "unit": "点", "note": "评分方向=指数涨跌"},
-    {"id": "gold", "label": "黄金（XAUUSD）", "symbol": "XAUUSD", "unit": "美元/盎司", "note": "评分方向=金价涨跌"},
-    {"id": "silver", "label": "白银（COMEX）", "symbol": "SI", "unit": "美元/盎司", "note": "评分方向=银价涨跌"},
-    {"id": "usd", "label": "美元指数", "symbol": "DXY", "unit": "", "note": "评分方向=美元涨跌"},
-    {"id": "cn_equity", "label": "A 股（沪深 300）", "symbol": "000300", "unit": "点", "note": "评分方向=指数涨跌"},
-    {"id": "long_bond", "label": "美国 30 年期国债", "symbol": "US30Y", "unit": "%", "note": "评分方向=债券价格（收益率下行）"},
-    {"id": "commodities", "label": "大宗商品（Brent）", "symbol": "BZ", "unit": "美元/桶", "note": "评分方向=油价涨跌"},
-]
-_ASSET_META = {item["id"]: item for item in ASSETS}
-
-
-@lru_cache(maxsize=4)
-def _load_config_cached(path: str, mtime: float) -> dict[str, Any]:
-    with open(path, "r", encoding="utf-8") as handle:
-        return yaml.safe_load(handle) or {}
-
-
-def load_config() -> dict[str, Any]:
-    stat = CONFIG_PATH.stat()
-    return _load_config_cached(str(CONFIG_PATH), stat.st_mtime)
-
-
-def _gold_metric_loader(session: Session):
-    return lambda code: load_gold_series(session, code)
-
-
-def _panel_summary(panel: Panel) -> dict[str, Any]:
-    def _fmt(value: Any) -> str | None:
-        if value is None:
-            return None
-        return value.strftime("%Y-%m-%d") if hasattr(value, "strftime") else str(value)[:10]
-
-    return {"first": _fmt(panel.first), "last": _fmt(panel.last), "columns": len(panel.columns), "rows": int(len(panel.daily))}
-
-
-def _curve_cross_up_metric(panel: Panel) -> dict[str, float | None]:
-    curve = panel.series("US10Y") - panel.series("US2Y")
-    if curve.empty:
-        return {"value": None, "chg": None, "z": None, "pct": None}
-    prior_negative = (curve < 0).rolling("126D", min_periods=1).max().shift(1)
-    latest_positive = bool(curve.dropna().iloc[-1] >= 0) if not curve.dropna().empty else False
-    prior = prior_negative.dropna()
-    crossed = latest_positive and (not prior.empty) and bool(prior.iloc[-1])
-    return {"value": 1.0 if crossed else 0.0, "chg": None, "z": None, "pct": None}
-
-
-def _rule_severity(rule: dict[str, Any]) -> str:
-    severity = str(rule.get("severity") or "info")
-    return severity if severity in {"info", "watch", "warn", "critical"} else "info"
-
-
-def _evaluate_rules(
-    rules: list[dict[str, Any]], metrics: dict[str, dict[str, float | None]]
-) -> list[dict[str, Any]]:
-    evaluated = []
-    for rule in rules:
-        result = evaluate_rule(rule, metrics)
-        result["severity"] = _rule_severity(rule)
-        evaluated.append(result)
-    return evaluated
-
-
-def _record_rule_hits(rec: RunRecorder, rules: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    fired = []
-    for rule in rules:
-        if not rule.get("fired"):
-            continue
-        rec.record_rule(
-            f"lens.{rule['id']}",
-            str(rule.get("message") or rule.get("name") or ""),
-            severity=str(rule.get("severity") or "info"),
-            inputs={"trace": rule.get("trace"), "assets": rule.get("assets")},
-            fired=True,
-        )
-        fired.append(rule)
-    return fired
-
-
-def _last_close(panel: Panel, symbol: str) -> float | None:
-    series = panel.series(symbol)
-    if series.empty:
-        return None
-    clean = pd.to_numeric(series, errors="coerce").dropna()
-    return float(clean.iloc[-1]) if not clean.empty else None
-
-
-def _lens_scores(lens_value: dict[str, Any]) -> dict[str, float | None]:
-    """把一份透镜的资产评分摊平成 ``{asset_id: score}``。
-
-    人物透镜与宏观/微观层的评分在顶层 ``scores``；美联储与宋鸿兵透镜的评分在
-    ``state.asset_scores``，这里两种结构都接受，避免主透镜被静默排除在合成之外。
-    """
-    state = lens_value.get("state") or {}
-    scores = (
-        lens_value.get("scores")
-        or lens_value.get("asset_scores")
-        or state.get("scores")
-        or state.get("asset_scores")
-        or {}
-    )
-    out: dict[str, float | None] = {}
-    for asset in ASSETS:
-        item = scores.get(asset["id"]) or {}
-        value = item.get("score")
-        out[asset["id"]] = float(value) if value is not None else None
-    return out
-
-
-def _synthesis(
-    lens_scores: dict[str, dict[str, float | None]],
-    panel: Panel,
-    config: dict[str, Any],
-    cycle_context: dict[str, Any] | None,
-    lens_states: dict[str, dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    """多透镜合成：按 config 权重加权，输出共识、分歧、预警与情景。
-
-    ``lens_scores`` 是有序映射 ``{透镜 id: {资产 id: 分数}}``，包含 macro/micro
-    两层与全部人物透镜。缺少某透镜分数的资产只用其余透镜加权，绝不把缺失当 0。
-    """
-    settings = config.get("synthesis") or {}
-    weights: dict[str, float] = {
-        str(key): float(value) for key, value in (settings.get("weights") or {}).items()
-    }
-    active = [(lens_id, scores) for lens_id, scores in lens_scores.items() if weights.get(lens_id, 0.0) > 0]
-    if not active:
-        active = list(lens_scores.items())
-    states = lens_states or {}
-
-    rows: list[dict[str, Any]] = []
-    divergences: list[dict[str, Any]] = []
-    for asset in ASSETS:
-        asset_id = asset["id"]
-        contributions: dict[str, float] = {}
-        for lens_id, scores in active:
-            value = scores.get(asset_id)
-            if value is None:
-                continue
-            contributions[lens_id] = round(float(value), 2)
-        weight_sum = sum(weights.get(lens_id, 1.0) for lens_id in contributions)
-        consensus = None
-        if contributions and weight_sum > 0:
-            consensus = round(
-                sum(weights.get(lens_id, 1.0) * value for lens_id, value in contributions.items()) / weight_sum,
-                2,
-            )
-        fed_score = contributions.get("fed")
-        song_score = contributions.get("song")
-        agreement, direction = _agreement_multi(contributions, consensus)
-        probability = None
-        if consensus is not None:
-            probability = round(min(0.78, 0.50 + 0.10 * abs(consensus)), 3)
-        rows.append(
-            {
-                "id": asset_id,
-                "label": asset["label"],
-                "symbol": asset["symbol"],
-                "unit": asset["unit"],
-                "note": asset["note"],
-                "last": _round(_last_close(panel, asset["symbol"]), 3),
-                "fed": fed_score,
-                "song": song_score,
-                "scores": contributions,
-                "lenses": len(contributions),
-                "consensus": consensus,
-                "label_consensus": score_label(consensus),
-                "agreement": agreement,
-                "direction": direction,
-                "probability": probability,
-                "advice": _advice(agreement, consensus, len(contributions)),
-            }
-        )
-        if contributions:
-            positives = {key: value for key, value in contributions.items() if value >= 0.35}
-            negatives = {key: value for key, value in contributions.items() if value <= -0.35}
-            if positives and negatives:
-                bull = max(positives, key=lambda key: positives[key])
-                bear = min(negatives, key=lambda key: negatives[key])
-                divergences.append(
-                    {
-                        "asset": asset_id,
-                        "label": asset["label"],
-                        "fed": fed_score,
-                        "song": song_score,
-                        "spread": _round(contributions[bull] - contributions[bear], 2),
-                        "reading": f"{_lens_label(bull, states)} {contributions[bull]:+.2f} / "
-                        f"{_lens_label(bear, states)} {contributions[bear]:+.2f}",
-                        "pair": [bull, bear],
-                        "catalyst": _divergence_catalyst(asset_id),
-                    }
-                )
-
-    warnings = _warning_list(states.get("fed") or {}, states.get("song") or {}, states)
-    consensus_count = sum(1 for row in rows if row["agreement"] in {"共振多", "共振空"})
-    strong = [row for row in rows if row["agreement"] == "共振强信号"]
-    headline = {
-        "fed": (states.get("fed") or {}).get("stance_label", "未知"),
-        "song": ((states.get("song") or {}).get("phase") or {}).get("label", "未知"),
-        "macro": ((states.get("macro") or {}).get("regime") or {}).get("label", "未知"),
-        "micro": ((states.get("micro") or {}).get("risk_appetite") or {}).get("label", "未知"),
-        "personas": sum(1 for key in states if key not in {"fed", "song", "macro", "micro"}),
-    }
-    narrative = (
-        f"合成结论：{len(active)} 套透镜参与、{consensus_count} 项同向共振、{len(divergences)} 项方向冲突。"
-        f"美联储「{headline['fed']}」、宋鸿兵「{headline['song']}」、宏观层「{headline['macro']}」、"
-        f"微观层「{headline['micro']}」。"
-        "同向项是仓位来源，冲突项是风险来源；冲突未解决前，单套透镜的结论只能做研究，不能做仓位。"
-    )
-
-    outlook = _outlook(states.get("fed") or {}, states.get("song") or {}, rows, warnings)
-    portfolio = position_engine.build_decisions(rows, panel)
-    return {
-        "assets": rows,
-        "portfolio": portfolio,
-        "divergences": divergences,
-        "warnings": warnings,
-        "consensus_count": consensus_count,
-        "strong_count": len(strong),
-        "lens_count": len(active),
-        "weights": {lens_id: weights.get(lens_id, 1.0) for lens_id, _ in active},
-        "headline": headline,
-        "narrative": narrative,
-        "outlook": outlook,
-        "cycle_context": cycle_context,
-        "confidence": _synthesis_confidence(states.get("fed") or {}, states.get("song") or {}, rows, len(active)),
-    }
-
-
-def _lens_label(lens_id: str, states: dict[str, dict[str, Any]]) -> str:
-    state = states.get(lens_id) or {}
-    return str(state.get("name") or lens_id)
-
-
-def _agreement_multi(contributions: dict[str, float], consensus: float | None) -> tuple[str, str]:
-    """多透镜一致度：同向且最小 |score| 足够大才算共振。"""
-    if not contributions:
-        return "数据不足", "flat"
-    values = list(contributions.values())
-    positives = [value for value in values if value >= 0.25]
-    negatives = [value for value in values if value <= -0.25]
-    if len(contributions) == 1:
-        agreement = "单一透镜"
-    elif len(positives) == len(values) and len(values) >= 2:
-        agreement = "共振多" if min(values) >= 0.25 else "弱信号"
-    elif len(negatives) == len(values) and len(values) >= 2:
-        agreement = "共振空" if max(values) <= -0.25 else "弱信号"
-    elif positives and negatives and min(max(positives), abs(min(negatives))) >= 0.35:
-        agreement = "分歧"
-    else:
-        agreement = "弱信号"
-    if len(values) >= 3 and agreement in {"共振多", "共振空"} and abs(consensus or 0.0) >= 0.6:
-        agreement = "共振强信号"
-    if consensus is None or abs(consensus) < 0.25:
-        direction = "flat"
-    elif consensus > 0:
-        direction = "up"
-    else:
-        direction = "down"
-    return agreement, direction
-
-
-def _agreement(fed: float | None, song: float | None, consensus: float | None) -> tuple[str, str]:
-    if fed is None or song is None:
-        return "数据不足", "flat"
-    return _agreement_multi({"fed": fed, "song": song}, consensus)
-
-
-def _advice(agreement: str, consensus: float | None, lens_count: int = 2) -> str:
-    if agreement == "共振强信号":
-        return "多数透镜同向且强度足够：可按共识方向建仓，分批而非一次性。"
-    if agreement == "共振多":
-        return "多数透镜同向偏多：回调分批，不追高；跌破关键位再重估。"
-    if agreement == "共振空":
-        return "多数透镜同向偏空：反弹减仓，等右侧确认，不接下跌中的刀。"
-    if agreement == "分歧":
-        return "透镜之间方向冲突：只做区间或观望，等催化剂落地，不要用单一透镜下注。"
-    if agreement == "数据不足":
-        return "数据不足：不产生信号。"
-    if agreement == "单一透镜":
-        return "只有一套透镜覆盖该资产：只能作为研究结论，不单独构成仓位。"
-    return "弱信号：观察，不建仓。"
-
-
-def _divergence_catalyst(asset_id: str) -> str:
-    return {
-        "gold": "实际利率与央行购金/秩序溢价，谁在定价",
-        "silver": "实物挤兑（COMEX 库存）与工业需求，谁先转向",
-        "us_equity": "金融条件收紧是否传导到信用利差",
-        "usd": "美国例外论与降息预期，谁主导",
-        "cn_equity": "美元环流方向与国内政策脉冲，谁更强",
-        "long_bond": "长端期限溢价与衰退定价，谁更快",
-        "commodities": "供给冲击与全球增长，谁主导",
-    }.get(asset_id, "下一个数据窗口")
-
-
-def _warning_list(
-    fed_state: dict[str, Any],
-    song_state: dict[str, Any],
-    states: dict[str, dict[str, Any]] | None = None,
-) -> list[dict[str, Any]]:
-    warnings: list[dict[str, Any]] = []
-    heart = song_state.get("dollar_heart") or {}
-    if heart.get("id") in {"angina", "infarction"}:
-        warnings.append(
-            {
-                "id": "heart",
-                "severity": "critical" if heart.get("id") == "infarction" else "warn",
-                "title": f"美元心脏：{heart.get('label')}",
-                "detail": heart.get("note"),
-            }
-        )
-    harvest = song_state.get("harvest_risk")
-    if harvest is not None and harvest >= 65:
-        warnings.append(
-            {
-                "id": "harvest",
-                "severity": "warn" if harvest < 80 else "critical",
-                "title": f"收割风险 {harvest}/100",
-                "detail": "强美元、实际利率上行、新兴市场回撤与汇率贬值同时出现，冷环流防御优先。",
-            }
-        )
-    debt_risk = song_state.get("debt_risk")
-    if debt_risk is not None and debt_risk >= 60:
-        warnings.append(
-            {
-                "id": "debt",
-                "severity": "warn",
-                "title": f"债务货币化风险 {debt_risk}/100",
-                "detail": "债务/GDP、赤字、利息占比与长端利率同向恶化，黄金的秩序溢价有基本面支撑。",
-            }
-        )
-    put = fed_state.get("fed_put") or {}
-    if put.get("id") in {"near", "in_the_money"}:
-        warnings.append(
-            {
-                "id": "fed_put",
-                "severity": "warn" if put.get("id") == "near" else "critical",
-                "title": f"美联储看跌期权：{put.get('label')}",
-                "detail": put.get("note"),
-            }
-        )
-    stance = fed_state.get("stance")
-    if stance is not None and stance >= 80:
-        warnings.append(
-            {
-                "id": "tight",
-                "severity": "warn",
-                "title": f"政策立场极紧（{stance}/100）",
-                "detail": "实际利率、金融条件与曲线同时处于紧缩端，风险资产的估值分母没有缓冲。",
-            }
-        )
-    # 新增：宏观层风险标记 + 人物透镜的 critical 规则统一进预警台。
-    for lens_id, state in (states or {}).items():
-        if lens_id in {"fed", "song"}:
-            continue
-        name = str(state.get("name") or lens_id)
-        for flag in state.get("flags") or []:
-            warnings.append(
-                {
-                    "id": f"{lens_id}.{flag}",
-                    "severity": "warn",
-                    "title": f"{name}：{flag}",
-                    "detail": state.get("narrative") or "",
-                }
-            )
-        for rule in state.get("fired") or []:
-            if rule.get("severity") not in {"warn", "critical"}:
-                continue
-            warnings.append(
-                {
-                    "id": f"{lens_id}.{rule.get('id')}",
-                    "severity": rule.get("severity"),
-                    "title": f"{name}：{rule.get('name') or rule.get('id')}",
-                    "detail": rule.get("message") or "",
-                }
-            )
-    return warnings
-
-
-def _outlook(
-    fed_state: dict[str, Any],
-    song_state: dict[str, Any],
-    rows: list[dict[str, Any]],
-    warnings: list[dict[str, Any]],
-) -> dict[str, Any]:
-    strongest = sorted(
-        [row for row in rows if row["consensus"] is not None],
-        key=lambda row: abs(row["consensus"]),
-        reverse=True,
-    )[:3]
-    base_case = (
-        f"未来 3 个月基准情景：{fed_state.get('policy', {}).get('bias', '观望')} + "
-        f"美元环流「{(song_state.get('phase') or {}).get('label', '未知')}」。"
-        f"排序最高的三个信号是 "
-        + "、".join(f"{row['label']}（{row['label_consensus']}）" for row in strongest)
-        + "。"
-    )
-    return {
-        "horizon_days": 90,
-        "base_case": base_case,
-        "bull_case": "上行风险：金融条件自行转松 + 美元环流转暖 + 回购摩擦消失，风险资产与白银弹性最大。",
-        "bear_case": "下行风险：SOFR−EFFR 脉冲 + 强美元 + 长端利率上行同时出现，先杀高估值（AI、白银），再谈黄金的秩序溢价。",
-        "triggers": warnings,
-        "invalidators": [
-            "若 10Y 实际利率在 3 个月内下行 >50bp 而金价不涨，则『实际利率→黄金』的映射失效。",
-            "若 SOFR−EFFR 回落至 5bp 以下且 DXY 250 日分位跌破 30%，冷环流判断失效。",
-            "若多数透镜连续 20 个交易日同向且资产价格反向，视为框架失效，需降权而不是加仓。",
-        ],
-    }
-
-
-def _synthesis_confidence(
-    fed_state: dict[str, Any],
-    song_state: dict[str, Any],
-    rows: list[dict[str, Any]],
-    lens_count: int = 2,
-) -> float:
-    fed_cov = (fed_state.get("coverage") or {}).get("available", 0) / max(
-        1, (fed_state.get("coverage") or {}).get("total", 1)
-    )
-    song_cov = (song_state.get("coverage") or {}).get("available", 0) / max(
-        1, (song_state.get("coverage") or {}).get("total", 1)
-    )
-    agreement_ratio = sum(1 for row in rows if row["agreement"] in {"共振多", "共振空", "共振强信号"}) / max(
-        1, len(rows)
-    )
-    breadth = min(1.0, lens_count / 6.0)
-    return round(
-        min(0.85, 0.20 + 0.20 * fed_cov + 0.15 * song_cov + 0.25 * agreement_ratio + 0.15 * breadth),
-        3,
-    )
-
-
-def _latest_cycle_context(session: Session) -> dict[str, Any] | None:
-    row = session.scalar(
-        select(Derivation)
-        .where(Derivation.code == "cycle.state.world")
-        .order_by(Derivation.asof.desc(), Derivation.created_at.desc())
-        .limit(1)
-    )
-    if row is None or not isinstance(row.value, dict):
-        return None
-    value = row.value
-    return {
-        "asof": row.asof.date().isoformat() if row.asof else None,
-        "long_cycle": value.get("long_cycle"),
-        "short_cycle": value.get("short_cycle"),
-        "liquidity": value.get("liquidity"),
-        "political": value.get("political"),
-        "caveat": "来自 EPIC 周期引擎，仅作背景，不参与透镜打分。",
-    }
-
-
-def _observation_rows(
-    fed_value: dict[str, Any],
-    song_value: dict[str, Any],
-    synth: dict[str, Any],
-    today: date,
-    extra_lenses: list[tuple[str, dict[str, Any]]] | None = None,
-) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    lenses = [("fed", fed_value), ("song", song_value), *(extra_lenses or [])]
-    for lens_name, value in lenses:
-        for reading in value.get("readings") or []:
-            if reading.get("value") is None:
-                continue
-            rows.append(
-                {
-                    "code": f"lens.{lens_name}.{reading['id'].split('.', 1)[-1]}",
-                    "asof": today,
-                    "vintage_date": today,
-                    "value": reading["value"],
-                    "unit": reading.get("unit"),
-                    "source": reading.get("source"),
-                    "evidence_grade": reading.get("evidence", "E3"),
-                    "extra": {
-                        "z": reading.get("z"),
-                        "pct": reading.get("percentile"),
-                        "chg": reading.get("change"),
-                    },
-                }
-            )
-        lean = ((value.get("state") or {}).get("lean") or {}).get("score")
-        if lean is not None:
-            rows.append(
-                {
-                    "code": f"lens.{lens_name}.lean",
-                    "asof": today,
-                    "vintage_date": today,
-                    "value": float(lean),
-                    "unit": "score",
-                    "source": f"lens.{lens_name}",
-                    "evidence_grade": "E3",
-                    "extra": {"label": ((value.get("state") or {}).get("lean") or {}).get("label")},
-                }
-            )
-    for row in synth.get("assets") or []:
-        if row.get("consensus") is None:
-            continue
-        rows.append(
-            {
-                "code": f"lens.score.{row['id']}",
-                "asof": today,
-                "vintage_date": today,
-                "value": row["consensus"],
-                "unit": "score",
-                "source": "lens.synthesis",
-                "evidence_grade": "E3",
-                "extra": {"fed": row["fed"], "song": row["song"], "agreement": row["agreement"]},
-            }
-        )
-    return rows
 
 
 def run_lenses(session: Session, asof: datetime | None = None) -> dict[str, Any]:
@@ -1051,166 +543,59 @@ def run_lenses(session: Session, asof: datetime | None = None) -> dict[str, Any]
         session.commit()
         raise
 
-
-def _lens_confidence(value: dict[str, Any]) -> float:
-    coverage = value.get("state", {}).get("coverage") or {}
-    ratio = coverage.get("available", 0) / max(1, coverage.get("total", 1))
-    return round(min(0.85, 0.35 + 0.45 * ratio), 3)
-
-
-def _reading_steps(readings: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        {
-            "name": reading["id"],
-            "value": reading.get("value"),
-            "z": reading.get("z"),
-            "pct": reading.get("percentile"),
-            "missing": reading.get("missing_reason"),
-        }
-        for reading in readings
-    ]
-
-
-def _data_gaps(
-    config: dict[str, Any],
-    *reading_groups: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    gaps = list(config.get("data_gaps") or [])
-    known = {gap.get("id") for gap in gaps}
-    for readings in reading_groups:
-        for reading in readings:
-            if reading.get("value") is not None or reading.get("id") in known:
-                continue
-            gaps.append(
-                {
-                    "id": reading["id"],
-                    "label": reading.get("label"),
-                    "reason": reading.get("missing_reason") or "本地库缺该序列",
-                    "impact": "读数缺失，UI 已标注为不可用。",
-                }
-            )
-    return gaps
-
-
-def latest_state(session: Session) -> dict[str, Any] | None:
-    """Return the latest persisted lens state without recomputing."""
-    synthesis = session.scalar(
-        select(Derivation)
-        .where(Derivation.code == "lens.synthesis")
-        .order_by(Derivation.asof.desc(), Derivation.created_at.desc())
-        .limit(1)
-    )
-    if synthesis is None:
-        return None
-    fed = session.scalar(
-        select(Derivation)
-        .where(Derivation.code == "lens.fed.state")
-        .order_by(Derivation.asof.desc(), Derivation.created_at.desc())
-        .limit(1)
-    )
-    song = session.scalar(
-        select(Derivation)
-        .where(Derivation.code == "lens.song.state")
-        .order_by(Derivation.asof.desc(), Derivation.created_at.desc())
-        .limit(1)
-    )
-    run = synthesis.run_id
-    macro = _latest_derivation(session, "lens.macro.state")
-    micro = _latest_derivation(session, "lens.micro.state")
-    personas = list(
-        session.scalars(
-            select(Derivation)
-            .where(Derivation.code.like("lens.persona.%.state"))
-            .order_by(Derivation.asof.desc(), Derivation.created_at.desc())
-            .limit(40)
-        ).all()
-    )
-    seen: dict[str, Derivation] = {}
-    for row in personas:
-        persona_id = row.code.removeprefix("lens.persona.").removesuffix(".state")
-        seen.setdefault(persona_id, row)
-    return {
-        "run_id": run,
-        "asof": aware(synthesis.asof).isoformat() if synthesis.asof else None,
-        "fed": fed,
-        "song": song,
-        "macro": macro,
-        "micro": micro,
-        "personas": seen,
-        "synthesis": synthesis,
-    }
-
-
-def _latest_derivation(session: Session, code: str) -> Derivation | None:
-    return session.scalar(
-        select(Derivation)
-        .where(Derivation.code == code)
-        .order_by(Derivation.asof.desc(), Derivation.created_at.desc())
-        .limit(1)
-    )
-
-
-def latest_forecasts(session: Session, limit: int = 50, status: str | None = None) -> list[Forecast]:
-    stmt = select(Forecast).where(Forecast.subject == "lens")
-    if status:
-        stmt = stmt.where(Forecast.status == status)
-    return list(session.scalars(stmt.order_by(Forecast.made_at.desc()).limit(limit)).all())
-
-
-def create_forecast(
-    session: Session,
-    *,
-    asset: str,
-    direction: str,
-    horizon_days: int = 90,
-    probability: float | None = None,
-    notes: str | None = None,
-    baseline_value: float | None = None,
-    derivation_id: str | None = None,
-    run_id: str | None = None,
-) -> Forecast:
-    if asset not in _ASSET_META:
-        raise ValueError(f"unknown lens asset: {asset}")
-    if direction not in {"up", "down", "flat"}:
-        raise ValueError(f"invalid direction: {direction}")
-    if not 1 <= int(horizon_days) <= 365:
-        raise ValueError("horizon_days must be between 1 and 365")
-    now = datetime.now(timezone.utc)
-    row = Forecast(
-        id=new_id(),
-        run_id=run_id,
-        derivation_id=derivation_id,
-        code=f"lens.{asset}",
-        subject="lens",
-        direction=direction,
-        horizon_days=int(horizon_days),
-        made_at=now,
-        target_date=(now + timedelta(days=int(horizon_days))).date(),
-        probability=probability,
-        method_id=METHOD_SYNTHESIS,
-        status="open",
-        baseline_value=baseline_value,
-        notes=notes,
-    )
-    session.add(row)
-    session.commit()
-    return row
-
-
-def forecast_payload(row: Forecast) -> dict[str, Any]:
-    return {
-        "id": row.id,
-        "code": row.code,
-        "asset": row.code.replace("lens.", "", 1),
-        "subject": row.subject,
-        "direction": row.direction,
-        "horizon_days": row.horizon_days,
-        "made_at": row.made_at.isoformat() if row.made_at else None,
-        "target_date": row.target_date.isoformat() if row.target_date else None,
-        "probability": row.probability,
-        "point": row.point,
-        "status": row.status,
-        "baseline_value": row.baseline_value,
-        "notes": row.notes,
-        "derivation_id": row.derivation_id,
-    }
+__all__ = [
+    "ASSETS",
+    "CONFIG_PATH",
+    "GOLD_COLUMNS",
+    "METHOD_ENGINE",
+    "METHOD_FED",
+    "METHOD_MACRO",
+    "METHOD_MICRO",
+    "METHOD_PERSONA",
+    "METHOD_SONG",
+    "METHOD_SYNTHESIS",
+    "RunRecorder",
+    "_ASSET_META",
+    "_advice",
+    "_agreement",
+    "_agreement_multi",
+    "_curve_cross_up_metric",
+    "_data_gaps",
+    "_divergence_catalyst",
+    "_evaluate_rules",
+    "_gold_metric_loader",
+    "_last_close",
+    "_latest_cycle_context",
+    "_latest_derivation",
+    "_lens_confidence",
+    "_lens_label",
+    "_lens_scores",
+    "_load_config_cached",
+    "_observation_rows",
+    "_outlook",
+    "_panel_summary",
+    "_reading_steps",
+    "_record_rule_hits",
+    "_rule_severity",
+    "_synthesis",
+    "_synthesis_confidence",
+    "_warning_list",
+    "assess_quality",
+    "aware",
+    "confidence_factor",
+    "create_forecast",
+    "fed_lens",
+    "forecast_payload",
+    "layer_builder",
+    "latest_forecasts",
+    "latest_state",
+    "load_config",
+    "load_panel",
+    "logger",
+    "new_id",
+    "persona_engine",
+    "position_engine",
+    "record_observations",
+    "run_lenses",
+    "song_lens",
+]

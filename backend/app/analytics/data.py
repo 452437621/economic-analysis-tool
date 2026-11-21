@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models.core import Instrument, MacroSeries, MacroObs, MarketBar
 from app.platform.db import SessionLocal
+from app.platform.frames import pivot_series_rows
 
 WATCHLIST = [
     "AU", "AG", "CU", "AL", "ZN", "NI", "SC", "M", "I", "SR", "CF", "P",
@@ -25,12 +26,7 @@ class MarketFrames:
 
 
 def _series_frame(rows: list[tuple[str, object, float]]) -> pd.DataFrame:
-    if not rows:
-        return pd.DataFrame()
-    frame = pd.DataFrame(rows, columns=["key", "ts", "value"])
-    frame["date"] = pd.to_datetime(frame["ts"], utc=True).dt.tz_convert(None).dt.normalize()
-    frame = frame.drop_duplicates(subset=["key", "date"], keep="last")
-    return frame.pivot(index="date", columns="key", values="value").sort_index()
+    return pivot_series_rows(rows, key="key", ts="ts", value="value", drop_duplicates=True)
 
 
 def load_frames(session: Session | None = None) -> MarketFrames:

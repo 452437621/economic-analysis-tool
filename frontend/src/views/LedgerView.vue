@@ -247,7 +247,7 @@
 
       <div v-if="payload.degraded_reasons.length" class="ldg-degraded">
         <strong>降级说明</strong>
-        <span v-for="reason in payload.degraded_reasons.slice(0, 6)" :key="reason">{{ reason }}</span>
+        <span v-for="reason in payload.degraded_reasons.slice(0, 6)" :key="reason.code">{{ reason.message }}</span>
       </div>
 
       <div class="card-foot">

@@ -18,64 +18,14 @@
       </div>
     </div>
 
-    <div class="kpi-grid">
-      <article class="card kpi">
-        <div class="kpi-top">
-          <span class="kpi-icon"><svg class="ic"><use href="#i-cpu" /></svg></span>
-          <span class="kpi-label">服务状态</span>
-          <span class="kpi-flag">
-            <span class="badge badge--sm" :class="health.healthy ? 'badge--live' : 'badge--warn'">
-              {{ health.healthy ? "运行中" : "降级" }}
-            </span>
-          </span>
-        </div>
-        <div class="kpi-value">{{ health.health?.status ?? "—" }}<small>{{ health.health?.env ?? "—" }}</small></div>
-        <div class="kpi-sub">v{{ health.health?.version ?? "—" }} · {{ health.health?.timezone ?? "—" }}</div>
-      </article>
-      <article class="card kpi">
-        <div class="kpi-top">
-          <span class="kpi-icon"><svg class="ic"><use href="#i-db" /></svg></span>
-          <span class="kpi-label">数据库</span>
-          <span class="kpi-flag">
-            <span class="badge badge--sm" :class="health.health?.database.ok ? 'badge--live' : 'badge--warn'">
-              {{ health.health?.database.ok ? "正常" : "异常" }}
-            </span>
-          </span>
-        </div>
-        <div class="kpi-value">{{ health.health?.database.engine ?? "—" }}<small>SQLite</small></div>
-        <div class="kpi-sub">{{ health.health?.database.error ?? "连接正常" }}</div>
-      </article>
-      <article class="card kpi">
-        <div class="kpi-top">
-          <span class="kpi-icon"><svg class="ic"><use href="#i-tasks" /></svg></span>
-          <span class="kpi-label">调度器</span>
-          <span class="kpi-flag">
-            <span class="badge badge--sm" :class="health.schedulerRunning ? 'badge--live' : 'badge--warn'">
-              {{ health.schedulerRunning ? "运行中" : "已停止" }}
-            </span>
-          </span>
-        </div>
-        <div class="kpi-value">{{ jobs.length }}<small>个任务</small></div>
-        <div class="kpi-sub">
-          {{ failedJobs ? `${failedJobs} 个失败` : "全部正常" }} · LLM
-          {{ health.health?.llm_enabled ? "已配置" : "未配置（规则模式）" }}
-        </div>
-      </article>
-      <article class="card kpi">
-        <div class="kpi-top">
-          <span class="kpi-icon"><svg class="ic"><use href="#i-shield-check" /></svg></span>
-          <span class="kpi-label">验收自检</span>
-          <span class="kpi-flag">
-            <span class="badge badge--sm" :class="acceptance?.passed ? 'badge--live' : 'badge--warn'">
-              {{ acceptance?.passed ? "通过" : "有失败项" }}
-            </span>
-          </span>
-        </div>
-        <div class="kpi-value">{{ acceptancePassed }}<small>/ {{ acceptance?.checks.length ?? "—" }} 项</small></div>
-        <div class="kpi-sub">数据质检 {{ quality?.summary.passed ?? "—" }} / {{ quality?.summary.total ?? "—" }}</div>
-      </article>
-    </div>
-
+    <SystemKpis
+      :health="health"
+      :jobs-count="jobs.length"
+      :failed-jobs="failedJobs"
+      :acceptance="acceptance"
+      :acceptance-passed="acceptancePassed"
+      :quality="quality"
+    />
 
     <section class="card" style="margin-top: 12px">
       <div class="card-head">
@@ -143,412 +93,50 @@
       </div>
     </section>
 
-    <section class="card" style="margin-top: 12px">
-      <div class="card-head">
-        <span class="card-title">调度自检</span>
-        <span class="card-sub">
-          启动/周期检查 · 数据就绪 · 逾期补跑 · {{ schedule ? `${schedule.summary.overdue} 个逾期` : "加载中" }}
-        </span>
-        <div class="card-actions">
-          <span
-            class="badge badge--sm"
-            :class="schedule?.summary.overdue ? 'badge--warn' : 'badge--live'"
-          >
-            {{ schedule?.summary.overdue ?? "—" }} 逾期
-          </span>
-          <span
-            class="badge badge--sm"
-            :class="qualityGate?.status === 'blocked' ? 'badge--down' : qualityGate?.status === 'degraded' ? 'badge--warn' : 'badge--live'"
-          >
-            质量 {{ qualityGate?.status ?? "—" }}
-          </span>
-          <button class="btn btn--sm" type="button" :disabled="scheduleBusy" @click="triggerScheduleCheck">
-            {{ scheduleBusy ? "检查中…" : "立即检查并补跑" }}
-          </button>
-        </div>
-      </div>
-      <div class="card-body">
-        <div v-if="schedule?.summary" class="cov-stats">
-          <div class="cov-stat">
-            <span class="cov-stat-label">上次自检</span>
-            <b class="cov-stat-value">{{ scheduleCheck ? fmtDateTime(scheduleCheck.finished_at ?? scheduleCheck.started_at) : "—" }}</b>
-            <span class="cov-stat-sub">{{ scheduleCheck?.status ?? "尚未运行" }}</span>
-          </div>
-          <div class="cov-stat">
-            <span class="cov-stat-label">数据就绪</span>
-            <b class="cov-stat-value">{{ scheduleCheck?.report?.readiness?.status ?? "—" }}</b>
-            <span class="cov-stat-sub">日线 / 宏观 / 快照</span>
-          </div>
-          <div class="cov-stat">
-            <span class="cov-stat-label">逾期作业</span>
-            <b class="cov-stat-value mono">{{ schedule.summary.overdue }}<small>/ {{ schedule.summary.total }}</small></b>
-            <span class="cov-stat-sub">按计划周期或最近定点时点判断</span>
-          </div>
-          <div class="cov-stat">
-            <span class="cov-stat-label">质量门</span>
-            <b class="cov-stat-value">{{ qualityGate?.status ?? "—" }}</b>
-            <span class="cov-stat-sub">{{ qualityGate?.caveat ?? "等待质检批次" }}</span>
-          </div>
-        </div>
-        <SkeletonBlock v-if="scheduleLoading && !schedule" :rows="3" />
-        <div v-else-if="overdueJobs.length" class="table-wrap sys-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>作业</th>
-                <th>分组</th>
-                <th>计划</th>
-                <th>上次运行</th>
-                <th>应执行</th>
-                <th>动作 / 原因</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="job in overdueJobs" :key="job.name">
-                <td class="mono">{{ job.name }}</td>
-                <td class="muted">{{ job.group }}</td>
-                <td class="mono">{{ job.cron || (job.period_seconds ? `${job.period_seconds}s` : "—") }}</td>
-                <td class="muted">{{ fmtDateTime(job.last_run_at) }}</td>
-                <td class="muted">{{ fmtDateTime(job.due_at) }}</td>
-                <td class="muted cell-wrap">{{ job.reason ?? job.action }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <EmptyState
-          v-else
-          text="没有逾期作业"
-          hint="调度器按计划运行；启动或周期自检会把错过的数据采集与研判作业补齐。"
-        />
-      </div>
-    </section>
+    <ScheduleCheckCard
+      :schedule="schedule"
+      :schedule-check="scheduleCheck"
+      :quality-gate="qualityGate"
+      :overdue-jobs="overdueJobs"
+      :schedule-loading="scheduleLoading"
+      :schedule-busy="scheduleBusy"
+      @trigger="triggerScheduleCheck"
+    />
 
-    <section class="card" style="margin-top: 12px">
-      <div class="card-head">
-        <span class="card-title">任务调度</span>
-        <span class="card-sub">任务目的 · cron 定义 · 最近运行 · 点击「调度次数」查看执行历史；超过 24h 未跑标黄，超过 72h 标红</span>
-        <div class="card-actions">
-          <span class="badge badge--sm" :class="neverRanJobs ? 'badge--warn' : 'badge--live'">
-            {{ neverRanJobs }} 个未运行
-          </span>
-          <span class="badge badge--sm" :class="staleJobs ? 'badge--warn' : 'badge--live'">
-            {{ staleJobs }} 个超 24h
-          </span>
-          <span class="card-sub">{{ jobs.length }} 项</span>
-        </div>
-      </div>
-      <div class="table-wrap sys-wrap">
-        <SkeletonBlock v-if="!jobs.length && jobsLoading" :rows="5" />
-        <ErrorState v-else-if="jobsError" :error="jobsError" @retry="loadJobs" />
-        <table v-else class="data-table sys-jobs">
-          <thead>
-            <tr>
-              <th class="col-job">任务</th>
-              <th class="col-desc">任务描述</th>
-              <th class="col-cron">计划</th>
-              <th class="col-on">启用</th>
-              <th class="col-status">最近状态</th>
-              <th class="col-run">最近运行 / 时效</th>
-              <th class="col-count">调度次数</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="job in jobs" :key="job.name">
-              <td class="mono col-job">{{ job.name }}</td>
-              <td class="job-desc col-desc">{{ job.description ?? "—" }}</td>
-              <td class="mono col-cron">{{ job.cron }}</td>
-              <td class="col-on">{{ job.enabled ? "是" : "否" }}</td>
-              <td class="col-status">
-                <span
-                  class="badge badge--sm"
-                  :class="job.last_status === 'error' ? 'badge--warn' : 'badge--live'"
-                  :title="job.last_error ?? statusLabel(job.last_status)"
-                >
-                  {{ statusLabel(job.last_status) }}
-                </span>
-              </td>
-              <td class="col-run">
-                <span class="run-cell">
-                  <span class="muted">{{ fmtDateTime(job.last_run_at) }}</span>
-                  <span
-                    v-if="job.overdue"
-                    class="badge badge--sm badge--warn"
-                    :title="job.overdue_reason ?? `应执行 ${fmtDateTime(job.due_at)}`"
-                  >
-                    逾期
-                  </span>
-                  <span
-                    v-if="jobStale(job).cls"
-                    class="badge badge--sm"
-                    :class="jobStale(job).cls"
-                    :title="jobStale(job).title"
-                  >
-                    {{ jobStale(job).text }}
-                  </span>
-                  <span v-else class="dim sys-age" :title="jobStale(job).title">{{ jobStale(job).text }}</span>
-                </span>
-              </td>
-              <td class="col-count">
-                <button class="link-count" type="button" :title="`查看 ${job.name} 的执行历史`" @click="openHistory(job)">
-                  <b class="mono">{{ job.run_count }}</b>
-                  <span class="link-count-more">次 · 历史</span>
-                </button>
-              </td>
-            </tr>
-            <tr v-if="!jobs.length">
-              <td colspan="7">
-                <EmptyState
-                  text="暂无调度任务"
-                  hint="后端 /api/system/jobs 没有返回任务：先确认「服务」卡里调度器正常，再看 backend 的 jobs 表是否为空（可用 scripts 里的种子脚本补齐）。"
-                />
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <JobsCard
+      :jobs="jobs"
+      :jobs-loading="jobsLoading"
+      :jobs-error="jobsError"
+      @retry="loadJobs"
+      @open="openHistory"
+    />
 
     <div class="sys-grid">
-      <section class="card">
-        <div class="card-head">
-          <span class="card-title">数据源健康</span>
-          <span class="card-sub">官方优先 · 失败重试 · 最近检查</span>
-          <div class="card-actions"><span class="card-sub">{{ sources.length }} 个来源</span></div>
-        </div>
-        <div class="table-wrap sys-wrap">
-          <SkeletonBlock v-if="!sources.length && sourcesLoading" :rows="5" />
-          <ErrorState v-else-if="sourcesError" :error="sourcesError" @retry="loadSources" />
-          <table v-else class="data-table">
-            <thead>
-              <tr>
-                <th>来源</th>
-                <th>角色 / 数据域</th>
-                <th>类型</th>
-                <th>等级</th>
-                <th>状态</th>
-                <th>24h 成功率</th>
-                <th>连续失败</th>
-                <th>最近检查</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="source in sources" :key="source.id">
-                <td>{{ source.name }}</td>
-                <td class="muted">
-                  <span class="badge badge--sm">{{ (source.roles ?? []).join("/") || "—" }}</span>
-                  <span class="dim"> {{ (source.domains ?? []).join(" · ") }}</span>
-                </td>
-                <td class="muted">{{ source.kind }}</td>
-                <td><span class="badge badge--sm">{{ source.tier ?? "—" }}</span></td>
-                <td>
-                  <span
-                    class="badge badge--sm"
-                    :class="source.last_ok === false || source.cooldown_until ? 'badge--warn' : 'badge--live'"
-                    :title="source.last_error || (source.base_url ?? '')"
-                  >
-                    {{ source.cooldown_until ? "冷却中" : source.last_ok === true ? "正常" : source.last_ok === false ? "失败" : "未检查" }}
-                  </span>
-                </td>
-                <td class="num mono">{{ source.success_rate_24h === null || source.success_rate_24h === undefined ? "—" : `${(source.success_rate_24h * 100).toFixed(0)}%` }}</td>
-                <td class="num mono">{{ source.consecutive_failures ?? "—" }}</td>
-                <td class="muted">{{ fmtDateTime(source.last_check) }}</td>
-              </tr>
-              <tr v-if="!sources.length">
-                <td colspan="8">
-                  <EmptyState
-                    text="暂无数据源记录"
-                    hint="数据源在 backend 的 sources 表里登记；空表说明采集器还没跑过，先运行一次采集任务再刷新。"
-                  />
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <div v-if="chains.length" class="cov-method">
-            <div class="cov-method-title">备用链</div>
-            <ul class="cov-method-list">
-              <li v-for="chain in chains" :key="chain.id">
-                <b>{{ chain.title }}</b>（{{ chain.status }}{{ chain.single_source ? " · 单源" : "" }}）：
-                {{ chain.candidates.map((item) => item.source).join(" → ") }}
-              </li>
-            </ul>
-          </div>
-        </div>
-      </section>
+      <SourcesCard
+        :sources="sources"
+        :chains="chains"
+        :sources-loading="sourcesLoading"
+        :sources-error="sourcesError"
+        @retry="loadSources"
+      />
 
-      <section class="card">
-        <div class="card-head">
-          <span class="card-title">数据质检</span>
-          <span class="card-sub">官方对账 · 新鲜度</span>
-          <div class="card-actions">
-            <span class="badge badge--sm" :class="quality?.summary.failed ? 'badge--warn' : 'badge--live'">
-              {{ quality?.summary.passed ?? "—" }} / {{ quality?.summary.total ?? "—" }}
-            </span>
-            <button class="btn btn--sm btn--ghost" type="button" @click="triggerRepair">自动修复</button>
-          </div>
-        </div>
-        <div class="table-wrap sys-wrap">
-          <SkeletonBlock v-if="!quality && qualityLoading" :rows="5" />
-          <ErrorState v-else-if="qualityError" :error="qualityError" @retry="loadQuality" />
-          <table v-else class="data-table sys-quality">
-            <colgroup>
-              <col class="q-dataset-col" />
-              <col class="q-kind-col" />
-              <col class="q-status-col" />
-              <col class="q-status-col" />
-              <col />
-              <col />
-              <col class="q-status-col" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>数据集</th>
-                <th>类型</th>
-                <th>严重度</th>
-                <th>状态</th>
-                <th>期望 / 实际 / 偏差</th>
-                <th>明细 / 处置</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(row, index) in quality?.data ?? []" :key="`${row.dataset}-${index}`">
-                <td class="q-dataset" :title="row.dataset">{{ row.dataset }}<span v-if="row.symbol" class="dim"> / {{ row.symbol }}</span></td>
-                <td class="muted q-kind">{{ row.kind }}</td>
-                <td>
-                  <span class="badge badge--sm" :class="row.severity === 'error' || row.severity === 'critical' ? 'badge--down' : row.severity === 'warn' ? 'badge--warn' : 'badge--live'">
-                    {{ row.severity ?? (row.passed ? "info" : "warn") }}
-                  </span>
-                </td>
-                <td>
-                  <span class="badge badge--sm" :class="row.passed ? 'badge--live' : 'badge--warn'">
-                    {{ row.passed ? "通过" : "失败" }}
-                  </span>
-                </td>
-                <td class="muted mono">
-                  {{ row.expected ?? "—" }} / {{ row.actual ?? "—" }} / {{ row.deviation ?? "—" }}
-                </td>
-                <td class="muted q-detail">
-                  {{ row.detail ?? "—" }}
-                  <div v-if="!row.passed && row.remediation" class="dim">
-                    处置：{{ row.remediation }}
-                  </div>
-                </td>
-                <td>
-                  <button
-                    v-if="!row.passed && row.action_job"
-                    class="btn btn--sm btn--ghost"
-                    type="button"
-                    @click="triggerJob(row.action_job)"
-                  >
-                    {{ row.action_job }}
-                  </button>
-                  <span v-else class="dim">—</span>
-                </td>
-              </tr>
-              <tr v-if="!(quality?.data ?? []).length">
-                <td colspan="7">
-                  <EmptyState
-                    text="暂无质检结果"
-                    hint="质检数据由定时作业把新鲜度 / 覆盖率 / 连续性 / 对账结果写入 data_quality；作业跑过之后这里才有行。"
-                  />
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <QualityCard
+        :quality="quality"
+        :quality-loading="qualityLoading"
+        :quality-error="qualityError"
+        @retry="loadQuality"
+        @repair="triggerRepair"
+        @job="triggerJob"
+      />
     </div>
 
-    <section class="card" style="margin-top: 12px">
-      <div class="card-head">
-        <span class="card-title">验收自检（DoD）</span>
-        <span class="card-sub">scripts/check_acceptance.ps1 · {{ acceptance?.checks.length ?? "—" }} 项</span>
-        <div class="card-actions">
-          <span class="badge badge--sm" :class="acceptance?.passed ? 'badge--live' : 'badge--warn'">
-            {{ acceptance?.passed ? "全部通过" : `${acceptance?.failed_summary?.count ?? "存在"} 项失败` }}
-          </span>
-          <span v-if="acceptance?.warnings_summary?.count" class="badge badge--sm badge--warn">
-            {{ acceptance.warnings_summary.count }} 项警告
-          </span>
-        </div>
-      </div>
-      <div v-if="acceptance?.failed_summary?.failed?.length" class="card-body">
-        <div class="badge badge--down" style="display: block; white-space: normal; line-height: 1.6">
-          <b>失败说明</b>
-          <div v-for="item in acceptance.failed_summary.failed.slice(0, 5)" :key="item.id ?? item.name" style="margin-top: 4px">
-            <b>{{ item.name }}</b>：{{ item.reason ?? item.detail }}
-            <span v-if="item.remediation" class="dim"> · 处置：{{ item.remediation }}</span>
-          </div>
-          <div v-for="hint in acceptance.failed_summary.hints ?? []" :key="hint" class="dim" style="margin-top: 2px">
-            {{ hint }}
-          </div>
-        </div>
-      </div>
-      <div class="table-wrap sys-wrap">
-        <SkeletonBlock v-if="!acceptance && acceptanceLoading" :rows="5" />
-        <ErrorState v-else-if="acceptanceError" :error="acceptanceError" @retry="loadAcceptance" />
-        <table v-else class="data-table">
-          <thead>
-            <tr>
-              <th>检查项</th>
-              <th>分类</th>
-              <th>严重度</th>
-              <th>状态</th>
-              <th>实际 / 要求</th>
-              <th>说明与处置</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(check, index) in acceptance?.checks ?? []" :key="check.id ?? index">
-              <td>{{ check.name }}</td>
-              <td class="muted">{{ check.category ?? "—" }}</td>
-              <td>
-                <span class="badge badge--sm" :class="check.severity === 'error' || check.severity === 'critical' ? 'badge--down' : check.severity === 'warn' ? 'badge--warn' : 'badge--live'">
-                  {{ check.severity ?? "info" }}
-                </span>
-              </td>
-              <td>
-                <span class="badge badge--sm" :class="check.status === 'fail' ? 'badge--down' : check.status === 'warn' ? 'badge--warn' : 'badge--live'">
-                  {{ check.status === 'fail' ? "失败" : check.status === 'warn' ? "警告" : "通过" }}
-                </span>
-              </td>
-              <td class="muted mono">{{ check.actual ?? "—" }} / {{ check.required ?? "—" }}</td>
-              <td class="muted cell-wrap">
-                <div v-if="check.reason">{{ check.reason }}</div>
-                <div v-if="check.impact" class="dim">影响：{{ check.impact }}</div>
-                <div v-if="check.remediation" class="dim">处置：{{ check.remediation }}</div>
-                <div v-if="!check.reason && !check.remediation">{{ String(check.detail ?? "—") }}</div>
-              </td>
-              <td>
-                <button
-                  v-if="check.status === 'fail' && check.action_job"
-                  class="btn btn--sm btn--ghost"
-                  type="button"
-                  @click="triggerJob(check.action_job)"
-                >
-                  {{ check.action_job }}
-                </button>
-                <span v-else class="dim">—</span>
-              </td>
-            </tr>
-            <tr v-if="!(acceptance?.checks ?? []).length">
-              <td colspan="7">
-                <EmptyState
-                  text="尚未运行验收自检"
-                  hint="验收检查由 /api/system/acceptance 实时计算；确认后端就绪后点右上角刷新。"
-                />
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div v-if="acceptance?.counts" class="card-foot">
-        <span v-for="(value, key) in acceptance.counts" :key="key" class="count-chip">
-          {{ countLabel(String(key)) }} <b>{{ fmtInt(Number(value)) }}</b>
-        </span>
-      </div>
-    </section>
+    <AcceptanceCard
+      :acceptance="acceptance"
+      :acceptance-loading="acceptanceLoading"
+      :acceptance-error="acceptanceError"
+      @retry="loadAcceptance"
+      @job="triggerJob"
+    />
 
     <Drawer
       :open="Boolean(historyJob)"
@@ -596,321 +184,70 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
 import Drawer from "@/components/ui/Drawer.vue";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import SkeletonBlock from "@/components/ui/SkeletonBlock.vue";
-import { usePolling } from "@/composables/usePolling";
-import { fmtDateTime, fmtInt } from "@/composables/useFormat";
-import {
-  getAcceptance,
-  getJobRuns,
-  getJobs,
-  getQuality,
-  getQualityGate,
-  getSchedule,
-  getScheduleCheck,
-  getSources,
-  getSystemCoverage,
-  repairQuality,
-  runJob,
-  runScheduleCheck,
-} from "@/api/endpoints";
-import type {
-  CoverageResponse,
-  JobRow,
-  JobRunRow,
-  QualityGate,
-  ScheduleCheckRow,
-  ScheduleResponse,
-} from "@/api/types";
-import { getJson } from "@/api/client";
-import { useHealthStore } from "@/stores/health";
-
-const health = useHealthStore();
+import AcceptanceCard from "@/components/system/AcceptanceCard.vue";
+import JobsCard from "@/components/system/JobsCard.vue";
+import QualityCard from "@/components/system/QualityCard.vue";
+import ScheduleCheckCard from "@/components/system/ScheduleCheckCard.vue";
+import SourcesCard from "@/components/system/SourcesCard.vue";
+import SystemKpis from "@/components/system/SystemKpis.vue";
+import { fmtDateTime } from "@/composables/useFormat";
+import { statusLabel, useSystemData } from "@/composables/useSystemData";
 
 const {
-  data: jobsData,
-  error: jobsError,
-  loading: jobsLoading,
-  refresh: refreshJobs,
-} = usePolling(getJobs, { interval: 60000 });
-const {
-  data: sourcesData,
-  error: sourcesError,
-  loading: sourcesLoading,
-  refresh: refreshSources,
-} = usePolling(getSources, { interval: 120000 });
-const {
-  data: qualityData,
-  error: qualityError,
-  loading: qualityLoading,
-  refresh: refreshQuality,
-} = usePolling(getQuality, { interval: 120000 });
-const {
-  data: acceptanceData,
-  error: acceptanceError,
-  loading: acceptanceLoading,
-  refresh: refreshAcceptance,
-} = usePolling(getAcceptance, { interval: 60000 });
-
-const {
-  data: coverage,
-} = usePolling<CoverageResponse>(() => getSystemCoverage(), { interval: 60000 });
-const {
-  data: scheduleData,
-  loading: scheduleLoading,
-  refresh: refreshSchedule,
-} = usePolling<ScheduleResponse>(() => getSchedule(), { interval: 60000 });
-const {
-  data: scheduleCheckData,
-  refresh: refreshScheduleCheck,
-} = usePolling<{ data: ScheduleCheckRow[]; schedule: ScheduleResponse }>(
-  () => getScheduleCheck(1),
-  { interval: 60000 },
-);
-const { data: gateData } = usePolling<QualityGate>(() => getQualityGate(), { interval: 60000 });
-const schedule = computed(() => scheduleData.value ?? null);
-const scheduleCheck = computed(() => scheduleCheckData.value?.data?.[0] ?? null);
-const qualityGate = computed(() => gateData.value ?? null);
-const overdueJobs = computed(
-  () => (schedule.value?.jobs ?? []).filter((job) => job.overdue).slice(0, 8),
-);
-const scheduleBusy = ref(false);
-
-async function triggerScheduleCheck(): Promise<void> {
-  scheduleBusy.value = true;
-  try {
-    await runScheduleCheck({ wait: false, run_data: true, run_downstream: true });
-    await refreshScheduleCheck();
-    await refreshSchedule();
-  } finally {
-    scheduleBusy.value = false;
-  }
-}
-
-async function triggerJob(name: string | null | undefined): Promise<void> {
-  if (!name) return;
-  if (name === "schedule_check") {
-    await triggerScheduleCheck();
-    return;
-  }
-  await runJob(name);
-}
-
-async function triggerRepair(): Promise<void> {
-  await repairQuality({ recheck: true });
-  await refreshQuality();
-  await refreshAcceptance();
-}
-const coveragePct = computed(() => coverage.value?.data_quality_pct ?? 0);
-/** 后端把口径写成一段长文本：按分号拆成逐条说明，避免堆成一坨。 */
-const methodLines = computed(() => {
-  const method = coverage.value?.method ?? "健康度 = 60% × 序列覆盖率 + 40% × 作业健康率（最新观测 45 天内视为覆盖）";
-  return method
-    .split(/[；;\n]/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-});
-
-const jobs = computed(() => jobsData.value?.data ?? []);
-const failedJobs = computed(() => jobs.value.filter((job) => job.last_status === "error").length);
-const sources = computed(() => sourcesData.value?.data ?? []);
-const chains = computed(() => sourcesData.value?.chains ?? []);
-const quality = computed(() => qualityData.value ?? null);
-const acceptance = computed(() => acceptanceData.value ?? null);
-const acceptancePassed = computed(
-  () => acceptance.value?.checks.filter((check) => check.passed).length ?? 0,
-);
-
-function statusLabel(status: string | null): string {
-  if (!status) return "未运行";
-  const labels: Record<string, string> = { ok: "成功", error: "失败", running: "运行中", skipped: "跳过", interrupted: "中断" };
-  return labels[status] ?? status;
-}
-
-/** 超过 24h 未跑标黄，超过 72h 标红（用户要求的作业时效约束） */
-const STALE_WARN_HOURS = 24;
-const STALE_DOWN_HOURS = 72;
-
-function runAgeHours(iso: string | null): number | null {
-  if (!iso) return null;
-  const ts = new Date(iso).getTime();
-  if (Number.isNaN(ts)) return null;
-  return (Date.now() - ts) / 3_600_000;
-}
-
-interface StaleMark {
-  text: string;
-  cls: string;
-  title: string;
-}
-
-function jobStale(job: JobRow): StaleMark {
-  const hours = runAgeHours(job.last_run_at);
-  if (hours === null) {
-    return {
-      text: "从未运行",
-      cls: "badge--warn",
-      title: "没有最近运行记录：确认任务已启用（启用列为「是」），或手动触发一次对应作业。",
-    };
-  }
-  const since = `最近一次运行 ${fmtDateTime(job.last_run_at)}`;
-  if (hours >= STALE_DOWN_HOURS) {
-    return {
-      text: `停滞 ${Math.floor(hours / 24)} 天`,
-      cls: "badge--down",
-      title: `${since}，已 ${Math.floor(hours / 24)} 天未运行（阈值 72 小时）：检查调度器是否在跑、任务是否被禁用。`,
-    };
-  }
-  if (hours >= STALE_WARN_HOURS) {
-    return {
-      text: `${Math.round(hours)} 小时未跑`,
-      cls: "badge--warn",
-      title: `${since}，已 ${Math.round(hours)} 小时未运行（阈值 24 小时）：可能是调度间隔较长或上次运行失败。`,
-    };
-  }
-  return {
-    text: `${hours < 1 ? "刚刚" : `${hours.toFixed(1)}h 前`}`,
-    cls: "",
-    title: `${since}（${hours.toFixed(1)} 小时前）`,
-  };
-}
-
-const staleJobs = computed(
-  () => jobs.value.filter((job) => (runAgeHours(job.last_run_at) ?? Infinity) >= STALE_WARN_HOURS).length,
-);
-const neverRanJobs = computed(() => jobs.value.filter((job) => !job.last_run_at).length);
-
-/* ---------- 执行历史抽屉（点击「调度次数」打开） ---------- */
-const historyJob = ref<string | null>(null);
-const historyRuns = ref<JobRunRow[]>([]);
-const historyLoading = ref(false);
-const historyError = ref<Error | null>(null);
-
-const historySub = computed(() => {
-  if (!historyJob.value) return "";
-  const job = jobs.value.find((row) => row.name === historyJob.value);
-  if (!job) return "";
-  const cron = job.cron ? `计划 ${job.cron}` : "无计划";
-  return `${cron} · 累计 ${job.run_count} 次 · 最近 ${fmtDateTime(job.last_run_at)}`;
-});
-
-function openHistory(job: JobRow): void {
-  historyJob.value = job.name;
-  void loadHistory();
-}
-
-function closeHistory(): void {
-  historyJob.value = null;
-  historyRuns.value = [];
-  historyError.value = null;
-}
-
-async function loadHistory(): Promise<void> {
-  const name = historyJob.value;
-  if (!name) return;
-  historyLoading.value = true;
-  historyError.value = null;
-  try {
-    const payload = await getJobRuns(name, 50);
-    historyRuns.value = payload.data ?? [];
-  } catch (err) {
-    historyError.value = err instanceof Error ? err : new Error(String(err));
-  } finally {
-    historyLoading.value = false;
-  }
-}
-
-function runStatusClass(status: string): string {
-  if (status === "error" || status === "interrupted") return "badge--warn";
-  if (status === "running") return "badge--live";
-  return "badge--live";
-}
-
-function fmtDuration(ms: number | null): string {
-  if (ms === null || Number.isNaN(ms)) return "—";
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  const minutes = Math.floor(ms / 60_000);
-  const seconds = Math.round((ms % 60_000) / 1000);
-  return `${minutes}m${seconds}s`;
-}
-
-/** JobRun.detail 是 JSON 摘要；压成一行可读文本，完整内容挂在 title 上。 */
-function summarizeRun(run: JobRunRow): string {
-  if (!run.detail) return "—";
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(run.detail);
-  } catch {
-    return String(run.detail).slice(0, 160);
-  }
-  if (!parsed || typeof parsed !== "object") return String(parsed).slice(0, 160);
-  const record = parsed as Record<string, unknown>;
-  if (record.error) return `错误：${String(record.error)}`;
-  const pairs = Object.entries(record)
-    .filter(([, value]) => value !== null && value !== undefined && value !== "")
-    .map(([key, value]) => `${key}=${typeof value === "number" ? value : String(value)}`);
-  const text = pairs.join(" · ");
-  return text ? text.slice(0, 160) : "—";
-}
-
-function countLabel(key: string): string {
-  const labels: Record<string, string> = {
-    instruments: "标的",
-    market_bars: "日线",
-    quotes: "快照",
-    macro: "宏观",
-    calendar: "日历",
-    documents: "新闻",
-    bodies: "原文",
-    claims: "断言",
-    briefs: "简报",
-    analytics: "分析",
-    signals: "信号",
-    plans: "计划",
-    theses: "论点",
-    alerts: "告警",
-  };
-  return labels[key] ?? key;
-}
-
-function loadJobs(): void {
-  void refreshJobs();
-}
-function loadSources(): void {
-  void refreshSources();
-}
-function loadQuality(): void {
-  void refreshQuality();
-}
-function loadAcceptance(): void {
-  void refreshAcceptance();
-}
-
-function refreshAll(): void {
-  void health.refresh();
-  void refreshJobs();
-  void refreshSources();
-  void refreshQuality();
-  void refreshAcceptance();
-}
-
-onMounted(() => {
-  void health.refresh();
-});
+  health,
+  jobs,
+  jobsError,
+  jobsLoading,
+  loadJobs,
+  sources,
+  chains,
+  sourcesError,
+  sourcesLoading,
+  loadSources,
+  quality,
+  qualityError,
+  qualityLoading,
+  loadQuality,
+  acceptance,
+  acceptanceError,
+  acceptanceLoading,
+  loadAcceptance,
+  coverage,
+  schedule,
+  scheduleLoading,
+  scheduleCheck,
+  qualityGate,
+  overdueJobs,
+  scheduleBusy,
+  coveragePct,
+  methodLines,
+  failedJobs,
+  acceptancePassed,
+  triggerScheduleCheck,
+  triggerJob,
+  triggerRepair,
+  historyJob,
+  historyRuns,
+  historyLoading,
+  historyError,
+  historySub,
+  openHistory,
+  closeHistory,
+  loadHistory,
+  runStatusClass,
+  fmtDuration,
+  summarizeRun,
+  refreshAll,
+} = useSystemData();
 </script>
 
 <style scoped>
 .table-wrap {
   overflow-x: auto;
-}
-/* 系统状态页的表格全部展开：作业、数据源、验收清单都要能直接看到，
-   不套全站 table-wrap 的 411px 内部滚动（否则最后一行会被裁掉半行）。 */
-.sys-wrap {
-  max-height: none;
 }
 .sys-grid {
   display: grid;
@@ -1021,104 +358,6 @@ onMounted(() => {
   color: var(--muted);
 }
 
-/* ---------- 任务调度：固定列宽，避免新增描述/次数列把表格撑出横向滚动 ---------- */
-.sys-jobs {
-  table-layout: fixed;
-}
-.sys-jobs .col-job {
-  width: 150px;
-}
-.sys-jobs .col-cron {
-  width: 118px;
-}
-.sys-jobs .col-on {
-  width: 44px;
-  text-align: center;
-}
-.sys-jobs .col-status {
-  width: 84px;
-}
-.sys-jobs .col-run {
-  width: 190px;
-}
-.sys-jobs .col-count {
-  width: 96px;
-  text-align: right;
-}
-.sys-jobs td.col-job {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sys-jobs .job-desc {
-  font-size: 10.5px;
-  line-height: 1.45;
-  color: var(--muted);
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-/* ---------- 数据质检：数据集列加宽且不换行，明细列收窄自动换行 ---------- */
-.sys-quality {
-  table-layout: fixed;
-}
-.sys-quality .q-dataset-col {
-  width: 132px;
-}
-.sys-quality .q-kind-col {
-  width: 84px;
-}
-.sys-quality .q-status-col {
-  width: 72px;
-}
-.sys-quality .q-dataset {
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sys-quality .q-kind,
-.sys-quality .q-detail {
-  font-size: 10.5px;
-  line-height: 1.45;
-}
-.sys-quality .q-kind {
-  white-space: nowrap;
-}
-.sys-quality .q-detail {
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-.run-cell {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.link-count {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 10px;
-  cursor: pointer;
-}
-.link-count:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.link-count b {
-  font-size: 11px;
-  color: var(--text);
-}
-.link-count-more {
-  font-size: 9.5px;
-  color: var(--dim);
-}
-
 /* ---------- 执行历史抽屉 ---------- */
 .hist-wrap {
   max-height: none;
@@ -1146,26 +385,6 @@ onMounted(() => {
   overflow-wrap: anywhere;
 }
 
-.count-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-size: 10px;
-  color: var(--dim);
-}
-.count-chip b {
-  font-family: var(--mono);
-  color: var(--muted);
-  font-weight: 600;
-}
-.sys-age {
-  font-family: var(--mono);
-  font-size: 10px;
-  white-space: nowrap;
-}
 @media (max-width: 1240px) {
   .sys-grid {
     grid-template-columns: 1fr;

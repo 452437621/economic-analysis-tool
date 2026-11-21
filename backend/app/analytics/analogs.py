@@ -29,13 +29,14 @@ def build_state(closes: pd.DataFrame, macro: pd.DataFrame, max_weeks: int = 320)
     return state.dropna().tail(max_weeks)
 
 
-def find_analogs(
+def find_asset_analogs(
     state: pd.DataFrame,
     closes: pd.DataFrame,
     *,
     top_n: int = 5,
     min_gap_days: int = 180,
 ) -> dict:
+    """Weekly asset-state nearest-neighbour analogs (see ``cycle.analogs`` for monthly)."""
     if len(state) < 40:
         return {}
     z = (state - state.mean()) / state.std(ddof=0).replace(0, np.nan)
@@ -71,3 +72,9 @@ def find_analogs(
         "matches": matches,
         "note": "历史类比仅作参照：样本有限，结构性变化可能使其失效。",
     }
+
+
+# Backwards-compatible name (the cycle engine has a different analog API).
+find_analogs = find_asset_analogs
+
+__all__ = ["FEATURE_ASSETS", "build_state", "find_asset_analogs", "find_analogs"]

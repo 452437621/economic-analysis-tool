@@ -3,6 +3,8 @@ import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 
 // 产物直接输出到仓库根 web/，由 FastAPI（backend/app/main.py）托管；web/ 是构建产物，不入版本库。
+const backend = `http://127.0.0.1:${process.env.EPIC_PORT || "8765"}`;
+
 export default defineConfig({
   plugins: [vue()],
   resolve: {
@@ -12,7 +14,7 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     strictPort: true,
-    proxy: { "/api": "http://127.0.0.1:8765", "/healthz": "http://127.0.0.1:8765" },
+    proxy: { "/api": backend, "/healthz": backend },
   },
   build: {
     outDir: "../web",

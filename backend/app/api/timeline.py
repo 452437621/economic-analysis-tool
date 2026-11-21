@@ -133,7 +133,7 @@ def overview(session: Session = Depends(get_session)) -> dict:
         "run_id": run.id if run else None,
         "status": run.status if run else None,
         "degraded": bool(run.degraded) if run else False,
-        "degraded_reasons": run.degraded_reasons if run else [],
+        "degraded_reasons": (run.degraded_reasons or []) if run else [],
         "counts": _counts(session),
         "eras": [_era_payload(era) for era in dataset.ERAS],
         "events": [_event_payload(row) for row in session.scalars(select(TimelineEvent).order_by(TimelineEvent.year, TimelineEvent.title)).all()],

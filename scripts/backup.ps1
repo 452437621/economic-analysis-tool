@@ -1,8 +1,17 @@
-﻿param()
+﻿# EPIC backup wrapper. All logic lives in scripts/epic.py; this file only maps flags.
+param(
+  [int]$Keep = 0,
+  [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest
+)
+
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $venvPy = Join-Path $root ".venv\Scripts\python.exe"
-if (-not (Test-Path -LiteralPath $venvPy)) { throw "尚未初始化，请先运行 scripts\setup.ps1" }
-$env:PYTHONPATH = Join-Path $root "backend"
-Push-Location (Join-Path $root "backend")
-try { & $venvPy -m app.backup } finally { Pop-Location }
+if (Test-Path -LiteralPath $venvPy) { $py = $venvPy }
+elseif (Get-Command py -ErrorAction SilentlyContinue) { $py = "py" }
+else { $py = "python" }
+
+$targetArgs = @((Join-Path $root "scripts\epic.py"), "backup")
+if ($Keep -gt 0) { $targetArgs += @("--keep", "$Keep") }
+& $py @targetArgs @Rest
+exit $LASTEXITCODE

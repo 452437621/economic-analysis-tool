@@ -148,8 +148,12 @@ def build_asset_plan(row: dict[str, Any], panel: Any) -> dict[str, Any]:
     if isinstance(last, (int, float)) and last:
         if asset_id in BOND_YIELD_ASSETS:
             bp = max(10.0, stop_pct / 100 * float(last) * 100)
-            stop_level = round(float(last) + bp / 100, 3)
-            stop_note = f"30 年期收益率上行约 {bp:.0f}bp 至 {stop_level:.2f}% 止损（债券价格反向）"
+            if side == "long":
+                stop_level = round(float(last) + bp / 100, 3)
+                stop_note = f"30 年期收益率上行约 {bp:.0f}bp 至 {stop_level:.2f}% 止损（债券价格反向）"
+            else:
+                stop_level = round(max(0.0, float(last) - bp / 100), 3)
+                stop_note = f"30 年期收益率下行约 {bp:.0f}bp 至 {stop_level:.2f}% 止损（债券价格反向）"
         elif side == "long":
             stop_level = round(float(last) * (1 - stop_pct / 100), 3)
             stop_note = f"自现价 {float(last):.3f} 下破 {stop_level:.3f}（−{stop_pct:.1f}%）止损"

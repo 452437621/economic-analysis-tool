@@ -196,6 +196,11 @@ def assess_readiness(session: Session, now: datetime | None = None) -> Readiness
     ).all()
     bar_latest = {symbol: ts for symbol, ts in bar_rows if ts is not None}
     missing_bars = sorted(REQUIRED_BARS - set(bar_latest))
+    stale_required = sorted(
+        symbol
+        for symbol, ts in bar_latest.items()
+        if symbol in REQUIRED_BARS and (current - _aware(ts)).days > 10  # type: ignore[operator]
+    )
     stale_bars = sorted(
         symbol
         for symbol, ts in bar_latest.items()
@@ -203,7 +208,12 @@ def assess_readiness(session: Session, now: datetime | None = None) -> Readiness
     )
     latest_bar = max(bar_latest.values(), default=None)
     bar_age_days = (current - _aware(latest_bar)).days if latest_bar else None  # type: ignore[arg-type]
-    bars_ok = bars_count >= 1000 and not missing_bars and (bar_age_days is not None and bar_age_days <= 10)
+    bars_ok = (
+        bars_count >= 1000
+        and not missing_bars
+        and not stale_required
+        and (bar_age_days is not None and bar_age_days <= 10)
+    )
     if not bars_ok:
         reasons.append(
             {
@@ -548,16 +558,19 @@ def run_schedule_check(
                     session.commit()
         raise
     finally:
-        if check_id and not dry_run:
-            with SessionLocal() as session:
-                row = session.get(ScheduleCheck, check_id)
-                if row is not None:
-                    row.status = str(report.get("status") or "error")
-                    row.data_status = (report.get("readiness") or {}).get("status")
-                    row.finished_at = row.finished_at or utcnow()
-                    row.report = _json_safe(report)
-                    session.commit()
-        _CHECK_LOCK.release()
+        try:
+            if check_id and not dry_run:
+                with SessionLocal() as session:
+                    row = session.get(ScheduleCheck, check_id)
+                    if row is not None:
+                        row.status = str(report.get("status") or "error")
+                        row.data_status = (report.get("readiness") or {}).get("status")
+                        row.finished_at = row.finished_at or utcnow()
+                        row.report = _json_safe(report)
+                        session.commit()
+        finally:
+            # An audit-write failure must never leave the process-wide lock held.
+            _CHECK_LOCK.release()
     return report
 
 

@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import argparse
 import ast
+import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -140,9 +142,25 @@ def check_frontend() -> None:
     for required in ("vue", "vue-router", "pinia", "vite", "typescript", "echarts", "tailwindcss"):
         if required not in deps:
             err(f"frontend: package.json 缺少依赖 {required}")
-    for required_file in ("src/main.ts", "src/App.vue", "src/router/index.ts", "vite.config.ts", "index.html"):
+    for required in ("vitest", "@vue/test-utils", "happy-dom"):
+        if required not in deps:
+            err(f"frontend: package.json 缺少测试依赖 {required}")
+    scripts = data.get("scripts", {})
+    if "test" not in scripts:
+        err('frontend: package.json 缺少 "test" 脚本')
+    for required_file in (
+        "src/main.ts",
+        "src/App.vue",
+        "src/router/index.ts",
+        "vite.config.ts",
+        "vitest.config.ts",
+        "index.html",
+        "src/api/types/index.ts",
+    ):
         if not (FRONTEND / required_file).exists():
             err(f"frontend: 缺少 {required_file}")
+    if not any((FRONTEND / "src").rglob("*.spec.ts")):
+        err("frontend: 缺少 vitest 规格文件 (*.spec.ts)")
 
     allowed_hosts = ("w3.org", "127.0.0.1", "localhost", "vuejs.org", "example.com")
     for path in (FRONTEND / "src").rglob("*"):
@@ -165,6 +183,26 @@ def check_frontend() -> None:
             err("frontend: web/assets 缺少构建产物")
     else:
         warn("frontend: web/index.html 尚未构建（运行 scripts\\build.ps1）")
+
+
+def check_tests_layout() -> None:
+    """Tests stay domain-layered and marked; no legacy milestone filenames."""
+    tests = ROOT / "tests"
+    if not tests.exists():
+        err("tests: tests/ directory missing")
+        return
+    for path in tests.glob("test_*.py"):
+        err(f"tests: flat test file {path.name}; move it under unit/ or integration/")
+    for path in tests.rglob("test_m*.py"):
+        if re.fullmatch(r"test_m\d+\.py", path.name):
+            err(f"tests: legacy milestone filename {path.relative_to(ROOT)}")
+    for path in sorted(tests.rglob("test_*.py")):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if "pytestmark" not in text:
+            err(f"tests: {path.relative_to(ROOT)} lacks a pytest.mark marker")
+    for required in ("unit", "integration", "release"):
+        if not (tests / required).is_dir():
+            err(f"tests: missing {required}/ directory")
 
 
 def check_docs_links() -> None:
@@ -198,6 +236,17 @@ def check_version() -> None:
         if not any(token in text for token in (package_version, short)):
             warn(f"version: {doc.name} does not mention {package_version}")
 
+    frontend_package = FRONTEND / "package.json"
+    if frontend_package.exists():
+        data = json.loads(frontend_package.read_text(encoding="utf-8"))
+        if data.get("version") != package_version:
+            err(f"version: frontend/package.json {data.get('version')} != app {package_version}")
+    lockfile = FRONTEND / "package-lock.json"
+    if lockfile.exists():
+        lock = json.loads(lockfile.read_text(encoding="utf-8"))
+        if lock.get("version") not in (None, package_version):
+            err(f"version: frontend/package-lock.json {lock.get('version')} != app {package_version}")
+
 
 def check_env_example() -> None:
     env = ROOT / ".env.example"
@@ -225,17 +274,12 @@ def check_powershell() -> None:
         warn("powershell: no PowerShell interpreter found, syntax check skipped")
         return
     checker = ROOT / "scripts" / "_lint_ps.ps1"
+    command = [shell, "-NoProfile"]
+    if os.name == "nt":
+        command.extend(["-ExecutionPolicy", "Bypass"])
+    command.extend(["-File", str(checker), "-Files", ",".join(str(path) for path in scripts)])
     result = subprocess.run(
-        [
-            shell,
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(checker),
-            "-Files",
-            ",".join(str(path) for path in scripts),
-        ],
+        command,
         capture_output=True,
         text=True,
         timeout=180,
@@ -245,6 +289,71 @@ def check_powershell() -> None:
         err(f"powershell: syntax errors:\n{result.stdout.strip()[:600]}")
 
 
+def _epic_actions() -> tuple[str, ...]:
+    spec = importlib.util.spec_from_file_location("epic_lint_target", ROOT / "scripts" / "epic.py")
+    if not spec or not spec.loader:
+        err("scripts: cannot load scripts/epic.py")
+        return ()
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:  # noqa: BLE001 - lint must report, not crash
+        err(f"scripts: scripts/epic.py failed to import: {exc}")
+        return ()
+    return tuple(getattr(module, "ACTIONS", ()))
+
+
+def check_scripts() -> None:
+    """Each action must have PowerShell, CMD and bash wrappers over one Python core."""
+    actions = _epic_actions()
+    if not actions:
+        err("scripts: scripts/epic.py exposes no ACTIONS")
+        return
+    for action in actions:
+        for extension in (".ps1", ".cmd", ".sh"):
+            path = ROOT / "scripts" / f"{action}{extension}"
+            if not path.exists():
+                err(f"scripts: missing {path.name}")
+                continue
+            data = path.read_bytes()
+            if extension == ".ps1":
+                if not data.startswith(b"\xef\xbb\xbf"):
+                    err(f"scripts: {path.name} must be UTF-8 BOM")
+                if "epic.py" not in data.decode("utf-8-sig"):
+                    err(f"scripts: {path.name} does not delegate to epic.py")
+            elif extension == ".cmd":
+                if any(byte > 0x7F for byte in data):
+                    err(f"scripts: {path.name} must be ASCII")
+                text = data.decode("ascii", "replace")
+                if not text.startswith("@echo off") or "epic.py" not in text:
+                    err(f"scripts: {path.name} is not a cmd wrapper")
+            else:
+                if b"\r\n" in data:
+                    err(f"scripts: {path.name} must use LF line endings")
+                text = data.decode("utf-8", "replace")
+                if not text.startswith("#!/usr/bin/env bash") or "epic.py" not in text:
+                    err(f"scripts: {path.name} is not a bash wrapper")
+                bash = shutil.which("bash")
+                if bash and os.name != "nt":
+                    result = subprocess.run(
+                        [bash, "-n", str(path)],
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                        check=False,
+                    )
+                    if result.returncode != 0:
+                        err(f"scripts: {path.name} syntax error: {result.stderr.strip()[:200]}")
+
+    core = ROOT / "scripts" / "epic.py"
+    if core.exists() and "shell=True" in core.read_text(encoding="utf-8"):
+        err("scripts: epic.py must not use shell=True")
+    if (ROOT / "scripts" / "_common.ps1").exists():
+        err("scripts: _common.ps1 is obsolete; lifecycle logic lives in epic.py")
+    if (ROOT / "backend" / "app" / "jobs" / "catchup.py").exists():
+        err("backend: jobs/catchup.py is dead code; import jobs.supervisor instead")
+
+
 CHECKS = (
     ("syntax", check_python_syntax),
     ("ast", check_ast_smells),
@@ -252,6 +361,8 @@ CHECKS = (
     ("encoding", check_encoding),
     ("frontend", check_frontend),
     ("powershell", check_powershell),
+    ("scripts", check_scripts),
+    ("tests", check_tests_layout),
     ("docs", check_docs_links),
     ("version", check_version),
     ("env", check_env_example),

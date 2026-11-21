@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, select
 
-from app.analytics.analogs import build_state, find_analogs
+from app.analytics.analogs import build_state, find_asset_analogs
 from app.analytics.attribution import build_drivers, decompose
 from app.analytics.calendar_study import build_calendar_study
 from app.analytics.correlation import correlation_snapshot
@@ -230,7 +230,7 @@ def run_analytics() -> dict:
 
             with rec.step("analogs", kind="compute") as step:
                 state = build_state(closes, macro)
-                analogs = find_analogs(state, closes)
+                analogs = find_asset_analogs(state, closes)
                 if analogs:
                     _save(session, "analogs", "current", asof, analogs)
                     counts["analogs"] = 1

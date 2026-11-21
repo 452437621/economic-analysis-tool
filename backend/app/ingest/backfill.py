@@ -37,8 +37,8 @@ logger = logging.getLogger(__name__)
 
 
 def _source_defs() -> tuple[dict, dict]:
-    """复用 pipeline 里的源定义（name 相同的 source 会被 get_source 直接复用）。"""
-    from app.ingest.pipeline import SOURCE_CZCE, SOURCE_TENCENT
+    """复用单一源注册表里的定义（name 相同的 source 会被 get_source 直接复用）。"""
+    from app.ingest.sources import SOURCE_CZCE, SOURCE_TENCENT
 
     return SOURCE_CZCE, SOURCE_TENCENT
 

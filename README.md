@@ -2,7 +2,7 @@
 
 > **Economic Positioning, Intelligence & Cycles** —— 本地运行、以证据为中心的个人宏观—市场—交易决策工作台。
 >
-> 状态：**V2.0.0 — 多透镜宏观研判台（2026-11-19 增量）**：在 V2.0.0（玻璃盒血缘、EPIC-C 2.0 周期引擎、1500–2026 世界长河、预测台账与原则库、交易台账）之上，把「双透镜」扩展为**13 套研判透镜**——美联储一脉、宋鸿兵框架、宏观层、微观层，加上达里奥/德鲁肯米勒/马克斯/冈拉克/埃里安/波萨/佩蒂斯/辜朝明与政策四人体（拉加德/植田和男/贝森特/潘功胜）；**17 个页面（19 条路由）**、**API 端点 114 个（其中 `/api/v2` 38 个）**、**361 条后端 pytest**。数据快照（2026-11-19）：**35 标的**、**84,237 根日线**、**35,624 条宏观观测 / 57 条宏观序列**（利率汇率 + 美联储 H.4.1 资产负债表 / H.6 货币供应 / 纽约联储货币市场 / 美国财政部 Fiscal Data / 世界银行 / IMF WEO）、**2,645 条财经日历**、**13 品种会员持仓（Top20 多空明细）**、**299 篇官方新闻 / 3,790 条断言**；**黄金监控 22 指标**（20 项自动采集 + 2 项手动录入，17 项参与评分，coverage 100%）；周期引擎 7 条结构性读数中 3 条已由实时序列供给；LLM 待 Key。多透镜把每套框架做成可计算读数、可证伪规则与加权合成研判，输出 7 类资产共识、多镜共振/分歧对、仓位/止损/组合权重、90 天三情景与规则命中的预警（见 [`docs/27`](docs/27-多透镜研判-美联储宋鸿兵与九位思想者.md)、[`docs/28`](docs/28-原始需求达成度审计.md)、[`docs/29`](docs/29-数据源与数据完整性.md)）。
+> 状态：**V3.0.0 — 工程结构整理版（2026-11-21）**：在 V2.0.0 多透镜研判台之上，完成**全部子包可打包**、`ingest`/`lens` 大模块拆分、前端大视图拆分、测试按领域分层与覆盖率门禁，以及 **Windows PowerShell + CMD + Linux Shell** 三套跨平台脚本（统一由 `scripts/epic.py` 驱动）。V2.0.0 功能描述如下：在 V2.0.0（玻璃盒血缘、EPIC-C 2.0 周期引擎、1500–2026 世界长河、预测台账与原则库、交易台账）之上，把「双透镜」扩展为**13 套研判透镜**——美联储一脉、宋鸿兵框架、宏观层、微观层，加上达里奥/德鲁肯米勒/马克斯/冈拉克/埃里安/波萨/佩蒂斯/辜朝明与政策四人体（拉加德/植田和男/贝森特/潘功胜）；**17 个页面（19 条路由）**、**API 端点 114 个（其中 `/api/v2` 38 个）**、**495 条后端 pytest（+ 36 条前端 vitest）**。数据快照（2026-11-19）：**35 标的**、**84,237 根日线**、**35,624 条宏观观测 / 57 条宏观序列**（利率汇率 + 美联储 H.4.1 资产负债表 / H.6 货币供应 / 纽约联储货币市场 / 美国财政部 Fiscal Data / 世界银行 / IMF WEO）、**2,645 条财经日历**、**13 品种会员持仓（Top20 多空明细）**、**299 篇官方新闻 / 3,790 条断言**；**黄金监控 22 指标**（20 项自动采集 + 2 项手动录入，17 项参与评分，coverage 100%）；周期引擎 7 条结构性读数中 3 条已由实时序列供给；LLM 待 Key。多透镜把每套框架做成可计算读数、可证伪规则与加权合成研判，输出 7 类资产共识、多镜共振/分歧对、仓位/止损/组合权重、90 天三情景与规则命中的预警（见 [`docs/27`](docs/27-多透镜研判-美联储宋鸿兵与九位思想者.md)、[`docs/28`](docs/28-原始需求达成度审计.md)、[`docs/29`](docs/29-数据源与数据完整性.md)）。
 
 ![总览（2026-11-19）：数据时点、跨资产热力图、利率快照](docs/assets/vue/vue-overview.png)
 
@@ -16,47 +16,63 @@
 
 | 项 | 要求 |
 |---|---|
-| 操作系统 | Windows 10/11；Windows PowerShell 5.1+ 或 PowerShell 7 |
-| Python | **无需预装**：`setup.ps1` 会用 uv 在工作区 `.python/` 内安装 3.12（不修改系统环境）；已有 Python 3.12 则直接复用 |
-| Node.js | **22+**（含 npm）。前端构建需要；本机 `npm.ps1` 可能被执行策略拦截，请使用 `npm.cmd` |
-| 网络 | 首次初始化与首次启动需联网（安装依赖、构建前端、回补行情/利率/新闻等） |
+| 操作系统 | Windows 10/11、Linux（bash）；macOS 亦可 |
+| Python | **无需预装**：`setup` 会用 uv 在工作区 `.python/` 内安装 3.12（不修改系统环境）；已有 3.11+ 则直接复用 |
+| Node.js | **22+**（含 npm）。前端构建与 vitest 测试需要；Windows 下请用 `npm.cmd` |
+| Shell | Windows：PowerShell 5.1/7 与 cmd.exe；Linux/macOS：bash |
+| 网络 | 首次初始化与首次启动需联网（安装依赖、构建前端、回补数据） |
 
 ### 首次安装与启动
 
-```powershell
-# 1) 初始化：引导 Python 3.12 → 创建 .venv → 安装依赖 → 初始化数据库与种子 → 构建前端
-powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
+所有动作由 `scripts/epic.py` 单一实现驱动，下面三套入口等价：
 
-# 2) 启动：默认后台运行，就绪后自动打开浏览器
+```powershell
+# Windows PowerShell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
 ```
+
+```bat
+:: Windows cmd
+scripts\setup.cmd
+scripts\start.cmd
+```
+
+```bash
+# Linux / macOS
+./scripts/setup.sh
+./scripts/start.sh
+```
+
+也可直接使用通用入口：`python scripts/epic.py setup`、`python scripts/epic.py start`。
 
 - 前端：**http://127.0.0.1:8765**
 - API 文档：**http://127.0.0.1:8765/docs**（自托管渲染 `/openapi.json`，不依赖外网 CDN，离线可用；原始规格在 `/openapi.json`）
 
 首次安装约 2–5 分钟（取决于网络）。已在运行时再次 `start` 只提示、不会起第二个实例；端口被其他程序占用时**拒绝启动**并打印占用进程。
 
-### 启动 / 停止 / 重启（Windows 一键脚本）
+### 启动 / 停止 / 重启（三平台一键脚本）
 
-| 操作 | 命令 | 说明 |
-|---|---|---|
-| 启动 | `.\scripts\start.ps1` | 后台运行，写 `data\run\epic.pid`，就绪后自动打开浏览器 |
-| 前台运行 | `.\scripts\start.ps1 -Foreground` | 占用当前终端，Ctrl+C 停止（排查问题首选） |
-| 调试热重载 | `.\scripts\start.ps1 -Reload` | 前台运行，改代码自动重载 |
-| 换端口 | `.\scripts\start.ps1 -Port 8766` | 也可在 `.env` 设 `EPIC_PORT` |
-| 不弹浏览器 | `.\scripts\start.ps1 -NoBrowser` | CI / 远程场景 |
-| 停止 | `.\scripts\stop.ps1` | 停止并释放端口，清理 PID 文件 |
-| 强制停止 | `.\scripts\stop.ps1 -Force` | 仅当确认占用端口的是本项目服务 |
-| 重启 | `.\scripts\restart.ps1` | 停止（若在运行）后重新启动 |
+| 操作 | PowerShell | cmd | bash |
+|---|---|---|---|
+| 启动 | `.\scripts\start.ps1` | `scripts\start.cmd` | `./scripts/start.sh` |
+| 前台运行 | `.\scripts\start.ps1 -Foreground` | `scripts\start.cmd --foreground` | `./scripts/start.sh --foreground` |
+| 调试热重载 | `.\scripts\start.ps1 -Reload` | `scripts\start.cmd --reload` | `./scripts/start.sh --reload` |
+| 换端口 | `.\scripts\start.ps1 -Port 8766` | `scripts\start.cmd --port 8766` | `./scripts/start.sh --port 8766` |
+| 不弹浏览器 | `.\scripts\start.ps1 -NoBrowser` | `scripts\start.cmd --no-browser` | `./scripts/start.sh --no-browser` |
+| 停止 | `.\scripts\stop.ps1` | `scripts\stop.cmd` | `./scripts/stop.sh` |
+| 强制停止 | `.\scripts\stop.ps1 -Force` | `scripts\stop.cmd --force` | `./scripts/stop.sh --force` |
+| 重启 | `.\scripts\restart.ps1` | `scripts\restart.cmd` | `./scripts/restart.sh` |
+| 状态 | `.\scripts\status.ps1 -Json` | `scripts\status.cmd --json` | `./scripts/status.sh --json` |
 
 脚本行为要点：
 
-- **后台脱离**：后台模式通过 WMI 创建进程，启动脚本立即返回；日志写入 `data\logs\server.{out,err}.log`。
-- **就绪判定**：`/healthz` 返回 200 **且**端口归属在本次启动的进程树内（venv 的 `python.exe` 是启动器，真实服务是其子进程），避免"假成功"。
-- **停止安全**：`stop` 优先停止真实服务进程（`server_pid`），失败再兜底 `taskkill /T /F`，并校验属于本项目进程，不会误杀。
-- **换端口范围**：`.env` 的 `EPIC_PORT` 仅被 start/stop/restart 与服务本身读取；`dev.ps1`、`frontend/vite.config.ts` 的 `/api` 代理和 `ci.ps1` 的运行时检查**固定 8765**，换端口需同步修改。
-- **受限终端**：若终端/安全策略禁止 WMI 创建进程（报"拒绝访问"），后台模式会失败；改用 `-Foreground` 前台启动。
-- 所有 `.ps1` 均为 UTF-8 BOM，兼容 Windows PowerShell 5.1（中文不会乱码/解析失败）。
+- **单一实现**：三套包装只做参数映射，进程/PID/端口/健康检查逻辑全部在 `scripts/epic.py`，不会出现平台间行为漂移。
+- **后台脱离**：Windows 用 `DETACHED_PROCESS`，Linux 用 `start_new_session`；启动脚本立即返回，日志写入 `data/logs/server.{out,err}.log`。
+- **就绪判定**：`/healthz` 返回 200 **且**端口归属在本次启动的进程树内（venv 的 `python.exe` 是启动器，真实服务是其子进程），避免“假成功”。
+- **停止安全**：`stop` 优先停止真实服务进程（`server_pid`），Windows 兜底 `taskkill /T /F`，Linux 用进程组信号；并校验属于本项目进程，不会误杀。
+- **端口来源**：命令行 `--port` > `.env` 的 `EPIC_PORT` > 8765；Vite 代理与运行时检查读取同一端口。
+- **编码**：所有 `.ps1` 为 UTF-8 BOM（PowerShell 5.1 兼容）；`.cmd` 为 ASCII + `chcp 65001`；`.sh` 为 LF。
 
 ### 启动后会发生什么
 
@@ -74,29 +90,29 @@ $env:PYTHONPATH = "backend"
 .\.venv\Scripts\python.exe -m app.jobs.runner --job brief_manual   # 生成简报
 .\.venv\Scripts\python.exe -m app.jobs.runner --all
 
-# 质量门禁
-.\.venv\Scripts\python.exe -m pytest -q                       # 361 条测试
-.\.venv\Scripts\python.exe scripts\lint.py                    # 静态检查
-powershell -ExecutionPolicy Bypass -File .\scripts\ci.ps1     # 前端构建 + lint + pytest + 运行时检查
-powershell -ExecutionPolicy Bypass -File .\scripts\selfcheck.ps1
-powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 项 DoD
+# 质量门禁（三平台通用：python scripts/epic.py <action>）
+python scripts/epic.py ci                                     # 前端构建 + 测试 + lint + pytest + 运行时检查
+python scripts/epic.py selfcheck                              # 同上（语义化别名）
+python scripts/epic.py check-acceptance                       # 测试 + 14 项 DoD
+python scripts/epic.py lint                                   # 静态检查
 
 # 备份 / 恢复 / 清理
-.\scripts\backup.ps1                                          # → data/backup/<时间戳>/
-.\scripts\restore.ps1 -DryRun                                 # 先停止服务；-DryRun 只校验
-.\scripts\maintain.ps1 -DryRun                                # 默认 DryRun，-Apply 才清理
+python scripts/epic.py backup                                 # → data/backup/<时间戳>/
+python scripts/epic.py restore --dry-run                      # 先停止服务；--dry-run 只校验
+python scripts/epic.py maintain                               # 默认 dry-run；--apply 才清理
 ```
 
 - 简报：`--job brief_manual` 后打开「简报与日志」页；也可点击首页 Hero「查看日报」。
 - 证据链：点击任意新闻 → 正文弹窗 + 数字断言高亮；深链 `http://127.0.0.1:8765/?doc=<document_id>`。
-- 自检/门禁说明：`ci.ps1` 在服务未启动时会**跳过**运行时 health/acceptance/quality（不算失败）；`selfcheck.ps1` 会先构建前端再走同一门禁。
+- 自检/门禁说明：`ci` 在服务未启动时会**跳过**运行时 health/acceptance/quality（不算失败）；`selfcheck` 会先构建前端再走同一门禁。
 
 ### 前端开发 / 构建
 
 | 操作 | 命令 | 说明 |
 |---|---|---|
-| 构建前端 | `.\scripts\build.ps1` | `vue-tsc` + `vite build` → `web/`（FastAPI 直接托管）；**`web/` 是构建产物、不入版本库**，克隆后需先构建一次；首次会自动 `npm install` |
-| 前端开发模式 | `.\scripts\dev.ps1` | 后端未跑会先拉起；Vite `:5173`，`/api`、`/healthz` 代理到 8765 |
+| 构建前端 | `python scripts/epic.py build`（或 `build.ps1` / `build.cmd` / `build.sh`） | `vue-tsc` + `vite build` → `web/`（FastAPI 直接托管）；**`web/` 是构建产物、不入版本库**，克隆后需先构建一次；首次会自动 `npm install` |
+| 前端开发模式 | `python scripts/epic.py dev`（或 `dev.ps1` / `dev.cmd` / `dev.sh`） | 后端未跑会先拉起；Vite `:5173`，`/api`、`/healthz` 代理到后端端口 |
+| 前端测试 | `cd frontend; npm.cmd run test` | vitest（happy-dom）；`npm run test:coverage` 生成覆盖率 |
 | 类型检查 | `cd frontend; npm.cmd run typecheck` | vue-tsc |
 | 依赖安装 | `cd frontend; npm.cmd install` | registry 已固定为 npmmirror（`frontend/.npmrc`） |
 
@@ -270,8 +286,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 | [27 多透镜研判：美联储一脉、宋鸿兵与九位思想者](docs/27-多透镜研判-美联储宋鸿兵与九位思想者.md) | 13 套框架的分工与加权合成、21+31+14+14 条读数与九位人物各 14 条、F1–F12 / 12 条 S / M1–M6 / P1–P6 与人物规则、美元心脏三态、一致度与置信度、仓位止损组合权重、血缘与接口、数据缺口、使用与复现 |
 | [28 原始需求达成度审计](docs/28-原始需求达成度审计.md) | 原始需求逐条拆解与达成度判定（达成/部分达成/未达成 + 证据位置）、未达成与弱项清单、下一步优先级（决策落地与预测校准为 P0） |
 | [29 数据源与数据完整性](docs/29-数据源与数据完整性.md) | provider→序列→频率→覆盖清单、本轮新增 H.4.1/H.6/纽约联储货币市场与世界银行 5 指标、缺口与替代方案、完整性机制、新增数据源标准做法 |
-| [scripts/screenshots.ps1](scripts/screenshots.ps1) | 页面截图：本机 Chrome 无头模式按 1600×1150 逐页拍摄到 `docs/assets/vue/`（19 张，需服务已启动；可用 `-BaseUrl`/`-OutDir`/`-Width` 覆盖） |
-| [scripts/snapshot.ps1](scripts/snapshot.ps1) | 破坏性操作前的工作区快照：`head.txt` / `status.txt` / `worktree.patch` / `index.patch` / `untracked/`，产物写 `data/backups/snapshot-<时间戳>/` |
+| [31 V3.0 结构整理说明](docs/31-V3.0结构整理说明.md) | 打包/ingest/lens/前端拆分边界、测试分层与 marker、三平台脚本矩阵、兼容性保证与验证命令 |
+| [scripts/epic.py](scripts/epic.py) `screenshots` | 页面截图：自动探测 Chrome/Edge（Windows 与 Linux），1600×1150 逐页拍摄到 `docs/assets/vue/`（19 张，需服务已启动；`--base-url/--out-dir/--width/--height/--budget-ms` 可覆盖） |
+| [scripts/epic.py](scripts/epic.py) `snapshot` | 破坏性操作前的工作区快照：`head.txt` / `status.txt` / `worktree.patch` / `index.patch` / `untracked/`，产物写 `data/backups/snapshot-<时间戳>/` |
 
 ---
 
@@ -279,15 +296,17 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check_acceptance.ps1   # 14 �
 
 | 环节 | 命令 / 文件 | 内容 |
 |---|---|---|
-| 静态检查 | `.\.venv\Scripts\python.exe scripts\lint.py` | 语法、AST 异味、未用导入、编码、Vue 源码结构与构建产物、外部 CDN、PowerShell BOM、文档链接、版本一致性、`.env.example` 完整性 |
+| 静态检查 | `python scripts/epic.py lint` | 语法、AST 异味、未用导入、编码、Vue 源码结构与构建产物、外部 CDN、PowerShell BOM、**动作 × 三平台包装矩阵**、Shell/CMD 规则、文档链接、版本一致性（含前端）、`.env.example` 完整性 |
 | 前端类型 | `cd frontend; npm.cmd run typecheck` | vue-tsc（构建时也会执行） |
-| 构建 | `scripts/build.ps1` | vue-tsc + vite build → `web/`；`ci.ps1` 与 CI 都会先构建 |
-| 测试 | `.\.venv\Scripts\python.exe -m pytest -q` | **361 条**：解析器、数据管道、分析、决策、API 冒烟（含写接口与 404）、降级、DevOps、前端源码/产物、黄金监控、周期引擎与结构性读数、玻璃盒血缘、时间线、台账与预测自动登记、宏观数据源与作业补跑、交易台账、任务描述与执行历史、简报中文对照、证据抽屉二进制正文守卫、13 套透镜与人物规格校验、仓位止损组合权重与资金解耦 |
-| 本地门禁 | `scripts/ci.ps1` | 前端构建 → lint → pytest → 运行时 health/acceptance/quality；服务未启动时跳过运行时检查 |
-| CI | `.github/workflows/ci.yml` | Python 3.11/3.12 矩阵 + Node 22 前端构建 + 安装导入冒烟 |
-| 版本 | `backend/app/__init__.py` | **后端**单一来源，`pyproject.toml` 与 `/api/system/health` 必须一致（前端 `package.json` 版本独立维护） |
-| 运维 | `backup.ps1` / `restore.ps1` | 完整性校验、保留最近 14 份、恢复前安全副本 + `-DryRun` |
-| 清理 | `scripts/maintain.ps1` | `-DryRun`（默认）/`-Apply`/`-Verify`，清理可再生临时产物 |
+| 前端测试 | `cd frontend; npm.cmd run test` | vitest + happy-dom（composables / utils / stores / api client） |
+| 构建 | `python scripts/epic.py build` | vue-tsc + vite build → `web/`；TEMP 自动重定向到 `frontend/.tmp` |
+| 后端测试 | `python -m pytest -q` | **495 passed / 1 skipped**（按领域分层；含打包、脚本矩阵、API 缺口与覆盖率缺口测试） |
+| 覆盖率 | `python -m pytest --cov=app --cov-report=term-missing` | pytest-cov；`[tool.coverage]` 设 `fail_under` 门槛 |
+| 本地门禁 | `python scripts/epic.py ci` | 前端构建 → 前端测试 → lint → pytest → 运行时 health/acceptance/quality；服务未启动时跳过运行时检查 |
+| CI | `.github/workflows/ci.yml` | Ubuntu Python 3.11/3.12（lint + pytest + 覆盖率 + 前端 typecheck/test/build）+ Windows（全量 pytest + PowerShell/CMD 启停冒烟）+ Linux Shell 语法 + wheel 子包导入 |
+| 版本 | `backend/app/__init__.py` | **后端**单一来源；`pyproject.toml`、`frontend/package.json`、`/api/system/health` 必须一致 |
+| 运维 | `backup` / `restore`（三平台） | 完整性校验、保留最近 14 份、恢复前安全副本 + `--dry-run` |
+| 清理 | `maintain`（三平台） | `--dry-run`（默认）/`--apply`/`--verify`，清理可再生临时产物 |
 | 自愈 | 启动时 `reconcile_stale_runs()` | 中断任务自动标记 `interrupted`，任务开关真正生效 |
 
 ---
@@ -344,8 +363,8 @@ web/                前端构建产物（index.html + assets/*，由 FastAPI 托
 config/             cycle.yaml（周期指标/规则/情景）、lens.yaml（13 套权重/规则/数据缺口）、personas/*.yaml（九位人物规格）、default.yaml、translations.zh.json
 docs/               设计与进度文档 + docs/research 人物/框架研究笔记 + 界面截图 docs/assets/vue/（19 张，2026-11-19）
 prompts/            LLM 提示词模板（断言抽取 / 简报编辑）
-scripts/            setup / build / dev / start / stop / restart / backup / restore / selfcheck / check_acceptance / ci / maintain / lint / screenshots / snapshot
-tests/              pytest（解析器离线测试 + smoke + 前端源码/产物 + 透镜/周期/台账）
+scripts/            epic.py（跨平台统一核心）+ 16 个动作 × {ps1, cmd, sh} 包装 + lint.py / _lint_ps.ps1
+tests/              pytest 分层：unit/{analytics,alerts,cycle,decision,gold,ingest,jobs,knowledge,ledger,lens,llm,narrative,notify,platform,provenance,timeline} + integration/api + release
 data/               运行时数据（gitignore：SQLite、raw 快照、日志、备份）
 .github/            CI（lint + pytest + 前端构建 + 打包导入冒烟）
 ```
@@ -359,7 +378,7 @@ data/               运行时数据（gitignore：SQLite、raw 快照、日志�
 - **交易边界**：V1 不接自动下单，计划均为草稿；保证金/手续费为近似值，实际以期货公司为准；不覆盖国内独有品种。
 - **回补时长**：数据采集类 bootstrap 在启动后约 3–55 秒触发，分析/决策类约 4–5 分钟；全部回补完成时间取决于网络与数据源响应。
 - **备份与数据**：`data/` 不纳入版本库；重要节点请执行 `scripts\backup.ps1`（保留 14 份）。
-- **运行环境**：目标环境为 Windows 单机、个人研究用途；一键脚本与自检门禁均按 Windows PowerShell 编写。
+- **运行环境**：支持 Windows 10/11（PowerShell 5.1/7 + cmd.exe）与 Linux/macOS（bash）；所有动作由 `scripts/epic.py` 单一实现，三套包装仅做参数映射。
 - **数字与截图口径**：README 中的数据量、端点与测试条数均为 2026-11-19 快照；`/openapi.json` 是端点数量的权威口径，`README` 的界面截图为同日实拍，重拍请运行 `.\scripts\screenshots.ps1`（需服务已启动）。
 
 ---

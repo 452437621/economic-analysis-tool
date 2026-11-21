@@ -1,15 +1,14 @@
-"""Detached server launcher used by ``scripts/start.ps1``.
+"""Detached server launcher used by ``scripts/epic.py start`` (via the
+``start.ps1`` / ``start.cmd`` / ``start.sh`` wrappers).
 
 Why this file exists:
-    ``Start-Process`` inherits handles from the parent shell; when the parent is a
-    capturing console/CI pipe, the long-running server keeps the pipe open and the
-    launching shell never appears to finish. Launching through WMI
-    (``Win32_Process.Create``) detaches completely, so the script exits immediately.
+    The cross-platform runner (``scripts/epic.py``) starts this module detached
+    (``DETACHED_PROCESS`` on Windows, ``start_new_session`` on POSIX) so the
+    launching shell returns immediately even when its output is captured by a
+    CI pipe.  This launcher then redirects stdout/stderr to
+    ``data/logs/server.{out,err}.log`` and runs uvicorn in-process.
 
-It also redirects stdout/stderr to ``data/logs/server.{out,err}.log`` because a
-detached process has no console.
-
-Usage (called by the PowerShell script, not by humans):
+Usage (called by the runner, not by humans):
     python -m app.serve --host 127.0.0.1 --port 8765
 """
 

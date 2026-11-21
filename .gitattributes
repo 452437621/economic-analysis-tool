@@ -1,0 +1,4 @@
+# Cross-platform script line endings.
+# Do not renormalize existing files: only the new shell/CMD entry points need pinning.
+*.sh text eol=lf
+*.cmd text eol=crlf

@@ -65,9 +65,11 @@ export function usePolling<T>(
   }
 
   function schedule(): void {
+    if (disposed) return;
     stopTimer();
     timer = window.setTimeout(async () => {
       if (!document.hidden) await refresh();
+      if (disposed) return;
       schedule();
     }, intervalMs.value);
   }
@@ -84,9 +86,10 @@ export function usePolling<T>(
   }
 
   onMounted(async () => {
-    if (immediate) await refresh();
-    schedule();
     if (pauseWhenHidden) document.addEventListener("visibilitychange", onVisibility);
+    if (immediate) await refresh();
+    if (disposed) return;
+    schedule();
   });
 
   onBeforeUnmount(() => {

@@ -13,12 +13,13 @@ def _cosine(a: pd.Series, b: pd.Series) -> float:
     return dot / norm if norm else 0.0
 
 
-def find_analogs(
+def find_cycle_analogs(
     zscores: pd.DataFrame,
     scores: pd.DataFrame | None = None,
     top: int = 5,
     min_gap_months: int = 12,
 ) -> dict:
+    """Monthly score-panel cosine analogs (see ``analytics.analogs`` for weekly)."""
     if zscores.empty:
         return {"available": False, "reason": "历史标准化面板为空", "analogs": []}
     frame = zscores.dropna(how="all")
@@ -81,3 +82,9 @@ def find_analogs(
 def _month_index(month: str) -> int:
     year, mon = month.split("-")
     return int(year) * 12 + int(mon)
+
+
+# Backwards-compatible name (analytics.analogs has a different analog API).
+find_analogs = find_cycle_analogs
+
+__all__ = ["find_analogs", "find_cycle_analogs"]

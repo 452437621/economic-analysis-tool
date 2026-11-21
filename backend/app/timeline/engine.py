@@ -7,13 +7,13 @@ seed_events → seed_powers → read_cycle → derive。
 from __future__ import annotations
 
 import hashlib
-from datetime import date
+from datetime import date, datetime, time, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.models.v2 import PowerIndex, TimelineEvent
-from app.provenance import RunRecorder, aware, latest_derivations
+from app.provenance import RunRecorder, latest_derivations
 from app.timeline import dataset
 
 METHOD = "timeline.catalog.v1"
@@ -138,7 +138,8 @@ def _dimension_value(dimension: dict[str, Any], cycle: dict[str, Any] | None) ->
 
 
 def run_timeline(session: Session, today: date | None = None) -> dict[str, Any]:
-    asof = aware(today) if today else None
+    # ``today`` is a date; RunRecorder.asof expects a timezone-aware datetime.
+    asof = datetime.combine(today, time.min, tzinfo=timezone.utc) if today else None
     with RunRecorder(
         session,
         kind=KIND,
