@@ -251,7 +251,7 @@ const {
 }
 .sys-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   margin-top: 12px;
 }
@@ -386,9 +386,6 @@ const {
 }
 
 @media (max-width: 1240px) {
-  .sys-grid {
-    grid-template-columns: 1fr;
-  }
   .cov-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

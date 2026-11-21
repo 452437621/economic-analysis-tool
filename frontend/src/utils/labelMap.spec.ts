@@ -5,6 +5,8 @@ import {
   alertLevelLabel,
   countryLabel,
   eventCategoryLabel,
+  JOB_LABELS,
+  jobLabel,
 } from "./labelMap";
 
 describe("labelMap", () => {
@@ -32,5 +34,19 @@ describe("labelMap", () => {
     expect(countryLabel("EA")).toBe("欧元区");
     expect(countryLabel("ZZ")).toBe("ZZ");
     expect(countryLabel(null)).toBe("—");
+  });
+
+  it("maps job names to short labels with a raw fallback", () => {
+    expect(JOB_LABELS.collect_daily_bars).toBe("补日线");
+    expect(jobLabel("collect_rates")).toBe("补利率");
+    expect(jobLabel("collect_macro")).toBe("补宏观");
+    expect(jobLabel("collect_quotes")).toBe("补快照");
+    expect(jobLabel("collect_calendar")).toBe("补日历");
+    expect(jobLabel("collect_news")).toBe("补新闻");
+    expect(jobLabel("check_data_quality")).toBe("复检");
+    expect(jobLabel("repair_data")).toBe("修复");
+    expect(jobLabel("custom_job")).toBe("custom_job");
+    expect(jobLabel(null)).toBe("—");
+    expect(jobLabel(undefined)).toBe("—");
   });
 });

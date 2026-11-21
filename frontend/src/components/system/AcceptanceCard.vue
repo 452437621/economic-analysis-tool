@@ -13,13 +13,17 @@
       </div>
     </div>
     <div v-if="acceptance?.failed_summary?.failed?.length" class="card-body">
-      <div class="badge badge--down" style="display: block; white-space: normal; line-height: 1.6">
+      <div class="fail-summary">
         <b>失败说明</b>
-        <div v-for="item in acceptance.failed_summary.failed.slice(0, 5)" :key="item.id ?? item.name" style="margin-top: 4px">
+        <div
+          v-for="item in acceptance.failed_summary.failed"
+          :key="item.id ?? item.name"
+          class="fail-line"
+        >
           <b>{{ item.name }}</b>：{{ item.reason ?? item.detail }}
           <span v-if="item.remediation" class="dim"> · 处置：{{ item.remediation }}</span>
         </div>
-        <div v-for="hint in acceptance.failed_summary.hints ?? []" :key="hint" class="dim" style="margin-top: 2px">
+        <div v-for="hint in acceptance.failed_summary.hints ?? []" :key="hint" class="fail-line dim">
           {{ hint }}
         </div>
       </div>
@@ -65,9 +69,10 @@
                 v-if="check.status === 'fail' && check.action_job"
                 class="btn btn--sm btn--ghost"
                 type="button"
+                :title="check.action_job"
                 @click="emit('job', check.action_job)"
               >
-                {{ check.action_job }}
+                <span class="btn-text">{{ jobLabel(check.action_job) }}</span>
               </button>
               <span v-else class="dim">—</span>
             </td>
@@ -97,6 +102,7 @@ import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import SkeletonBlock from "@/components/ui/SkeletonBlock.vue";
 import { fmtInt } from "@/composables/useFormat";
+import { jobLabel } from "@/utils/labelMap";
 
 defineProps<{
   acceptance: Acceptance | null;
@@ -136,6 +142,28 @@ function countLabel(key: string): string {
 }
 .sys-wrap {
   max-height: none;
+}
+/* 失败说明是普通块级内容：不能沿用 .badge 的固定高度/胶囊样式，否则后续行会被表头覆盖。 */
+.fail-summary {
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warn) 13%, transparent);
+  color: var(--warn);
+  font-size: 10.5px;
+  line-height: 1.6;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.fail-summary b {
+  font-weight: 650;
+  font-family: var(--mono);
+}
+.fail-line {
+  margin-top: 4px;
+}
+.fail-summary .dim {
+  color: var(--dim);
 }
 .count-chip {
   display: inline-flex;

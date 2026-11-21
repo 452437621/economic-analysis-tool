@@ -64,3 +64,33 @@ export function countryLabel(code: string | null | undefined): string {
   if (!code) return "—";
   return COUNTRY_LABELS[code.toUpperCase()] ?? code;
 }
+
+/** 调度作业英文名 → 操作按钮中文短标签（完整英文名保留在按钮 title 中）。 */
+export const JOB_LABELS: Record<string, string> = {
+  // 数据采集 / 质检 / 修复
+  collect_daily_bars: "补日线",
+  collect_rates: "补利率",
+  collect_macro: "补宏观",
+  collect_quotes: "补快照",
+  collect_calendar: "补日历",
+  collect_news: "补新闻",
+  check_data_quality: "复检",
+  repair_data: "修复",
+  backfill_history: "回填历史",
+  // 分析 / 决策 / 产出
+  analyze: "分析",
+  cycle: "周期",
+  decide: "决策",
+  brief_manual: "手动简报",
+  // 验收自检中可能出现在操作列的作业
+  collect_bodies: "补原文",
+  extract_claims: "抽断言",
+  brief_premarket: "盘前简报",
+  theses: "论点",
+  schedule_check: "调度检查",
+};
+
+export function jobLabel(name: string | null | undefined): string {
+  if (!name) return "—";
+  return JOB_LABELS[name] ?? name;
+}

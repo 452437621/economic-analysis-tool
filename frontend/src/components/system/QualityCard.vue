@@ -19,9 +19,9 @@
           <col class="q-kind-col" />
           <col class="q-status-col" />
           <col class="q-status-col" />
+          <col class="q-metric-col" />
           <col />
-          <col />
-          <col class="q-status-col" />
+          <col class="q-action-col" />
         </colgroup>
         <thead>
           <tr>
@@ -48,23 +48,24 @@
                 {{ row.passed ? "通过" : "失败" }}
               </span>
             </td>
-            <td class="muted mono">
+            <td
+              class="muted mono q-metric"
+              :title="`${row.expected ?? '—'} / ${row.actual ?? '—'} / ${row.deviation ?? '—'}`"
+            >
               {{ row.expected ?? "—" }} / {{ row.actual ?? "—" }} / {{ row.deviation ?? "—" }}
             </td>
-            <td class="muted q-detail">
-              {{ row.detail ?? "—" }}
-              <div v-if="!row.passed && row.remediation" class="dim">
-                处置：{{ row.remediation }}
-              </div>
+            <td class="muted q-detail" :title="qualityDetailLine(row)">
+              {{ qualityDetailLine(row) }}
             </td>
-            <td>
+            <td class="q-action">
               <button
                 v-if="!row.passed && row.action_job"
                 class="btn btn--sm btn--ghost"
                 type="button"
+                :title="row.action_job"
                 @click="emit('job', row.action_job)"
               >
-                {{ row.action_job }}
+                <span class="btn-text">{{ jobLabel(row.action_job) }}</span>
               </button>
               <span v-else class="dim">—</span>
             </td>
@@ -88,6 +89,8 @@ import type { QualityResponse } from "@/api/types";
 import EmptyState from "@/components/ui/EmptyState.vue";
 import ErrorState from "@/components/ui/ErrorState.vue";
 import SkeletonBlock from "@/components/ui/SkeletonBlock.vue";
+import { jobLabel } from "@/utils/labelMap";
+import { qualityDetailLine } from "@/utils/qualityFormat";
 
 defineProps<{
   quality: QualityResponse | null;
@@ -103,9 +106,7 @@ const emit = defineEmits<{
 </script>
 
 <style scoped>
-.table-wrap {
-  overflow-x: auto;
-}
+/* 全局 .table-wrap 已是「纵滚不横滚」；这里不再覆盖 overflow-x，避免出现横向滚动条。 */
 .sys-wrap {
   max-height: none;
 }
@@ -113,30 +114,55 @@ const emit = defineEmits<{
   table-layout: fixed;
 }
 .sys-quality .q-dataset-col {
-  width: 132px;
+  width: 150px;
 }
 .sys-quality .q-kind-col {
-  width: 84px;
+  width: 76px;
 }
 .sys-quality .q-status-col {
-  width: 72px;
+  width: 64px;
 }
-.sys-quality .q-dataset {
-  font-weight: 500;
+.sys-quality .q-metric-col {
+  width: 180px;
+}
+.sys-quality .q-action-col {
+  width: 96px;
+}
+.sys-quality th,
+.sys-quality td {
+  overflow: hidden;
+}
+.sys-quality th {
+  text-overflow: ellipsis;
+}
+.sys-quality .q-dataset,
+.sys-quality .q-kind,
+.sys-quality .q-metric,
+.sys-quality .q-detail {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.sys-quality .q-dataset {
+  font-weight: 500;
 }
 .sys-quality .q-kind,
 .sys-quality .q-detail {
   font-size: 10.5px;
   line-height: 1.45;
 }
-.sys-quality .q-kind {
+.sys-quality .q-action {
   white-space: nowrap;
 }
-.sys-quality .q-detail {
-  white-space: normal;
-  overflow-wrap: anywhere;
+.sys-quality .q-action .btn {
+  max-width: 100%;
+  overflow: hidden;
+}
+.sys-quality .q-action .btn-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>
