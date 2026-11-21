@@ -15,7 +15,7 @@ import threading
 from contextlib import contextmanager
 from collections.abc import Iterator
 
-WRITE_LOCK = threading.Lock()
+WRITE_LOCK = threading.RLock()
 DEFAULT_TIMEOUT = 240.0
 
 

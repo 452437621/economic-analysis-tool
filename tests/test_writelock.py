@@ -34,13 +34,26 @@ def test_write_lock_is_mutually_exclusive():
 
 
 def test_write_lock_raises_when_timeout():
-    assert WRITE_LOCK.acquire(timeout=1)
+    # RLock allows same-thread re-entry (used by nested supervisor/repair jobs);
+    # a *different* thread must still time out while the lock is held.
+    entered = threading.Event()
+    release = threading.Event()
+
+    def holder() -> None:
+        with write_lock(timeout=2):
+            entered.set()
+            release.wait(5)
+
+    thread = threading.Thread(target=holder)
+    thread.start()
+    assert entered.wait(5)
     try:
         with pytest.raises(TimeoutError):
             with write_lock(timeout=0.05):
                 pass  # pragma: no cover - 不应该进入
     finally:
-        WRITE_LOCK.release()
+        release.set()
+        thread.join(5)
 
 
 def test_write_lock_releases_after_exception():

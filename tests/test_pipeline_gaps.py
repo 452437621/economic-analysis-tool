@@ -14,8 +14,8 @@ import pytest
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import sessionmaker
 
-from app.jobs import catchup
-from app.jobs.catchup import CATCH_UP, catch_up_jobs
+from app.jobs import supervisor
+from app.jobs.plan import JOB_PLANS
 from app.ledger.engine import (
     AUTO_FORECAST_CODES,
     AUTO_FORECAST_HORIZONS,
@@ -300,70 +300,168 @@ def test_score_forecasts_resolves_xauusd_forecast(db):
     assert 0.0 <= outcome.brier <= 1.0
 
 
-# -- 4. 错过的定时作业补跑 -----------------------------------------------------
+# -- 4. 启动调度自检（数据优先、阻断下游、幂等） ---------------------------
 
 
-def _seed_jobs(db) -> None:
-    yesterday_noon = datetime.combine(
-        date.today() - timedelta(days=1), time(12, 0), tzinfo=timezone.utc
-    )
+SELECTED = {
+    name: JOB_PLANS[name]
+    for name in ("collect_daily_bars", "check_data_quality", "analyze")
+}
+
+
+def _seed_schedule_jobs(db) -> None:
+    yesterday = datetime.now(timezone.utc) - timedelta(days=2)
     db.add_all(
         [
-            Job(name=name, cron="catch-up-test", enabled=True, last_run_at=yesterday_noon)
-            for name in CATCH_UP
+            Job(name=name, cron="schedule-test", enabled=True, last_run_at=yesterday)
+            for name in SELECTED
         ]
     )
     db.commit()
 
 
 @pytest.fixture()
-def fake_runner(pipeline_db, monkeypatch):
+def fake_schedule(pipeline_db, monkeypatch):
     calls: list[str] = []
 
     def fake_run_job(name: str) -> dict:
         calls.append(name)
         with pipeline_db() as session:
-            session.add(JobRun(job_name=name, status="ok"))
+            now = datetime.now(timezone.utc)
+            session.add(JobRun(job_name=name, status="ok", started_at=now, finished_at=now))
+            job = session.scalar(select(Job).where(Job.name == name))
+            if job is not None:
+                job.last_run_at = now
+                job.last_status = "ok"
             session.commit()
         return {"job": name, "status": "ok"}
 
-    monkeypatch.setattr(catchup, "SessionLocal", pipeline_db)
-    monkeypatch.setattr(catchup, "run_job", fake_run_job)
+    monkeypatch.setattr(supervisor, "JOB_PLANS", SELECTED)
+    monkeypatch.setattr(supervisor, "SessionLocal", pipeline_db)
+    monkeypatch.setattr(supervisor, "run_job", fake_run_job)
+    monkeypatch.setattr(
+        supervisor,
+        "assess_readiness",
+        lambda session, now=None: supervisor.Readiness(status="ok", reasons=[], datasets={}),
+    )
     return calls
 
 
-def test_catch_up_runs_only_due_jobs(db, fake_runner):
-    _seed_jobs(db)
-    morning = datetime.combine(date.today(), time(8, 34), tzinfo=CST)
-    assert catch_up_jobs(now=morning) == ["brief_premarket"]
-    assert fake_runner == ["brief_premarket"]
+def test_schedule_check_runs_data_before_analysis(db, fake_schedule):
+    _seed_schedule_jobs(db)
+    now = datetime.now(CST)
+    report = supervisor.run_schedule_check(trigger="manual", now=now)
+    assert fake_schedule == ["collect_daily_bars", "check_data_quality", "analyze"]
+    assert report["status"] == "ok"
+    assert report["readiness"]["status"] == "ok"
 
 
-def test_catch_up_is_idempotent_same_day(db, fake_runner):
-    _seed_jobs(db)
-    evening = datetime.combine(date.today(), time(17, 0), tzinfo=CST)
-    first = catch_up_jobs(now=evening)
-    assert first == list(CATCH_UP)
-    assert fake_runner == first
-    # 当天已有 JobRun 记录 → 重启后不再重复补跑
-    assert catch_up_jobs(now=evening) == []
-    assert fake_runner == first
+def test_schedule_check_blocks_downstream_when_data_missing(db, fake_schedule, monkeypatch):
+    _seed_schedule_jobs(db)
+    monkeypatch.setattr(
+        supervisor,
+        "assess_readiness",
+        lambda session, now=None: supervisor.Readiness(
+            status="blocked",
+            reasons=[
+                {
+                    "code": "readiness.daily_bars",
+                    "severity": "critical",
+                    "message": "日线不完整",
+                    "action_job": "collect_daily_bars",
+                }
+            ],
+            datasets={},
+        ),
+    )
+    now = datetime.now(CST)
+    report = supervisor.run_schedule_check(trigger="manual", now=now)
+    assert "analyze" not in fake_schedule
+    assert any(item["name"] == "analyze" for item in report["blocked"])
+    assert report["status"] == "blocked"
 
 
-def test_catch_up_continues_when_one_job_fails(db, fake_runner, monkeypatch):
-    _seed_jobs(db)
+def test_schedule_check_is_idempotent_after_jobs_run(db, fake_schedule):
+    _seed_schedule_jobs(db)
+    now = datetime.now(CST)
+    first = supervisor.run_schedule_check(trigger="manual", now=now)
+    assert first["status"] == "ok"
+    second = supervisor.run_schedule_check(trigger="manual", now=now)
+    assert second["jobs"] == []
+    assert fake_schedule == ["collect_daily_bars", "check_data_quality", "analyze"]
+
+
+CHAIN_SELECTED = {
+    name: JOB_PLANS[name]
+    for name in ("check_data_quality", "analyze", "cycle")
+}
+
+
+def test_blocked_job_propagates_to_its_dependents(db, pipeline_db, monkeypatch):
+    """check_data_quality degraded → analyze blocked → cycle must also be blocked."""
     calls: list[str] = []
 
-    def run_one(name: str) -> dict:
-        if name == "check_data_quality":
-            raise RuntimeError("boom")
+    def fake_run_job(name: str) -> dict:
         calls.append(name)
-        return {"job": name, "status": "ok"}
+        status = "degraded" if name == "check_data_quality" else "ok"
+        with pipeline_db() as session:
+            now = datetime.now(timezone.utc)
+            session.add(JobRun(job_name=name, status=status, started_at=now, finished_at=now))
+            session.commit()
+        return {"job": name, "status": status}
 
-    # fake_runner 已把 catchup.SessionLocal 指到测试库，这里只替换执行函数
-    monkeypatch.setattr(catchup, "run_job", run_one)
-    evening = datetime.combine(date.today(), time(17, 0), tzinfo=CST)
-    caught = catch_up_jobs(now=evening)
-    assert "check_data_quality" not in caught
-    assert caught == [name for name in CATCH_UP if name != "check_data_quality"]
-    assert calls == caught
+    yesterday = datetime.now(timezone.utc) - timedelta(days=2)
+    db.add_all(
+        [
+            Job(name=name, cron="schedule-test", enabled=True, last_run_at=yesterday)
+            for name in CHAIN_SELECTED
+        ]
+    )
+    db.commit()
+    monkeypatch.setattr(supervisor, "JOB_PLANS", CHAIN_SELECTED)
+    monkeypatch.setattr(supervisor, "SessionLocal", pipeline_db)
+    monkeypatch.setattr(supervisor, "run_job", fake_run_job)
+    monkeypatch.setattr(
+        supervisor,
+        "assess_readiness",
+        lambda session, now=None: supervisor.Readiness(status="ok", reasons=[], datasets={}),
+    )
+
+    report = supervisor.run_schedule_check(trigger="manual", now=datetime.now(CST))
+    assert calls == ["check_data_quality"]
+    assert "analyze" in {item["name"] for item in report["blocked"]}
+    assert "cycle" in {item["name"] for item in report["blocked"]}
+    assert report["status"] == "degraded"
+
+
+def test_dry_run_does_not_write_skipped_rows(db, pipeline_db, monkeypatch):
+    db.add_all(
+        [
+            Job(
+                name=name,
+                cron="schedule-test",
+                enabled=True,
+                last_run_at=datetime.now(timezone.utc) - timedelta(days=2),
+            )
+            for name in CHAIN_SELECTED
+        ]
+    )
+    db.commit()
+    monkeypatch.setattr(supervisor, "JOB_PLANS", CHAIN_SELECTED)
+    monkeypatch.setattr(supervisor, "SessionLocal", pipeline_db)
+    monkeypatch.setattr(
+        supervisor,
+        "assess_readiness",
+        lambda session, now=None: supervisor.Readiness(
+            status="blocked",
+            reasons=[{"code": "readiness.macro", "message": "宏观缺失"}],
+            datasets={},
+        ),
+    )
+    before = len(db.scalars(select(JobRun)).all())
+    report = supervisor.run_schedule_check(
+        trigger="manual", now=datetime.now(CST), dry_run=True, run_data=False
+    )
+    after = len(db.scalars(select(JobRun)).all())
+    assert after == before
+    assert report["blocked"]

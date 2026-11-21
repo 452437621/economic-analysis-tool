@@ -421,7 +421,7 @@ const { data: coverage } = usePolling<CoverageResponse>(getSystemCoverage, { int
 const { data: cycleConfig } = usePolling<CycleConfigResponse>(getCycleConfig, { interval: 600000 });
 
 const systemMeterPct = computed(() =>
-  Math.max(0, Math.min(100, coverage.value?.data_quality_pct ?? (healthy.value ? 100 : 30))),
+  Math.max(0, Math.min(100, coverage.value?.data_quality_pct ?? 0)),
 );
 const jobsMeterPct = computed(() => {
   const total = coverage.value?.jobs_total ?? 0;

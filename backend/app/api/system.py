@@ -1,31 +1,37 @@
-"""System API: health, jobs, meta."""
+"""System API: health, jobs, meta, scheduling and data quality."""
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.ingest import quality
+from app.jobs.repair import latest_repair, run_repair
+from app.jobs.runner import JOBS, run_job_locked
+from app.jobs.supervisor import (
+    ScheduleBusy,
+    latest_reports,
+    schedule_status,
+    run_schedule_check,
+)
 from app.models.base import utcnow
 from app.models.core import (
-    Alert,
-    AnalyticsResult,
     Brief,
     Claim,
-    DataCheck,
     Document,
     DocumentBody,
-    EconomicEvent,
     Instrument,
     Job,
     JobRun,
     MacroObs,
     MarketBar,
     Quote,
-    Signal,
+    ScheduleCheck,
     Thesis,
     TradePlan,
 )
@@ -37,8 +43,11 @@ from app.platform.coverage import (
     latest_sync,
     series_coverage,
 )
+from app.platform.acceptance import build_acceptance
 from app.platform.db import get_session
+from app.platform.quality_gate import assess as assess_quality
 from app.platform.scheduler import scheduler_snapshot
+from app.platform.writelock import write_lock
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -98,8 +107,11 @@ def list_jobs(session: Session = Depends(get_session)) -> dict:
     run_counts = dict(
         session.execute(select(JobRun.job_name, func.count()).group_by(JobRun.job_name)).all()
     )
-    return {
-        "data": [
+    schedule = {row["name"]: row for row in schedule_status(session)["jobs"]}
+    data = []
+    for row in rows:
+        plan = schedule.get(row.name) or {}
+        data.append(
             {
                 "name": row.name,
                 "cron": row.cron,
@@ -109,10 +121,17 @@ def list_jobs(session: Session = Depends(get_session)) -> dict:
                 "last_run_at": row.last_run_at.isoformat() if row.last_run_at else None,
                 "last_error": row.last_error,
                 "run_count": int(run_counts.get(row.name, 0)),
+                "group": plan.get("group"),
+                "period_seconds": plan.get("period_seconds"),
+                "due_at": plan.get("due_at"),
+                "overdue": bool(plan.get("overdue")),
+                "action": plan.get("action"),
+                "overdue_reason": plan.get("reason"),
+                "depends_on": plan.get("depends_on") or [],
+                "critical": bool(plan.get("critical")),
             }
-            for row in rows
-        ]
-    }
+        )
+    return {"data": data}
 
 
 @router.get("/job-runs")
@@ -146,6 +165,141 @@ def list_job_runs(
     return {"data": data}
 
 
+@router.get("/schedule")
+def schedule(session: Session = Depends(get_session)) -> dict:
+    """Live per-job schedule state (period, due time, overdue, action)."""
+    return schedule_status(session)
+
+
+@router.get("/schedule-check")
+def get_schedule_check(
+    limit: int = 1,
+    session: Session = Depends(get_session),
+) -> dict:
+    limit = max(1, min(limit, 20))
+    return {
+        "data": latest_reports(session, limit),
+        "schedule": schedule_status(session),
+    }
+
+
+@router.get("/schedule-check/{check_id}")
+def get_schedule_check_one(
+    check_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    row = session.get(ScheduleCheck, check_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="schedule check not found")
+    return {
+        "id": row.id,
+        "trigger": row.trigger,
+        "status": row.status,
+        "data_status": row.data_status,
+        "started_at": row.started_at.isoformat() if row.started_at else None,
+        "finished_at": row.finished_at.isoformat() if row.finished_at else None,
+        "report": row.report,
+        "error": row.error,
+    }
+
+
+def _run_check_background(**kwargs) -> None:
+    try:
+        run_schedule_check(**kwargs)
+    except ScheduleBusy:
+        pass
+    except Exception:  # pragma: no cover - background thread must not crash the app
+        import logging
+
+        logging.getLogger(__name__).exception("background schedule check failed")
+
+
+@router.post("/schedule-check")
+def post_schedule_check(payload: dict | None = Body(default=None)) -> dict:
+    body = payload or {}
+    wait = bool(body.get("wait", False))
+    kwargs = {
+        "trigger": str(body.get("trigger") or "manual"),
+        "run_data": bool(body.get("run_data", True)),
+        "run_downstream": bool(body.get("run_downstream", True)),
+        "force": bool(body.get("force", False)),
+        "dry_run": bool(body.get("dry_run", False)),
+        "backoff_seconds": int(body.get("backoff_seconds", 0) or 0),
+    }
+    if wait:
+        try:
+            return run_schedule_check(**kwargs)
+        except ScheduleBusy as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    try:
+        # Probe the lock without blocking the request thread; the worker acquires it.
+        from app.jobs import supervisor as supervisor_mod
+
+        if supervisor_mod._CHECK_LOCK.locked():  # noqa: SLF001 - intentional quick probe
+            raise HTTPException(status_code=409, detail="schedule check already running")
+    except HTTPException:
+        raise
+    threading.Thread(target=_run_check_background, kwargs=kwargs, daemon=True).start()
+    return {"accepted": True, "trigger": kwargs["trigger"]}
+
+
+@router.post("/jobs/{name}/run")
+def run_named_job(name: str, session: Session = Depends(get_session)) -> dict:
+    if name not in JOBS:
+        raise HTTPException(status_code=404, detail=f"unknown job: {name}")
+    cutoff = utcnow() - timedelta(minutes=90)
+    running = session.scalar(
+        select(JobRun.id)
+        .where(
+            JobRun.job_name == name,
+            JobRun.status == "running",
+            JobRun.started_at >= cutoff,
+        )
+        .limit(1)
+    )
+    if running is not None:
+        raise HTTPException(status_code=409, detail=f"{name} is already running")
+
+    def _worker() -> None:
+        try:
+            run_job_locked(name)
+        except Exception:  # pragma: no cover
+            import logging
+
+            logging.getLogger(__name__).exception("manual job failed: %s", name)
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return {"accepted": True, "job": name}
+
+
+@router.post("/data-quality/repair")
+def repair_data(payload: dict | None = Body(default=None)) -> dict:
+    body = payload or {}
+    kwargs = {
+        "recheck": bool(body.get("recheck", True)),
+        "force": bool(body.get("force", False)),
+        "max_jobs": body.get("max_actions"),
+    }
+    if bool(body.get("wait", False)):
+        try:
+            with write_lock(timeout=10):
+                return run_repair(**kwargs)
+        except TimeoutError as exc:
+            raise HTTPException(status_code=429, detail=str(exc)) from exc
+
+    def _worker() -> None:
+        try:
+            with write_lock():
+                run_repair(**kwargs)
+        except Exception:  # pragma: no cover
+            import logging
+
+            logging.getLogger(__name__).exception("background repair failed")
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return {"accepted": True}
+
+
 @router.get("/meta")
 def meta() -> dict:
     """Safe-to-expose configuration summary (never returns secrets)."""
@@ -162,23 +316,16 @@ def meta() -> dict:
 
 @router.get("/data-quality")
 def data_quality(session: Session = Depends(get_session)) -> dict:
-    checks = session.scalars(
-        select(DataCheck).order_by(DataCheck.check_date.desc()).limit(80)
-    ).all()
-    latest_by_dataset: dict[str, DataCheck] = {}
-    for check in checks:
-        key = f"{check.kind}:{check.dataset}"
-        latest_by_dataset.setdefault(key, check)
-    # 一次质检会为所有数据集写同一批 check_date（个别检查项互相间隔几十毫秒），
-    # 只展示最近一次运行的条目，否则已经下线的检查项（旧版本留下的行）会永远挂
-    # 在页面上。窗口取 5 分钟，既能覆盖同一轮的毫秒级差异，也不会捞到上一轮的旧行。
-    if latest_by_dataset:
-        newest = max(check.check_date for check in latest_by_dataset.values())
-        cutoff = newest - timedelta(minutes=5)
-        latest_by_dataset = {
-            key: check for key, check in latest_by_dataset.items() if check.check_date >= cutoff
-        }
+    batch_id, rows = quality.latest_batch(session)
+    age = quality.batch_age_seconds(session)
+    stale = age is None or age > 36 * 3600
+    checks = list(rows)
+    checks.sort(key=lambda check: (check.passed, check.kind, check.dataset, check.symbol or ""))
     return {
+        "batch_id": batch_id,
+        "checked_at": checks[0].check_date.isoformat() if checks else None,
+        "age_seconds": int(age) if age is not None else None,
+        "stale": stale,
         "data": [
             {
                 "kind": check.kind,
@@ -190,13 +337,24 @@ def data_quality(session: Session = Depends(get_session)) -> dict:
                 "deviation": check.deviation,
                 "passed": check.passed,
                 "detail": check.detail,
+                "severity": check.severity or ("info" if check.passed else "warn"),
+                "cause": check.cause,
+                "impact": check.impact,
+                "remediation": check.remediation,
+                "action_job": check.action_job,
             }
-            for check in latest_by_dataset.values()
+            for check in checks
         ],
         "summary": {
-            "total": len(latest_by_dataset),
-            "passed": sum(1 for check in latest_by_dataset.values() if check.passed),
-            "failed": sum(1 for check in latest_by_dataset.values() if not check.passed),
+            "total": len(checks),
+            "passed": sum(1 for check in checks if check.passed),
+            "failed": sum(1 for check in checks if not check.passed),
+            "unknown": 0 if checks else 1,
+            "by_severity": quality.severity_counts(checks),
+        },
+        "repair": {
+            "jobs": quality.remediation_jobs(checks),
+            "last_run": latest_repair(session),
         },
     }
 
@@ -218,51 +376,13 @@ def coverage(session: Session = Depends(get_session)) -> dict:
     }
 
 
+@router.get("/quality-gate")
+def quality_gate(domain: str | None = None, session: Session = Depends(get_session)) -> dict:
+    """Global quality gate used by analysis/decision pages."""
+    return assess_quality(session, domains=[domain] if domain else None)
+
+
 @router.get("/acceptance")
 def acceptance(session: Session = Depends(get_session)) -> dict:
-    """Automated DoD/acceptance checks (V0.x)."""
-    counts = {
-        "instruments": int(session.scalar(select(func.count()).select_from(Instrument)) or 0),
-        "market_bars": int(session.scalar(select(func.count()).select_from(MarketBar)) or 0),
-        "quotes": int(session.scalar(select(func.count()).select_from(Quote)) or 0),
-        "macro": int(session.scalar(select(func.count()).select_from(MacroObs)) or 0),
-        "calendar": int(session.scalar(select(func.count()).select_from(EconomicEvent)) or 0),
-        "documents": int(session.scalar(select(func.count()).select_from(Document)) or 0),
-        "bodies": int(session.scalar(select(func.count()).select_from(DocumentBody)) or 0),
-        "claims": int(session.scalar(select(func.count()).select_from(Claim)) or 0),
-        "briefs": int(session.scalar(select(func.count()).select_from(Brief)) or 0),
-        "analytics": int(session.scalar(select(func.count()).select_from(AnalyticsResult)) or 0),
-        "signals": int(session.scalar(select(func.count()).select_from(Signal)) or 0),
-        "plans": int(session.scalar(select(func.count()).select_from(TradePlan)) or 0),
-        "theses": int(session.scalar(select(func.count()).select_from(Thesis)) or 0),
-        "alerts": int(session.scalar(select(func.count()).select_from(Alert)) or 0),
-    }
-    checks_rows = session.scalars(
-        select(DataCheck).order_by(DataCheck.check_date.desc()).limit(80)
-    ).all()
-    latest: dict[str, DataCheck] = {}
-    for check in checks_rows:
-        latest.setdefault(f"{check.kind}:{check.dataset}", check)
-    quality_failed = sum(1 for check in latest.values() if not check.passed)
-
-    checks = [
-        {"name": "行情标的 ≥ 20", "passed": counts["instruments"] >= 20, "detail": counts["instruments"]},
-        {"name": "日线 ≥ 10,000", "passed": counts["market_bars"] >= 10000, "detail": counts["market_bars"]},
-        {"name": "行情快照 ≥ 20", "passed": counts["quotes"] >= 20, "detail": counts["quotes"]},
-        {"name": "宏观观测 ≥ 1,000", "passed": counts["macro"] >= 1000, "detail": counts["macro"]},
-        {"name": "财经日历 ≥ 20", "passed": counts["calendar"] >= 20, "detail": counts["calendar"]},
-        {"name": "新闻 ≥ 10", "passed": counts["documents"] >= 10, "detail": counts["documents"]},
-        {"name": "正文 ≥ 10", "passed": counts["bodies"] >= 10, "detail": counts["bodies"]},
-        {"name": "断言 ≥ 50", "passed": counts["claims"] >= 50, "detail": counts["claims"]},
-        {"name": "简报 ≥ 1", "passed": counts["briefs"] >= 1, "detail": counts["briefs"]},
-        {"name": "分析结果 ≥ 10", "passed": counts["analytics"] >= 10, "detail": counts["analytics"]},
-        {"name": "信号 ≥ 1", "passed": counts["signals"] >= 1, "detail": counts["signals"]},
-        {"name": "计划 ≥ 1", "passed": counts["plans"] >= 1, "detail": counts["plans"]},
-        {"name": "论点 ≥ 1", "passed": counts["theses"] >= 1, "detail": counts["theses"]},
-        {"name": "数据质检全部通过", "passed": quality_failed == 0, "detail": f"failed={quality_failed}"},
-    ]
-    return {
-        "passed": all(check["passed"] for check in checks),
-        "checks": checks,
-        "counts": counts,
-    }
+    """Automated DoD/acceptance checks with detailed failure explanations."""
+    return build_acceptance(session)

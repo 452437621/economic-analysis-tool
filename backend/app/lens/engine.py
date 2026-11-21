@@ -26,6 +26,8 @@ from app.lens import position as position_engine
 from app.lens import song as song_lens
 from app.lens.common import evaluate_rule, load_gold_series, round_opt as _round, score_label
 from app.models.v2 import Derivation, Forecast
+from app.platform.quality_gate import assess as assess_quality
+from app.platform.quality_gate import confidence_factor
 from app.provenance.engine import RunRecorder, aware, new_id, record_observations
 
 logger = logging.getLogger(__name__)
@@ -580,8 +582,15 @@ def run_lenses(session: Session, asof: datetime | None = None) -> dict[str, Any]
     config = load_config()
     now = datetime.now(timezone.utc)
     today = (asof or now).date()
+    quality = assess_quality(session, now=now)
     rec = RunRecorder(session, kind="lens", subject="all", method_id=METHOD_ENGINE, code_version="lens-1.0")
     rec.start()
+    if quality["status"] != "ok":
+        rec.degrade(
+            "lens.quality.gate",
+            quality.get("caveat") or f"数据质量门控：{quality['status']}",
+            severity="critical" if quality["status"] == "blocked" else "warn",
+        )
     try:
         with rec.step("load_panel", kind="fetch") as step:
             panel = load_panel(session)
@@ -694,6 +703,18 @@ def run_lenses(session: Session, asof: datetime | None = None) -> dict[str, Any]
                 lens_scores[item["id"]] = _lens_scores(item)
                 lens_states[item["id"]] = item["state"]
             synth_value = _synthesis(lens_scores, panel, config, cycle_context, lens_states)
+            synth_value["quality"] = quality
+            synth_value["actionable"] = bool(quality["allow_action"])
+            synth_value["confidence"] = round(
+                max(0.3, min(0.85, float(synth_value["confidence"]) * confidence_factor(quality))), 3
+            )
+            if quality["caveat"]:
+                synth_value["quality_caveat"] = quality["caveat"]
+            if quality["status"] == "blocked":
+                portfolio = synth_value.get("portfolio") or {}
+                portfolio["actionable"] = False
+                portfolio["blocked_reason"] = quality["caveat"]
+                synth_value["portfolio"] = portfolio
             synth_value["rule_metrics"] = metrics
             # 只读接口要能重建全部规则（含未命中/缺数据），因此把每层的 metrics
             # 与人物透镜摘要一并写进合成推导的 value。
@@ -1000,6 +1021,7 @@ def run_lenses(session: Session, asof: datetime | None = None) -> dict[str, Any]
                 "error": run.error,
             },
             "panel": _panel_summary(panel),
+            "quality": quality,
             "fed": fed_value,
             "song": song_value,
             "macro": macro_value,

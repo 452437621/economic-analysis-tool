@@ -134,6 +134,13 @@ def _run_ledger() -> dict:
     }
 
 
+def _run_repair() -> dict:
+    """自动修复失败的数据质检项（调用方已持有写锁）。"""
+    from app.jobs.repair import run_repair
+
+    return run_repair(recheck=True)
+
+
 JOBS = {
     "collect_quotes": pipeline.collect_quotes,
     "collect_daily_bars": pipeline.collect_daily_bars,
@@ -150,6 +157,7 @@ JOBS = {
     "extract_events": event_mod.extract_events,
     "extract_claims_llm": pipeline.extract_claims_llm,
     "check_data_quality": pipeline.check_data_quality,
+    "repair_data": _run_repair,
     "analyze": run_analytics,
     "cycle": _run_cycle,
     "lenses": _run_lenses,
@@ -219,6 +227,35 @@ def prune_job_runs(keep_per_job: int = 200) -> int:
     return deleted
 
 
+def _summary_error(summary: dict) -> str | None:
+    if not isinstance(summary, dict):
+        return None
+    error = summary.get("error")
+    if error:
+        return str(error)[:2000]
+    errors = summary.get("errors")
+    if isinstance(errors, list) and errors:
+        return "; ".join(str(item) for item in errors[:5])[:2000]
+    failed = summary.get("failed")
+    if failed:
+        return f"checks failed: {failed}"
+    return None
+
+
+def _status_from_summary(summary: dict) -> str | None:
+    """Map a job summary onto a JobRun status (None means keep ``ok``)."""
+    if not isinstance(summary, dict):
+        return None
+    declared = str(summary.get("status") or "").lower()
+    if declared in {"error", "failed"}:
+        return "error"
+    if declared in {"degraded", "partial", "blocked", "skipped"}:
+        return "degraded"
+    if summary.get("failed") or summary.get("errors") or summary.get("degraded_reasons"):
+        return "degraded"
+    return None
+
+
 def run_job(name: str) -> dict:
     if name not in JOBS:
         raise KeyError(f"unknown job: {name}")
@@ -242,6 +279,9 @@ def run_job(name: str) -> dict:
     summary: dict = {}
     try:
         summary = JOBS[name]()
+        inferred = _status_from_summary(summary if isinstance(summary, dict) else {})
+        if inferred:
+            status = inferred
     except Exception as exc:  # noqa: BLE001
         status = "error"
         summary = {"error": str(exc)}
@@ -258,12 +298,20 @@ def run_job(name: str) -> dict:
         if job_row is not None:
             job_row.last_status = status
             job_row.last_run_at = utcnow()
-            job_row.last_error = summary.get("error") if status == "error" else None
+            job_row.last_error = _summary_error(summary) if status in {"error", "degraded"} else None
         session.commit()
 
     result = {"job": name, "status": status, "duration_ms": duration_ms, "summary": summary}
     logger.info("job %s -> %s (%sms)", name, status, duration_ms)
     return result
+
+
+def run_job_locked(name: str) -> dict:
+    """Run a job while holding the process-wide SQLite write lock."""
+    from app.platform.writelock import write_lock
+
+    with write_lock():
+        return run_job(name)
 
 
 def main() -> None:

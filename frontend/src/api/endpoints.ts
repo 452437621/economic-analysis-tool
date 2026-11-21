@@ -28,6 +28,10 @@ import type {
   JobRunRow,
   JournalEntry,
   JournalEntryItem,
+  QualityGate,
+  ScheduleCheckRow,
+  ScheduleResponse,
+  SourcesResponse,
   JournalInput,
   JournalList,
   LatestBriefResponse,
@@ -42,7 +46,6 @@ import type {
   PositionsResponse,
   QualityResponse,
   SnapshotResponse,
-  SourceHealth,
   Thesis,
   ThesisReview,
   TradePlan,
@@ -88,9 +91,24 @@ export const getJobRuns = (jobName: string, limit = 50) =>
   getJson<{ data: JobRunRow[] }>(
     `/api/system/job-runs?job_name=${encodeURIComponent(jobName)}&limit=${limit}`,
   );
-export const getSources = () => getJson<{ data: SourceHealth[] }>("/api/system/sources");
+export const getSources = () => getJson<SourcesResponse>("/api/system/sources");
 export const getQuality = () => getJson<QualityResponse>("/api/system/data-quality");
 export const getAcceptance = () => getJson<Acceptance>("/api/system/acceptance");
+export const getSchedule = () => getJson<ScheduleResponse>("/api/system/schedule");
+export const getScheduleCheck = (limit = 1) =>
+  getJson<{ data: ScheduleCheckRow[]; schedule: ScheduleResponse }>(
+    `/api/system/schedule-check?limit=${limit}`,
+  );
+export const runScheduleCheck = (body: Record<string, unknown>) =>
+  postJson<Record<string, unknown>>("/api/system/schedule-check", body);
+export const runJob = (name: string) =>
+  postJson<{ accepted: boolean; job: string }>(
+    `/api/system/jobs/${encodeURIComponent(name)}/run`,
+    {},
+  );
+export const repairQuality = (body: Record<string, unknown> = {}) =>
+  postJson<Record<string, unknown>>("/api/system/data-quality/repair", body);
+export const getQualityGate = () => getJson<QualityGate>("/api/system/quality-gate");
 
 /* 总览聚合（单请求） */
 export const getOverview = () => getJson<OverviewResponse>("/api/overview");

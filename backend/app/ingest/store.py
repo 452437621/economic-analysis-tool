@@ -404,5 +404,15 @@ def prune_quotes(session: Session, keep_days: int | None = None) -> int:
     return int(result.rowcount or 0)
 
 
+def prune_source_health(session: Session, keep_days: int = 90) -> int:
+    """Bound ``source_health`` growth; the panel only needs recent attempts."""
+    if keep_days <= 0:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=keep_days)
+    result = session.execute(delete(SourceHealth).where(SourceHealth.ts < cutoff))
+    session.commit()
+    return int(result.rowcount or 0)
+
+
 def count_rows(session: Session, model) -> int:  # noqa: ANN001
     return int(session.scalar(select(func.count()).select_from(model)) or 0)

@@ -332,6 +332,32 @@ class JobRun(Base):
     detail: Mapped[str | None] = mapped_column(Text)
 
 
+class ScheduleCheck(Base):
+    """One startup/periodic/manual scheduling self-check."""
+
+    __tablename__ = "schedule_checks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    trigger: Mapped[str] = mapped_column(String(16), default="manual")
+    status: Mapped[str] = mapped_column(String(16), default="running")
+    data_status: Mapped[str | None] = mapped_column(String(16))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    report: Mapped[dict | None] = mapped_column(JSON)
+    error: Mapped[str | None] = mapped_column(Text)
+
+
+class RepairAttempt(Base):
+    """A data-quality-driven repair attempt (cooldown bookkeeping)."""
+
+    __tablename__ = "repair_attempts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    job_name: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    attempted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    status: Mapped[str] = mapped_column(String(16), default="running")
+
+
 class LlmCall(Base):
     __tablename__ = "llm_calls"
 
@@ -392,7 +418,7 @@ class DataCheck(Base):
     __tablename__ = "data_checks"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
-    kind: Mapped[str] = mapped_column(String(30), nullable=False)  # reconcile/freshness
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)  # reconcile/freshness/source
     dataset: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
     symbol: Mapped[str | None] = mapped_column(String(40))
     check_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -401,6 +427,12 @@ class DataCheck(Base):
     deviation: Mapped[float | None] = mapped_column(Float)
     passed: Mapped[bool] = mapped_column(Boolean, default=True)
     detail: Mapped[str | None] = mapped_column(Text)
+    batch_id: Mapped[str | None] = mapped_column(String(32), index=True)
+    severity: Mapped[str | None] = mapped_column(String(16))
+    cause: Mapped[str | None] = mapped_column(Text)
+    impact: Mapped[str | None] = mapped_column(Text)
+    remediation: Mapped[str | None] = mapped_column(Text)
+    action_job: Mapped[str | None] = mapped_column(String(80))
 
 
 class Brief(Base):

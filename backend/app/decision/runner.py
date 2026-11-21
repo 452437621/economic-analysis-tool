@@ -23,6 +23,7 @@ from app.models.core import (
 )
 from app.platform.config import settings
 from app.platform.db import SessionLocal
+from app.platform.quality_gate import assess as assess_quality
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,18 @@ def run_decision() -> dict:
     closes, _ = aligned(frames)
     if closes.empty:
         raise RuntimeError("no daily bars for decision engine")
+
+    with SessionLocal() as quality_session:
+        quality = assess_quality(quality_session)
+    if quality["status"] in {"blocked", "unknown"}:
+        return {
+            "status": "blocked" if quality["status"] == "blocked" else "degraded",
+            "skipped": "quality_gate",
+            "quality": quality,
+            "reason": quality.get("caveat"),
+            "signals": 0,
+            "plans": 0,
+        }
 
     asof = _asof(closes)
     if settings.watchlist_only:
@@ -111,6 +124,13 @@ def run_decision() -> dict:
                 **(instrument.extra or {}),
             }
             plan = build_plan(item, spec=spec)
+            plan["checks"].append(
+                {
+                    "rule": "数据质量门",
+                    "passed": quality["status"] in {"ok", "degraded"},
+                    "detail": quality.get("caveat") or f"status={quality['status']}",
+                }
+            )
             trade_plan = TradePlan(
                 signal_id=item["signal_id"],
                 instrument_id=instrument.id,
@@ -150,6 +170,7 @@ def run_decision() -> dict:
                         "base_equity": plan["base_equity"],
                         "equity": plan["equity"],
                         "checks": plan["checks"],
+                        "quality_gate": quality,
                     },
                 )
             )
@@ -191,4 +212,7 @@ def run_decision() -> dict:
 
     logger.info("run_decision: %s", counts)
     counts["asof"] = asof.date().isoformat()
+    counts["quality"] = quality
+    if quality["status"] != "ok":
+        counts["status"] = "degraded"
     return counts

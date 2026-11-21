@@ -6,6 +6,15 @@
 
 ## [Unreleased]
 
+### 新增（系统状态四项加固：调度自检、数据源备用、质检处置、验收说明，2026-11-21）
+
+- **调度自检**：新增 `backend/app/jobs/plan.py`（作业计划单一事实源）与 `backend/app/jobs/supervisor.py`（启动/周期自检）。按「定点作业取最近应执行时点、间隔作业取 last_run + 周期」判断逾期；启动后先补采集，再评估数据就绪，随后按依赖补质检、分析、周期、透镜、决策、论点、台账、简报；数据不可用时下游写 `skipped` + `blocked_by`，不再硬跑。删除 `analyze/decide/theses` 等启动 bootstrap，避免与补跑重复；注册 `backfill_history`（周日 09:00）与 `repair_data`（15:55）。新增 `schedule_checks` 表与 `GET/POST /api/system/schedule-check`、`GET /api/system/schedule`、`POST /api/system/jobs/{name}/run`。
+- **数据源备用**：新增 `backend/app/ingest/failover.py`（有序备用链、基于 `source_health` 的熔断/冷却、最近可用数据）、`chains.py`（按数据域的主源→备源注册表）与 FRED CSV provider（美债、SOFR/EFFR、H.4.1、H.6 备用；国债/资产负债表百万美元、TGA/M2 十亿美元按单位缩放）。`collect_rates` / `collect_macro` 在主源缺失或滞后时自动补 FRED；`/api/system/sources` 增加角色/数据域、24h 成功率、连续失败、冷却至与链摘要。质检批次对 `US10Y/US2Y/US_M2` 做 FRED 抽样对账（`backend/app/ingest/reconcile.py`），偏差写 `DataCheck(kind="reconcile")`，不静默覆盖。
+- **质检处置**：`DataCheck` 增加 `batch_id/severity/cause/impact/remediation/action_job`（轻量迁移），`check_data_quality` 每轮写同一批次并统一走 `backend/app/ingest/quality.py` 的 playbook；对账异常不再被吞掉，源连续失败进入质检批次；修复 `kind:dataset` 漏 `symbol`。新增 `repair_data` 自动修复（冷却 30 分钟、单轮最多 3 个、修复后复核一次）与 `POST /api/system/data-quality/repair`。新增 `backend/app/platform/quality_gate.py`：按最新批次 + 直接新鲜度 + 覆盖给出 `ok/degraded/blocked/unknown`，透镜置信度乘门控系数（夹 0.3–0.85）、组合标 `actionable=false`；决策在 blocked 时不再删除旧计划并返回跳过原因；周期/分析/黄金写入降级原因；修复周期综合分降级原因为不可达的问题，并取消缺失输入默认 50 的静默中性化。
+- **验收说明**：新增 `backend/app/platform/acceptance.py`，每个检查输出 `actual/required/reason/impact/remediation/action_job`；无质检批次/批次超过 36h 不再假通过；新增调度逾期、调度自检时效、关键源链、数据就绪、序列覆盖检查；`failed_summary` 汇总失败项与作业/源线索。`/api/system/acceptance` 保留 `name/passed/detail` 兼容。
+- **前端**：`SystemView` 新增「调度自检」卡（逾期/就绪/最近自检/质量门、立即补跑）、任务表逾期徽标、数据源角色/域/成功率/连续失败与备用链、质检严重度/期望实际偏差/处置与一键修复、验收失败摘要与详细说明；`OverviewView` 覆盖接口缺失不再回退 100%。
+- **验证**：`scripts/lint.py` PASSED；全量 `pytest -q` **388 passed**（含 `test_frontend_build.py`）；`npm run build` 成功；新增 `test_schedule_plan/test_failover/test_fred_provider/test_quality_playbook/test_quality_gate/test_acceptance_details` 等离线测试。
+
 ### 修复与文档（README 对齐、自托管 /docs、全页截图，2026-11-19）
 
 - **`/docs` 白屏修复**：FastAPI 默认文档页从 `cdn.jsdelivr.net` 加载 swagger-ui，本机网络下不可达导致空白。新增 `backend/app/platform/api_docs.py`（零依赖自托管文档页：读取 `/openapi.json` 按 tag 分组渲染端点、搜索、参数/请求体/响应表与 curl 片段），`main.py` 改为 `FastAPI(docs_url=None, redoc_url=None)` 并显式挂 `/docs`，离线可用。

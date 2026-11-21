@@ -9,8 +9,9 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, func, select
 
-from app.ingest import bars_quality, continuity, store
+from app.ingest import bars_quality, continuity, quality, reconcile, store
 from app.ingest.contracts import Bar, MacroPoint, Quote
+from app.ingest.failover import Candidate, run_chain
 from app.ingest.http import HttpClient
 from app.ingest.providers import (
     czce,
@@ -22,6 +23,7 @@ from app.ingest.providers import (
     fed_h41,
     fed_h6,
     frankfurter,
+    fred,
     imf_datamapper,
     jgb,
     nyfed,
@@ -66,7 +68,10 @@ from app.models.core import (
     MemberPosition,
     PositionSnapshot,
     Quote as QuoteRow,
+    Source,
+    SourceHealth,
 )
+from app.platform.config import settings
 from app.platform.db import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -120,6 +125,13 @@ SOURCE_FED_RESEARCH = dict(
     tier="S1",
     reliability=0.95,
     base_url="https://www.federalreserve.gov",
+)
+SOURCE_FRED = dict(
+    name="FRED",
+    kind="official",
+    tier="S1",
+    reliability=0.9,
+    base_url="https://fred.stlouisfed.org",
 )
 
 NEWS_FEEDS = [
@@ -770,27 +782,65 @@ def collect_rates() -> dict:
 
     with HttpClient(min_interval=0.5) as client, SessionLocal() as session:
         treasury_source = store.get_source(session, **SOURCE_TREASURY)
-        try:
-            curves = treasury.fetch_curves(client, years)
-            for code, points in curves.items():
-                meta = MACRO_SERIES_META.get(code, {})
-                n = store.upsert_macro(
-                    session,
-                    code,
-                    points,
-                    source_id=treasury_source.id,
-                    name=meta.get("name"),
-                    unit=meta.get("unit"),
-                    country=meta.get("country"),
-                    freq=meta.get("freq"),
+        fred_source = store.get_source(session, **SOURCE_FRED) if settings.fred_enabled else None
+        rate_codes = [
+            "US2Y",
+            "US5Y",
+            "US10Y",
+            "US30Y",
+            "US5Y_REAL",
+            "US10Y_REAL",
+            "US5Y_BE",
+            "US10Y_BE",
+        ]
+        candidates = [
+            Candidate(
+                SOURCE_TREASURY,
+                lambda client: treasury.fetch_curves(client, years),
+                "primary",
+            )
+        ]
+        if fred_source is not None:
+            candidates.append(
+                Candidate(
+                    SOURCE_FRED,
+                    lambda client: fred.fetch_many(
+                        client,
+                        rate_codes,
+                        start_date=datetime.now(timezone.utc).date() - timedelta(days=365 * 5),
+                    ),
+                    "backup",
                 )
-                stats["points"] += n
-                stats["series"] += 1
-            store.record_health(session, treasury_source.id, ok=True)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("treasury rates failed")
-            store.record_health(session, treasury_source.id, ok=False, error=str(exc))
-            stats["errors"].append(str(exc))
+            )
+        chain = run_chain(session, "rates.us_treasury", candidates, client, validator=bool)
+        stats["us_rates_provider"] = chain.provider
+        stats["us_rates_attempts"] = chain.attempts
+        if chain.value:
+            try:
+                source_id = chain.source_id or treasury_source.id
+                for code, points in chain.value.items():
+                    meta = MACRO_SERIES_META.get(code, {})
+                    n = store.upsert_macro(
+                        session,
+                        code,
+                        points,
+                        source_id=source_id,
+                        name=meta.get("name"),
+                        unit=meta.get("unit"),
+                        country=meta.get("country"),
+                        freq=meta.get("freq"),
+                    )
+                    stats["points"] += n
+                    stats["series"] += 1
+            except Exception as exc:  # noqa: BLE001 - one writer error must not skip other rate sources
+                logger.exception("us rates persist failed")
+                stats["errors"].append(f"us_rates persist: {exc}")
+        else:
+            detail = "; ".join(
+                f"{item['source']}: {item.get('error')}" for item in chain.attempts if item.get("error")
+            )
+            logger.warning("us rates chain exhausted: %s", detail)
+            stats["errors"].append(f"us_rates: {detail[:300]}")
 
         # Japan MOF JGB yields
         jgb_source = store.get_source(session, **SOURCE_JGB)
@@ -933,6 +983,67 @@ def collect_rates() -> dict:
         except Exception as exc:  # noqa: BLE001
             logger.exception("nyfed money failed")
             stats["errors"].append(f"nyfed_money: {exc}")
+
+        # FRED fallback: fill only the US series that are missing/stale after the
+        # primary official endpoints. Never overwrite fresher primary data.
+        if settings.fred_enabled and settings.env != "test":
+            fred_source = store.get_source(session, **SOURCE_FRED)
+            fallback_codes = [
+                "US2Y",
+                "US5Y",
+                "US10Y",
+                "US30Y",
+                "US5Y_REAL",
+                "US10Y_REAL",
+                "US5Y_BE",
+                "US10Y_BE",
+                "SOFR",
+                "EFFR",
+            ]
+            latest_rows = session.execute(
+                select(MacroSeries.code, func.max(MacroObs.ts_utc))
+                .join(MacroObs, MacroObs.series_id == MacroSeries.id, isouter=True)
+                .where(MacroSeries.code.in_(fallback_codes))
+                .group_by(MacroSeries.code)
+            ).all()
+            latest = {code: ts for code, ts in latest_rows}
+            need = []
+            for code in fallback_codes:
+                ts = latest.get(code)
+                if ts is None:
+                    need.append(code)
+                    continue
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                if (datetime.now(timezone.utc) - ts).days > 5:
+                    need.append(code)
+            if need:
+                try:
+                    points_by_code = fred.fetch_many(
+                        client,
+                        need,
+                        start_date=datetime.now(timezone.utc).date() - timedelta(days=365 * 5),
+                    )
+                    added = 0
+                    for code, points in points_by_code.items():
+                        meta = MACRO_SERIES_META.get(code, {})
+                        added += store.upsert_macro(
+                            session,
+                            code,
+                            points,
+                            source_id=fred_source.id,
+                            name=meta.get("name"),
+                            unit=meta.get("unit"),
+                            country=meta.get("country"),
+                            freq=meta.get("freq"),
+                        )
+                    stats["fred_fallback"] = added
+                    stats["fred_codes"] = sorted(points_by_code)
+                    store.record_health(session, fred_source.id, ok=bool(points_by_code))
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("fred rates fallback failed: %s", exc)
+                    store.record_health(session, fred_source.id, ok=False, error=str(exc))
+                    stats["errors"].append(f"fred: {exc}")
 
         session.commit()
 
@@ -1183,6 +1294,67 @@ def collect_macro(fed_history_weeks: int = 0) -> dict:
         except Exception as exc:  # noqa: BLE001
             logger.exception("fed h6 money supply failed")
             stats["degraded_reasons"].append(f"fed_h6: {exc}")
+
+        # FRED fallback for Fed balance sheet / money supply. Only missing or
+        # stale series are fetched; fresh H.4.1/H.6 data always wins.
+        if settings.fred_enabled and settings.env != "test":
+            fred_source = store.get_source(session, **SOURCE_FRED)
+            fallback_codes = [
+                "US_FED_ASSETS",
+                "US_FED_TREASURY",
+                "US_FED_MBS",
+                "US_FED_RESERVES",
+                "US_TGA",
+                "US_CURRENCY",
+                "US_M1",
+                "US_M2",
+                "US_MONETARY_BASE",
+            ]
+            latest_rows = session.execute(
+                select(MacroSeries.code, func.max(MacroObs.ts_utc))
+                .join(MacroObs, MacroObs.series_id == MacroSeries.id, isouter=True)
+                .where(MacroSeries.code.in_(fallback_codes))
+                .group_by(MacroSeries.code)
+            ).all()
+            latest = {code: ts for code, ts in latest_rows}
+            need = []
+            for code in fallback_codes:
+                ts = latest.get(code)
+                if ts is None:
+                    need.append(code)
+                    continue
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                limit_days = 70 if code in {"US_M1", "US_M2", "US_MONETARY_BASE"} else 14
+                if (datetime.now(timezone.utc) - ts).days > limit_days:
+                    need.append(code)
+            if need:
+                try:
+                    points_by_code = fred.fetch_many(
+                        client,
+                        need,
+                        start_date=datetime.now(timezone.utc).date() - timedelta(days=365 * 5),
+                    )
+                    added = 0
+                    for code, points in points_by_code.items():
+                        meta = MACRO_SERIES_META.get(code, {})
+                        added += store.upsert_macro(
+                            session,
+                            code,
+                            points,
+                            source_id=fred_source.id,
+                            name=meta.get("name"),
+                            unit=meta.get("unit"),
+                            country=meta.get("country"),
+                            freq=meta.get("freq"),
+                        )
+                    stats["fred_fallback"] = added
+                    stats["fred_codes"] = sorted(points_by_code)
+                    store.record_health(session, fred_source.id, ok=bool(points_by_code))
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("fred macro fallback failed: %s", exc)
+                    store.record_health(session, fred_source.id, ok=False, error=str(exc))
+                    stats["degraded_reasons"].append(f"fred: {exc}")
 
         session.commit()
 
@@ -1560,14 +1732,43 @@ def extract_claims_llm(limit: int = 8) -> dict:
 
 
 def check_data_quality() -> dict:
-    """Cross-check official CZCE daily quotes and dataset freshness."""
+    """Cross-check official CZCE quotes and dataset freshness.
+
+    Every run gets one ``batch_id``.  Failures carry a severity, cause, impact
+    and a concrete remediation job, so the API/acceptance checker/repair job
+    all agree on what is wrong and what to run next.
+    """
     started = time.perf_counter()
-    stats: dict = {"checks": 0, "failed": 0, "errors": []}
+    batch_id = quality.new_batch_id()
+    now = _now()
+    stats: dict = {
+        "checks": 0,
+        "failed": 0,
+        "errors": [],
+        "batch_id": batch_id,
+    }
+    written: list[DataCheck] = []
+
+    def add(**kwargs) -> DataCheck:
+        kwargs.setdefault("check_date", now)
+        row = quality.add_check(session, batch_id, **kwargs)
+        written.append(row)
+        stats["checks"] += 1
+        if not kwargs.get("passed", True):
+            stats["failed"] += 1
+        return row
 
     with HttpClient(min_interval=0.8) as client, SessionLocal() as session:
         for symbol in ("SR", "CF"):
             instrument = session.scalar(select(Instrument).where(Instrument.symbol == symbol))
             if instrument is None:
+                add(
+                    kind="reconcile",
+                    dataset="CZCE官方日行情",
+                    symbol=symbol,
+                    passed=False,
+                    detail="本地缺少该标的，无法与交易所对账",
+                )
                 continue
             bar = session.scalar(
                 select(MarketBar)
@@ -1576,6 +1777,13 @@ def check_data_quality() -> dict:
                 .limit(1)
             )
             if bar is None:
+                add(
+                    kind="reconcile",
+                    dataset="CZCE官方日行情",
+                    symbol=symbol,
+                    passed=False,
+                    detail="本地无日线，无法与交易所对账",
+                )
                 continue
             try:
                 rows = czce.fetch_daily(client, bar.ts_utc.date())
@@ -1584,35 +1792,34 @@ def check_data_quality() -> dict:
                 actual = bar.close
                 deviation = abs(actual - expected) / expected if expected else None
                 passed = deviation is not None and deviation <= 0.002
-                session.add(
-                    DataCheck(
-                        kind="reconcile",
-                        dataset="CZCE官方日行情",
-                        symbol=symbol,
-                        expected=expected,
-                        actual=actual,
-                        deviation=deviation,
-                        passed=passed,
-                        detail=main_contract.code if main_contract else "未找到主力合约",
-                    )
+                add(
+                    kind="reconcile",
+                    dataset="CZCE官方日行情",
+                    symbol=symbol,
+                    expected=expected,
+                    actual=actual,
+                    deviation=deviation,
+                    passed=passed,
+                    detail=main_contract.code if main_contract else "未找到主力合约",
                 )
-                stats["checks"] += 1
-                if not passed:
-                    stats["failed"] += 1
             except Exception as exc:  # noqa: BLE001
                 logger.warning("quality check failed %s: %s", symbol, exc)
                 stats["errors"].append(f"{symbol}: {exc}")
+                add(
+                    kind="reconcile",
+                    dataset="CZCE官方日行情",
+                    symbol=symbol,
+                    passed=False,
+                    detail=f"官方对账失败: {exc}",
+                )
             session.commit()
-
-        now = _now()
 
         def freshness(dataset: str, latest, max_age_days: int, note: str | None = None) -> None:
             if latest is not None and latest.tzinfo is None:
                 latest = latest.replace(tzinfo=timezone.utc)
             age = (now - latest).days if latest is not None else None
             if age is not None and age < 0:
-                # 个别新闻源会给出「未来」时间戳（时区换算/预告稿），按当日算，
-                # 否则页面会出现「距今-1天」这种看不懂的字样。
+                # 个别新闻源会给出「未来」时间戳（时区换算/预告稿），按当日算。
                 age = 0
             passed = age is not None and age <= max_age_days
             detail = f"最新={latest.date() if latest else '无'}"
@@ -1622,18 +1829,12 @@ def check_data_quality() -> dict:
                 detail += f", 超过{max_age_days}天阈值"
             if note:
                 detail += f" ({note})"
-            session.add(
-                DataCheck(
-                    kind="freshness",
-                    dataset=dataset,
-                    check_date=now,
-                    passed=passed,
-                    detail=detail,
-                )
+            add(
+                kind="freshness",
+                dataset=dataset,
+                passed=passed,
+                detail=detail,
             )
-            stats["checks"] += 1
-            if not passed:
-                stats["failed"] += 1
 
         # 日线：按标的逐条比对，避免"某个标的停更被全表最大值掩盖"。
         bar_max_age_days = 5
@@ -1668,24 +1869,15 @@ def check_data_quality() -> dict:
                 )
                 if len(stale) > 6:
                     detail += f" 等{len(stale)}个"
-            session.add(
-                DataCheck(
-                    kind="freshness",
-                    dataset="日线行情",
-                    check_date=now,
-                    passed=not stale,
-                    detail=detail,
-                )
+            add(
+                kind="freshness",
+                dataset="日线行情",
+                passed=not stale,
+                detail=detail,
             )
-            stats["checks"] += 1
-            if stale:
-                stats["failed"] += 1
 
         # 宏观序列：按序列频率给阈值（日频 5 天 / 周频 10 天 / 月频 70 天 / 季频 150 天 / 年频 800 天），
         # 逐条检查——全表最大值会把"日债停在 10-30"这类单序列断更完全掩盖。
-        # 月/季频阈值要留出官方发布滞后（如 ECB 法国10年 11-01 的观测要到 12 月初才发布）。
-        # 年频阈值取 800 天：世界银行/IMF 的年度值可能滞后 18~24 个月（如 WB 美国 CPI 目前
-        # 最新只到 2024 年度，2025 年度值尚未发布），400 天窗口会把"上游还没发布"误判为断更。
         freq_days = {"d": 5, "w": 10, "m": 70, "q": 150, "y": 800}
         macro_rows = session.execute(
             select(MacroSeries.code, MacroSeries.freq, func.max(MacroObs.ts_utc))
@@ -1711,18 +1903,12 @@ def check_data_quality() -> dict:
                 detail += "; 滞后: " + ", ".join(stale_macro[:8])
                 if len(stale_macro) > 8:
                     detail += f" 等{len(stale_macro)}条"
-            session.add(
-                DataCheck(
-                    kind="freshness",
-                    dataset="宏观序列",
-                    check_date=now,
-                    passed=not stale_macro,
-                    detail=detail,
-                )
+            add(
+                kind="freshness",
+                dataset="宏观序列",
+                passed=not stale_macro,
+                detail=detail,
             )
-            stats["checks"] += 1
-            if stale_macro:
-                stats["failed"] += 1
 
         freshness("行情快照", session.scalar(select(func.max(QuoteRow.ts_utc))), 1)
         freshness(
@@ -1741,21 +1927,15 @@ def check_data_quality() -> dict:
             .group_by(Instrument.id)
         ).all()
         missing = [symbol for symbol, count in coverage if count == 0]
-        session.add(
-            DataCheck(
-                kind="coverage",
-                dataset="启用标的日线覆盖",
-                check_date=now,
-                expected=len(coverage),
-                actual=len(coverage) - len(missing),
-                deviation=len(missing),
-                passed=not missing,
-                detail="缺失: " + ", ".join(missing) if missing else "全部启用标的均有日线",
-            )
+        add(
+            kind="coverage",
+            dataset="启用标的日线覆盖",
+            expected=len(coverage),
+            actual=len(coverage) - len(missing),
+            deviation=len(missing),
+            passed=not missing,
+            detail="缺失: " + ", ".join(missing) if missing else "全部启用标的均有日线",
         )
-        stats["checks"] += 1
-        if missing:
-            stats["failed"] += 1
 
         macro_coverage = session.execute(
             select(MacroSeries.code, func.count(MacroObs.id))
@@ -1763,21 +1943,15 @@ def check_data_quality() -> dict:
             .group_by(MacroSeries.id)
         ).all()
         missing_macro = [code for code, count in macro_coverage if count == 0]
-        session.add(
-            DataCheck(
-                kind="coverage",
-                dataset="宏观序列覆盖",
-                check_date=now,
-                expected=len(macro_coverage),
-                actual=len(macro_coverage) - len(missing_macro),
-                deviation=len(missing_macro),
-                passed=not missing_macro,
-                detail="缺失: " + ", ".join(missing_macro) if missing_macro else "全部宏观序列均有观测",
-            )
+        add(
+            kind="coverage",
+            dataset="宏观序列覆盖",
+            expected=len(macro_coverage),
+            actual=len(macro_coverage) - len(missing_macro),
+            deviation=len(missing_macro),
+            passed=not missing_macro,
+            detail="缺失: " + ", ".join(missing_macro) if missing_macro else "全部宏观序列均有观测",
         )
-        stats["checks"] += 1
-        if missing_macro:
-            stats["failed"] += 1
 
         # 历史连续性：不预置交易日历，用「同业共识」判断某个标的漏了哪天
         # （休市日不会被误判），趋势图缺一根或出现错误行情都会在这里暴露。
@@ -1787,21 +1961,138 @@ def check_data_quality() -> dict:
         ):
             known = continuity.missing_known_gaps(session) if dataset == "日线行情" else 0
             passed, problems, detail = continuity.summarize(findings, known_gaps=known)
-            session.add(
-                DataCheck(
-                    kind="continuity",
-                    dataset=f"{dataset}连续性",
-                    check_date=now,
-                    expected=len({item.subject for item in findings}),
-                    actual=0,
-                    deviation=problems,
-                    passed=passed,
-                    detail=detail,
-                )
+            add(
+                kind="continuity",
+                dataset=f"{dataset}连续性",
+                expected=len({item.subject for item in findings}),
+                actual=0,
+                deviation=problems,
+                passed=passed,
+                detail=detail,
             )
-            stats["checks"] += 1
-            if not passed:
-                stats["failed"] += 1
+
+        # FRED spot-check: compare a few key US series with the official primary.
+        # Only runs outside the test environment; failures are warnings, not
+        # silent passes.
+        if settings.fred_enabled and settings.env != "test":
+            for code in ("US10Y", "US2Y", "US_M2"):
+                action = "collect_macro" if code == "US_M2" else "collect_rates"
+                try:
+                    remote = fred.fetch_series(
+                        client, code, start_date=(now - timedelta(days=45)).date()
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    add(
+                        kind="reconcile",
+                        dataset="FRED抽样对账",
+                        symbol=code,
+                        passed=False,
+                        severity="warn",
+                        detail=f"FRED 对账源不可用: {exc}",
+                        action_job=action,
+                    )
+                    continue
+                local_row = session.scalar(
+                    select(MacroObs)
+                    .join(MacroSeries, MacroSeries.id == MacroObs.series_id)
+                    .where(MacroSeries.code == code)
+                    .order_by(MacroObs.ts_utc.desc())
+                    .limit(1)
+                )
+                if local_row is None:
+                    continue
+                finding = reconcile.compare_series(
+                    [
+                        MacroPoint(
+                            code=code,
+                            ts=local_row.ts_utc.replace(tzinfo=timezone.utc)
+                            if local_row.ts_utc.tzinfo is None
+                            else local_row.ts_utc,
+                            value=float(local_row.value),
+                        )
+                    ],
+                    remote,
+                )
+                if finding:
+                    reconcile.record_divergence(
+                        session,
+                        batch_id=batch_id,
+                        dataset="FRED抽样对账",
+                        symbol=code,
+                        finding=finding,
+                        action_job=action,
+                    )
+
+        # 数据源健康：连续失败 >= 3 的源进入质检批次，避免「采集失败但质检全绿」。
+        source_rows = session.scalars(select(Source).order_by(Source.name)).all()
+        health_rows = session.scalars(
+            select(SourceHealth).order_by(SourceHealth.ts.desc()).limit(500)
+        ).all()
+        latest_health: dict[str, SourceHealth] = {}
+        recent_health: dict[str, list[SourceHealth]] = {}
+        for row in health_rows:
+            latest_health.setdefault(row.source_id, row)
+            recent_health.setdefault(row.source_id, []).append(row)
+        # 源 → 修复作业：优先从备用链注册表推导（链主作业），再补不在链里的
+        # 新闻/日历/持仓源，避免未映射源被误派给 collect_quotes。
+        from app.ingest.chains import CHAINS
+
+        action_by_source: dict[str, str] = {}
+        for chain in CHAINS.values():
+            for conf in chain.sources:
+                action_by_source.setdefault(conf["name"], chain.action_job)
+        action_by_source.update(
+            {
+                "IMF DataMapper": "collect_macro",
+                "世界银行": "collect_macro",
+                "美国财政部FiscalData": "collect_macro",
+                "FRED": "collect_rates",
+                "日本财务省": "collect_rates",
+                "欧洲央行": "collect_rates",
+                "上海期货交易所": "collect_positions",
+                "郑州商品交易所": "collect_positions",
+                "国家统计局": "collect_news",
+                "美国能源信息署": "collect_news",
+                "美国贸易代表办公室": "collect_news",
+            }
+        )
+        for feed in NEWS_FEEDS + NEWS_FEEDS_SLOW:
+            action_by_source.setdefault(feed["name"], "collect_news")
+        flagged = 0
+        for source in source_rows:
+            records = recent_health.get(source.id) or []
+            consecutive = 0
+            for record in records:
+                if record.ok:
+                    break
+                consecutive += 1
+            if consecutive < 3 or flagged >= 20:
+                continue
+            latest = latest_health.get(source.id)
+            add(
+                kind="source",
+                dataset=source.name,
+                passed=False,
+                detail=(
+                    f"连续失败 {consecutive} 次；最近错误："
+                    f"{(latest.error if latest else None) or '无'}"
+                ),
+                action_job=action_by_source.get(source.name),
+            )
+            flagged += 1
+
+        if not written:
+            add(
+                kind="quality",
+                dataset="质检自身",
+                passed=False,
+                detail="本轮未生成任何检查项，质检流程可能未正确执行",
+                action_job="check_data_quality",
+            )
+
+        stats["by_severity"] = quality.severity_counts(written)
+        stats["status"] = "degraded" if stats["failed"] else "ok"
+        stats["checks_pruned"] = quality.prune_data_checks(session)
 
         # 分钟级行情快照只保留最近 N 天（EPIC_QUOTES_RETENTION_DAYS），
         # 一天清理一次把 SQLite 文件大小压回稳态。

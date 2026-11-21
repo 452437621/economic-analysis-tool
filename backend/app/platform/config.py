@@ -47,6 +47,18 @@ class Settings(BaseSettings):
     # history at most (the table would otherwise grow by ~1M rows / month).
     quotes_retention_days: int = 30
 
+    # Scheduling self-heal / data-quality remediation.
+    schedule_startup_delay_seconds: int = 60
+    schedule_grace_seconds: int = 60
+    auto_repair_enabled: bool = True
+    auto_repair_max_actions: int = 3
+    auto_repair_cooldown_minutes: int = 30
+
+    # Multi-source failover.
+    fred_enabled: bool = True
+    source_failover_failures: int = 3
+    source_failover_cooldown_minutes: int = 15
+
     @property
     def llm_available(self) -> bool:
         return bool(self.deepseek_api_key)

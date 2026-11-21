@@ -20,6 +20,12 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 with TestClient(app) as client:
+    # Persist one scheduling self-check so the acceptance gate can verify the
+    # supervisor path without running collectors or analysis.
+    client.post(
+        "/api/system/schedule-check",
+        json={"wait": True, "run_data": False, "run_downstream": False},
+    )
     payload = client.get("/api/system/acceptance").json()
 print(json.dumps(payload, ensure_ascii=False))
 raise SystemExit(0 if payload.get("passed") else 1)

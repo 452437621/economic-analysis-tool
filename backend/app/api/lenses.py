@@ -140,6 +140,7 @@ def _payload(
     config: dict[str, Any],
     confidence: float | None,
     evidence_grade: str | None,
+    quality: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "asof": asof,
@@ -157,6 +158,7 @@ def _payload(
         "config_version": config.get("version"),
         "confidence": confidence,
         "evidence_grade": evidence_grade,
+        "quality": quality,
     }
 
 
@@ -192,6 +194,7 @@ def _payload_from_persisted(session: Session) -> dict[str, Any]:
         config=config,
         confidence=synth_row.confidence,
         evidence_grade=synth_row.evidence_grade,
+        quality=synth_value.get("quality"),
     )
 
 
@@ -217,6 +220,7 @@ def _payload_from_result(result: dict[str, Any]) -> dict[str, Any]:
         config=load_config(),
         confidence=derivations["synthesis"].confidence,
         evidence_grade=derivations["synthesis"].evidence_grade,
+        quality=result.get("quality") or (result.get("synthesis") or {}).get("quality"),
     )
 
 

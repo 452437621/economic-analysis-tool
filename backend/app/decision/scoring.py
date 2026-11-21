@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.models.core import MarketBar, Outcome, Prediction, TradePlan
 from app.platform.db import SessionLocal
@@ -39,6 +39,21 @@ def score_predictions() -> dict:
             if len(bars) <= horizon:
                 skipped += 1
                 continue
+            # The window's last bar is the horizon bar (not the instrument's
+            # latest bar), so check overall feed freshness separately: an old
+            # window is fine when the horizon has matured, a stopped feed is not.
+            feed_latest = session.scalar(
+                select(func.max(MarketBar.ts_utc)).where(
+                    MarketBar.instrument_id == plan.instrument_id,
+                    MarketBar.timeframe == "1d",
+                )
+            )
+            if feed_latest is not None:
+                if feed_latest.tzinfo is None:
+                    feed_latest = feed_latest.replace(tzinfo=timezone.utc)
+                if (datetime.now(timezone.utc) - feed_latest).days > 7:
+                    skipped += 1
+                    continue
             entry = (
                 (plan.entry_low + plan.entry_high) / 2
                 if plan.entry_low and plan.entry_high

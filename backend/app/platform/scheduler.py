@@ -16,6 +16,7 @@ from sqlalchemy import select
 
 from app.models.base import utcnow
 from app.models.core import Job, JobRun
+from app.jobs.plan import JOB_PLANS, TriggerSpec
 from app.platform.config import settings
 from app.platform.db import SessionLocal
 
@@ -54,6 +55,13 @@ def _heartbeat_sync() -> None:
             prune_job_runs()
         except Exception:  # pragma: no cover - pruning must never kill the beat
             logger.exception("job run pruning failed")
+        try:
+            from app.ingest import store
+
+            with SessionLocal() as session:
+                store.prune_source_health(session)
+        except Exception:  # pragma: no cover - pruning must never kill the beat
+            logger.exception("source health pruning failed")
 
 
 async def heartbeat_job() -> None:
@@ -92,7 +100,7 @@ def _collector(name: str):
     return _run
 
 
-def _register_collectors() -> None:
+def _register_collectors_legacy() -> None:
     now = datetime.now(CST)
     # 行情每分钟采一次：FX / 海外指数 / 夜盘期货全天在动，5 分钟一采会让总览
     # 的价格连续几分钟纹丝不动（store.upsert_quotes 内部对未变化的行情做了
@@ -399,6 +407,60 @@ def _register_collectors() -> None:
         max_instances=1,
         coalesce=True,
     )
+
+
+def _trigger(spec: TriggerSpec):
+    if spec.kind == "interval":
+        return IntervalTrigger(seconds=int(spec.seconds or 60))
+    return CronTrigger(
+        hour=spec.hour,
+        minute=spec.minute,
+        day_of_week=spec.day_of_week,
+        day=spec.day,
+        timezone=CST,
+    )
+
+
+def _register_collectors() -> None:
+    """Register every plan in ``jobs/plan.py`` (single source of truth)."""
+    now = datetime.now(CST)
+    for name, plan in JOB_PLANS.items():
+        if name == "heartbeat" or plan.manual or not plan.triggers:
+            continue
+        if name == "extract_claims_llm" and not settings.llm_available:
+            continue
+        for index, spec in enumerate(plan.triggers):
+            job_id = name if len(plan.triggers) == 1 else f"{name}:{index}"
+            kwargs: dict = dict(
+                id=job_id,
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+            )
+            if spec.first_run_delay_seconds is not None:
+                kwargs["next_run_time"] = now + timedelta(seconds=spec.first_run_delay_seconds)
+            scheduler.add_job(_collector(name), trigger=_trigger(spec), **kwargs)
+    scheduler.add_job(
+        _schedule_supervisor,
+        trigger=IntervalTrigger(minutes=15),
+        id="schedule_supervisor",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        next_run_time=now + timedelta(minutes=15),
+    )
+
+
+async def _schedule_supervisor() -> None:
+    """Periodic self-heal: only overdue jobs run, so a healthy scheduler is a no-op."""
+    from app.jobs.supervisor import ScheduleBusy, run_schedule_check
+
+    try:
+        await asyncio.to_thread(run_schedule_check, trigger="periodic")
+    except ScheduleBusy:
+        logger.info("schedule supervisor already running; skipping this tick")
+    except Exception:  # pragma: no cover - self-heal must never kill the scheduler
+        logger.exception("scheduled schedule check failed")
 
 
 def start_scheduler() -> None:

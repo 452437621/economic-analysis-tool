@@ -23,6 +23,7 @@ from app.analytics.regime import compute_regimes
 from app.analytics.wind import compute_wind
 from app.models.core import AnalyticsResult
 from app.platform.db import SessionLocal
+from app.platform.quality_gate import assess as assess_quality
 from app.provenance import RunRecorder
 
 logger = logging.getLogger(__name__)
@@ -143,6 +144,18 @@ def run_analytics() -> dict:
         )
         try:
             rec.start()
+            quality = assess_quality(session)
+            if quality["status"] == "blocked":
+                raise RuntimeError(
+                    "data quality gate blocked analytics: "
+                    + "; ".join(reason["message"] for reason in quality["reasons"][:3])
+                )
+            if quality["status"] != "ok":
+                rec.degrade(
+                    "quality.gate",
+                    quality.get("caveat") or f"数据质量门控：{quality['status']}",
+                    severity="warn",
+                )
             with rec.step("load_bars", kind="fetch") as step:
                 frames = load_frames(session)
                 step.outputs = {

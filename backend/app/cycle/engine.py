@@ -28,6 +28,7 @@ from app.cycle.phases import (
     political_calendar,
     short_cycle,
 )
+from app.platform.quality_gate import assess as assess_quality
 from app.cycle.sustainability import sustainability
 from app.cycle.world import world_state
 from app.models.core import GoldMetric
@@ -273,6 +274,13 @@ def _state_value(
 def run_cycle(session: Session, today: date | None = None) -> dict:
     cfg = load_config()
     with RunRecorder(session, kind=KIND, subject="world", method_id=METHOD) as rec:
+        quality = assess_quality(session, now=utcnow())
+        if quality["status"] != "ok":
+            rec.degrade(
+                "quality.gate",
+                quality.get("caveat") or f"数据质量门控：{quality['status']}",
+                severity="critical" if quality["status"] == "blocked" else "warn",
+            )
         with rec.step("load_panel", kind="fetch") as step:
             panel = load_panel(session)
             if panel.daily.empty:
@@ -310,9 +318,13 @@ def run_cycle(session: Session, today: date | None = None) -> dict:
             composites = all_composites(readings, cfg)
             step.outputs = {key: item.get("value") for key, item in composites.items()}
             for key, item in composites.items():
-                if item.get("degraded"):
-                    continue
-                if item.get("coverage", 0) < 1.0:
+                if item.get("value") is None:
+                    rec.degrade(
+                        f"cycle.composite.{key}",
+                        item.get("degrade_reason") or f"{item.get('name', key)} 无可用指标",
+                        severity="critical",
+                    )
+                elif item.get("coverage", 0) < 1.0:
                     rec.degrade(
                         f"cycle.coverage.{key}",
                         f"{item['name']}仅覆盖 {item['coverage'] * 100:.0f}% 权重：{item.get('degrade_reason') or ''}",
@@ -551,6 +563,7 @@ def run_cycle(session: Session, today: date | None = None) -> dict:
         "status": rec.run.status if rec.run else None,
         "degraded_reasons": rec.run.degraded_reasons if rec.run else None,
         "generated_at": utcnow().isoformat(),
+        "quality": quality,
         "composites": composites,
         "readings": [reading.dict() for reading in readings],
         "long_cycle": long,

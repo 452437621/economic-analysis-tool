@@ -8,10 +8,10 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 
+from app.ingest import quality
 from app.models.core import (
     Alert,
     AnalyticsResult,
-    DataCheck,
     EconomicEvent,
     Event,
     EventInstrument,
@@ -192,12 +192,20 @@ def compute_alerts(
             )
     for check in data_checks:
         if not check.get("passed"):
+            name = check.get("dataset")
+            if check.get("symbol"):
+                name = f"{name}/{check.get('symbol')}"
+            message = str(check.get("detail") or "")
+            if check.get("remediation"):
+                message = f"{message} 处置：{check['remediation']}"
+            if check.get("action_job"):
+                message = f"{message}（可运行 {check['action_job']}）"
             alerts.append(
                 {
-                    "level": "critical",
+                    "level": "critical" if check.get("severity") in {"error", "critical"} else "warn",
                     "kind": "data_check",
-                    "title": f"数据检查失败：{check.get('dataset')}",
-                    "message": str(check.get("detail") or ""),
+                    "title": f"数据检查失败：{name}",
+                    "message": message,
                 }
             )
     for check in plan_checks:
@@ -270,12 +278,18 @@ def scan_alerts() -> dict:
                 }
             )
 
-        latest_checks: dict[str, DataCheck] = {}
-        for row in session.scalars(select(DataCheck).order_by(DataCheck.check_date.desc()).limit(100)).all():
-            latest_checks.setdefault(f"{row.kind}:{row.dataset}", row)
         data_checks = [
-            {"dataset": row.dataset, "passed": row.passed, "detail": row.detail}
-            for row in latest_checks.values()
+            {
+                "kind": row.kind,
+                "dataset": row.dataset,
+                "symbol": row.symbol,
+                "passed": row.passed,
+                "detail": row.detail,
+                "severity": row.severity,
+                "remediation": row.remediation,
+                "action_job": row.action_job,
+            }
+            for row in quality.latest_checks(session)
         ]
 
         plan_checks = [

@@ -22,6 +22,8 @@ from app.models.core import (
     SourceHealth,
 )
 from app.api.serializers import iso, snapshot_payload
+from app.ingest.chains import chain_summaries, source_roles
+from app.ingest.failover import breaker_state
 from app.platform.db import get_session
 
 router = APIRouter(prefix="/api", tags=["market"])
@@ -374,7 +376,7 @@ def news(
 def sources(session: Session = Depends(get_session)) -> dict:
     source_rows = session.scalars(select(Source).order_by(Source.name)).all()
     health_rows = session.scalars(
-        select(SourceHealth).order_by(SourceHealth.ts.desc()).limit(500)
+        select(SourceHealth).order_by(SourceHealth.ts.desc()).limit(2000)
     ).all()
     latest_health: dict[str, SourceHealth] = {}
     for row in health_rows:
@@ -382,8 +384,14 @@ def sources(session: Session = Depends(get_session)) -> dict:
     doc_counts = dict(
         session.execute(select(Document.source_id, func.count()).group_by(Document.source_id)).all()
     )
-    return {
-        "data": [
+    now = datetime.now(timezone.utc)
+    roles = source_roles()
+    data = []
+    for source in source_rows:
+        latest = latest_health.get(source.id)
+        state = breaker_state(session, source.id, now)
+        role = roles.get(source.name) or {}
+        data.append(
             {
                 "id": source.id,
                 "name": source.name,
@@ -391,11 +399,21 @@ def sources(session: Session = Depends(get_session)) -> dict:
                 "tier": source.tier,
                 "reliability": source.reliability,
                 "base_url": source.base_url,
+                "enabled": bool(source.enabled),
                 "documents": int(doc_counts.get(source.id, 0)),
-                "last_ok": latest_health[source.id].ok if source.id in latest_health else None,
-                "last_check": _iso(latest_health[source.id].ts) if source.id in latest_health else None,
-                "last_error": latest_health[source.id].error if source.id in latest_health else None,
+                "last_ok": latest.ok if latest else None,
+                "last_check": _iso(latest.ts) if latest else None,
+                "last_error": latest.error if latest else None,
+                "latency_ms": latest.latency_ms if latest else None,
+                "last_success": _iso(state["last_success"]),
+                "consecutive_failures": state["consecutive_failures"],
+                "success_rate_24h": state["success_rate_24h"],
+                "checks_24h": state["checks_24h"],
+                "cooldown_until": _iso(state["cooldown_until"]),
+                "status": "healthy" if state["cooldown_until"] is None else "degraded",
+                "roles": role.get("roles") or [],
+                "domains": role.get("domains") or [],
+                "chains": role.get("chains") or [],
             }
-            for source in source_rows
-        ]
-    }
+        )
+    return {"data": data, "chains": chain_summaries(session, now)}

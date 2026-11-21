@@ -13,11 +13,11 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.analytics.drivers import rank_drivers
+from app.ingest import quality
 from app.models.core import (
     AnalyticsResult,
     Brief,
     Claim,
-    DataCheck,
     Document,
     DocumentBody,
     Event,
@@ -32,6 +32,7 @@ from app.models.core import (
 )
 from app.platform.config import settings
 from app.platform.db import SessionLocal
+from app.platform.quality_gate import assess as assess_quality
 
 KIND_LABEL = {"premarket": "盘前简报", "postmarket": "盘后简报", "manual": "手动简报"}
 ASSET_LABEL = {
@@ -322,23 +323,17 @@ def news_lines(news: list[dict], zh_map: dict[str, str] | None = None) -> list[s
 
 
 def _freshness(session: Session) -> list[dict]:
-    """One row per dataset — the newest check only.
-
-    The old version sliced the last 12 rows of a dataset-ordered query, so a
-    single dataset could repeat (and其它数据集被挤掉), which made the
-    「数据与信息缺口」 section look like it was reporting the same thing 5 times.
-    """
-    checks = session.scalars(
-        select(DataCheck)
-        .where(DataCheck.kind == "freshness")
-        .order_by(DataCheck.check_date)
-    ).all()
+    """One row per dataset from the latest QC batch (never old runs)."""
     latest: dict[str, dict] = {}
-    for check in checks:
+    for check in quality.latest_checks(session):
+        if check.kind != "freshness":
+            continue
         latest[check.dataset] = {
             "dataset": check.dataset,
             "passed": check.passed,
             "detail": check.detail,
+            "remediation": check.remediation,
+            "action_job": check.action_job,
         }
     return list(latest.values())
 
@@ -491,9 +486,18 @@ def build_markdown(session: Session, kind: str, now: datetime | None = None) -> 
 
     lines.append("## 7. 数据与信息缺口")
     lines.append(f"- 已入库原文 {bodies_count} 篇、断言 {claims_count} 条；新闻条目 {len(news)} 条（Top 10 展示）")
+    gate = assess_quality(session)
+    lines.append(
+        f"- 数据质量门控：{gate['status']}"
+        + (f"（{gate['caveat']}）" if gate.get("caveat") else "")
+    )
     for check in _freshness(session):
         status = "正常" if check["passed"] else "异常"
         lines.append(f"- 数据检查：{check['dataset']} = {status}（{check['detail'] or ''}）")
+        if not check["passed"] and check.get("remediation"):
+            lines.append(f"  - 处置：{check['remediation']}")
+            if check.get("action_job"):
+                lines.append(f"  - 建议运行：{check['action_job']}")
     lines.append("")
 
     lines.append("## 8. 免责声明")

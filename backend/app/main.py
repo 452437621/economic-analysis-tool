@@ -62,9 +62,14 @@ async def lifespan(app: FastAPI):
         session.commit()
     if interrupted:
         logger.warning("marked %s interrupted analysis runs", interrupted)
+    from app.jobs.supervisor import reconcile_stale_checks
+
+    stale_checks = reconcile_stale_checks()
+    if stale_checks:
+        logger.warning("marked %s interrupted schedule checks", stale_checks)
     start_scheduler()
     if settings.env != "test":
-        # 停机期间错过的定点作业在启动 60 秒后补跑（同步任务丢线程池，别阻塞事件循环）。
+        # 停机期间错过的作业在启动后由调度自检统一补跑（同步任务丢线程池，别阻塞事件循环）。
         app.state.catch_up_task = asyncio.create_task(_catch_up_after_startup())
     try:
         yield
@@ -78,17 +83,24 @@ async def lifespan(app: FastAPI):
 
 
 async def _catch_up_after_startup() -> None:
-    """启动 60 秒后补跑错过的定点作业；失败只记日志，不影响服务。"""
-    await asyncio.sleep(60)
-    from app.jobs.catchup import catch_up_jobs
+    """启动后做一次调度自检：先补数据，数据可用后再补研判/信号/简报。"""
+    await asyncio.sleep(max(5, settings.schedule_startup_delay_seconds))
+    from app.jobs.supervisor import ScheduleBusy, run_schedule_check
 
     try:
-        caught = await asyncio.to_thread(catch_up_jobs)
-    except Exception:  # noqa: BLE001 - 补跑失败不能拖垮应用启动
-        logger.exception("catch-up jobs failed")
+        report = await asyncio.to_thread(run_schedule_check, trigger="startup")
+    except ScheduleBusy:
+        logger.info("startup schedule check is already running")
         return
-    if caught:
-        logger.info("caught up missed jobs: %s", ", ".join(caught))
+    except Exception:  # noqa: BLE001 - 补跑失败不能拖垮应用启动
+        logger.exception("startup schedule check failed")
+        return
+    logger.info(
+        "startup schedule check -> %s (data %s, executed %s)",
+        report.get("status"),
+        (report.get("readiness") or {}).get("status"),
+        len(report.get("jobs") or []),
+    )
 
 
 app = FastAPI(

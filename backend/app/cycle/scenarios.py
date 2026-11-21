@@ -5,9 +5,9 @@ from __future__ import annotations
 from app.cycle.config import load_config
 
 
-def _pct(reading: dict | None) -> float:
+def _pct(reading: dict | None) -> float | None:
     if not reading or reading.get("value") is None:
-        return 50.0
+        return None
     return float(reading["value"])
 
 
@@ -20,23 +20,30 @@ def _clip(value: float, low: float = -0.12, high: float = 0.15) -> float:
     return max(low, min(high, value))
 
 
-def _adjustments(d: float, g: float, i: float, liq: float) -> dict[str, float]:
+def _adjustments(
+    d: float | None, g: float | None, i: float | None, liq: float | None
+) -> dict[str, float]:
     """Rule-based deviations from the base priors.
 
-    Every term is a documented, one-line function of a published score, so a
-    user can recompute the probability by hand. These are priors, not a fitted
-    model: see the ``caveats`` returned to the UI.
+    Missing inputs contribute zero instead of being silently replaced by a
+    neutral 50, so a missing reading cannot masquerade as evidence.
     """
     return {
-        # 财政主导：DMI 越高（越接近长债务周期后段）越可能靠通胀与金融抑制化债
-        "S1": _clip(0.10 * max(0.0, (d - 55.0) / 45.0)),
-        # 软着陆：增长在 50 附近、通胀在 40 附近时空间最大
-        "S2": _clip(0.10 * _near(g, 50.0, 25.0) + 0.04 * _near(i, 40.0, 25.0)),
-        # 信用事件：增长越低、流动性越紧，硬着陆概率越高
-        "S3": _clip(0.12 * max(0.0, (45.0 - g) / 45.0) + 0.06 * max(0.0, (50.0 - liq) / 50.0)),
-        # AI 生产率：必须同时看到高增长与低通胀，否则不加权
-        "S4": _clip(0.08 * max(0.0, (g - 60.0) / 40.0) * max(0.0, (50.0 - i) / 50.0), 0.0, 0.10),
+        "S1": _clip(0.10 * max(0.0, ((d or 0.0) - 55.0) / 45.0)) if d is not None else 0.0,
+        "S2": _clip(0.10 * _near(g, 50.0, 25.0) + 0.04 * _near(i, 40.0, 25.0))
+        if g is not None and i is not None
+        else 0.0,
+        "S3": _clip(0.12 * max(0.0, (45.0 - g) / 45.0) + 0.06 * max(0.0, (50.0 - liq) / 50.0))
+        if g is not None and liq is not None
+        else 0.0,
+        "S4": _clip(0.08 * max(0.0, (g - 60.0) / 40.0) * max(0.0, (50.0 - i) / 50.0), 0.0, 0.10)
+        if g is not None and i is not None
+        else 0.0,
     }
+
+
+def _fmt(value: float | None, suffix: str = "") -> str:
+    return "缺失" if value is None else f"{value:.0f}{suffix}"
 
 
 def scenarios(
@@ -55,6 +62,11 @@ def scenarios(
     g = _pct(growth)
     i = _pct(inflation)
     liq = _pct(liquidity)
+    missing = [
+        name
+        for name, value in (("DMI", d), ("增长", g), ("通胀", i), ("流动性", liq))
+        if value is None
+    ]
 
     adjustments = _adjustments(d, g, i, liq)
     weights = {key: max(0.02, base.get(key, 0.0) + adjustments.get(key, 0.0)) for key in base}
@@ -67,11 +79,11 @@ def scenarios(
 
     triggers = {
         "S1": [
-            f"债务/货币压力 DMI={d:.0f}（≥55 表示长周期后段）",
+            f"债务/货币压力 DMI={_fmt(d)}（≥55 表示长周期后段）",
             "利息/财政收入 ≥20% 时，财政主导概率上升",
         ],
-        "S2": [f"通胀分数 {i:.0f}（接近 50 时软着陆空间更大）", f"流动性分数 {liq:.0f}"],
-        "S3": [f"增长分数 {g:.0f}（<40 时信用事件概率上升）", "SOFR−EFFR 溢价走阔是预警信号"],
+        "S2": [f"通胀分数 {_fmt(i)}（接近 50 时软着陆空间更大）", f"流动性分数 {_fmt(liq)}"],
+        "S3": [f"增长分数 {_fmt(g)}（<40 时信用事件概率上升）", "SOFR−EFFR 溢价走阔是预警信号"],
         "S4": ["生产率与利润率数据未接入，该情景为叙事占位，权重不宜过高"],
     }
     notes = []
@@ -89,8 +101,20 @@ def scenarios(
                 "triggers": triggers.get(sid, []),
             }
         )
+    caveats = [
+        "情景概率是规则化先验，尚未做样本外校准（需 M4 的预测台账积累后回测）；",
+        "S4 缺少生产率数据支撑，仅为叙事占位；",
+        "概率之和强制为 1，不代表真实分布的严谨分解。",
+    ]
+    if missing:
+        caveats.insert(0, f"缺失输入：{'、'.join(missing)}；相关调整项按 0 处理，不做中性化猜测。")
+    confidence = round(min(0.6, 0.3 + 0.2 * float(dmi.get("coverage") or 0)), 2)
+    if missing:
+        confidence = round(confidence * 0.6, 2)
     return {
         "available": True,
+        "degraded": bool(missing),
+        "missing_inputs": missing,
         "horizon": "未来 6–36 个月",
         "sum": round(sum(probabilities.values()), 3),
         "scenarios": notes,
@@ -99,13 +123,9 @@ def scenarios(
             "S2=0.10×near(增长,50,25)+0.04×near(通胀,40,25)，"
             "S3=0.12×max(0,(45−增长)/45)+0.06×max(0,(50−流动性)/50)，"
             "S4=0.08×max(0,(增长−60)/40)×max(0,(50−通胀)/50)；调整幅度截断在 [−0.12, 0.15]。"
-            "这是规则化先验，不是统计模型输出"
+            "这是规则化先验，不是统计模型输出；缺失输入不计调整。"
         ),
         "evidence": "E3",
-        "confidence": round(min(0.6, 0.3 + 0.2 * float(dmi.get("coverage") or 0)), 2),
-        "caveats": [
-            "情景概率是规则化先验，尚未做样本外校准（需 M4 的预测台账积累后回测）；",
-            "S4 缺少生产率数据支撑，仅为叙事占位；",
-            "概率之和强制为 1，不代表真实分布的严谨分解。",
-        ],
+        "confidence": confidence,
+        "caveats": caveats,
     }

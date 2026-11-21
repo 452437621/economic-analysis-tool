@@ -12,6 +12,7 @@ from app.gold.registry import INDICATORS
 from app.gold.scoring import compute_gold_score
 from app.models.core import AnalyticsResult, GoldMetric, GoldProviderRun
 from app.platform.db import SessionLocal
+from app.platform.quality_gate import assess as assess_quality
 from app.provenance import RunRecorder
 
 logger = logging.getLogger(__name__)
@@ -132,13 +133,21 @@ def _derive_composite(rec: RunRecorder, score: dict, failed: list[str]):  # noqa
 
 def collect_gold() -> dict:
     """Run all gold providers, persist observations and refresh the composite score."""
-    summary = {"providers": {}, "records": 0}
+    summary = {"providers": {}, "records": 0, "quality": None}
     with SessionLocal() as session:
         rec = RunRecorder(
             session, kind="gold", subject="GOLD", method_id="gold.composite.v1"
         )
         try:
             rec.start()
+            quality = assess_quality(session)
+            summary["quality"] = quality
+            if quality["status"] != "ok":
+                rec.degrade(
+                    "gold.quality.gate",
+                    quality.get("caveat") or f"数据质量门控：{quality['status']}",
+                    severity="critical" if quality["status"] == "blocked" else "warn",
+                )
             failed: list[str] = []
             with rec.step("collect_providers", kind="fetch") as step:
                 for name, fetcher in PROVIDERS:

@@ -117,11 +117,43 @@ def _migrate_jobs_description(conn) -> None:
     conn.execute(text("ALTER TABLE jobs ADD COLUMN description TEXT"))
 
 
+def _migrate_data_check_fields(conn) -> None:
+    """Add structured QC/remediation fields to existing ``data_checks`` rows."""
+    columns = {row[1] for row in conn.execute(text("PRAGMA table_info(data_checks)"))}
+    if not columns:
+        return
+    for name, sql_type in (
+        ("batch_id", "VARCHAR(32)"),
+        ("severity", "VARCHAR(16)"),
+        ("cause", "TEXT"),
+        ("impact", "TEXT"),
+        ("remediation", "TEXT"),
+        ("action_job", "VARCHAR(80)"),
+    ):
+        if name not in columns:
+            conn.execute(text(f"ALTER TABLE data_checks ADD COLUMN {name} {sql_type}"))
+
+
+def _migrate_operational_indexes(conn) -> None:
+    """Indexes used by the scheduler, QC batches and source health panels."""
+    conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_job_runs_job_started ON job_runs(job_name, started_at)")
+    )
+    conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_source_health_source_ts ON source_health(source_id, ts)")
+    )
+    conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_data_checks_batch ON data_checks(batch_id, check_date)")
+    )
+
+
 MIGRATIONS = (
     ("watchlist.sort_order", _migrate_watchlist_sort_order),
     ("jobs.enable_legacy_scheduler_jobs", _migrate_enable_legacy_jobs),
     ("economic_events.forecast_values", _migrate_calendar_event_values),
     ("jobs.description", _migrate_jobs_description),
+    ("data_checks.remediation_fields", _migrate_data_check_fields),
+    ("operational.indexes", _migrate_operational_indexes),
 )
 
 

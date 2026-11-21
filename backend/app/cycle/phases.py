@@ -98,10 +98,17 @@ def short_cycle(
     states = list(section.get("states") or [])
     if growth.get("value") is None:
         return {"available": False, "reason": "增长分数缺失，无法定位短周期", "state": None, "confidence": 0.0}
+    inflation_value = inflation.get("value")
+    liquidity_value = liquidity.get("value")
+    unknown_inputs = [
+        name
+        for name, value in (("通胀", inflation_value), ("流动性", liquidity_value))
+        if value is None
+    ]
     variables = {
         "growth": float(growth["value"]),
-        "inflation": float(inflation.get("value") or 50.0),
-        "liq": float(liquidity.get("value") or 50.0),
+        "inflation": float(inflation_value) if inflation_value is not None else None,
+        "liq": float(liquidity_value) if liquidity_value is not None else None,
         "d12": float(growth_d12 or 0.0),
     }
     matched = None
@@ -110,7 +117,14 @@ def short_cycle(
             matched = rule
             break
     if matched is None:
-        matched = {"state": section.get("default", "放缓"), "meaning": "未命中显式规则，按默认态处理"}
+        matched = {
+            "state": section.get("default", "放缓"),
+            "meaning": (
+                "缺失输入导致未命中显式规则，按默认态占位（不可视为确认信号）"
+                if unknown_inputs
+                else "未命中显式规则，按默认态处理"
+            ),
+        }
     state = matched["state"]
     held = False
     if previous_state and previous_state != state and previous_state in states:
@@ -120,13 +134,19 @@ def short_cycle(
     confidence = round(
         min(0.85, 0.35 + 0.45 * float(growth.get("coverage") or 0) + 0.1 * abs(variables["d12"]) / 10.0), 2
     )
+    if unknown_inputs:
+        confidence = round(confidence * 0.6, 2)
     return {
         "available": True,
+        "degraded": bool(unknown_inputs),
+        "unknown_inputs": unknown_inputs,
         "state": previous_state if held else state,
         "raw_state": state,
         "meaning": matched.get("meaning"),
         "hysteresis_held": held,
-        "variables": {k: round(v, 1) for k, v in variables.items()},
+        "variables": {
+            key: (round(value, 1) if value is not None else None) for key, value in variables.items()
+        },
         "confidence": confidence,
         "evidence": growth.get("evidence"),
         "growth_12m_change": round(growth_d12, 1) if growth_d12 is not None else None,
