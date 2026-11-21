@@ -27,6 +27,7 @@ from app.api import (
     system,
     theses,
     timeline,
+    topics,
     trades,
     watchlist,
 )
@@ -129,6 +130,7 @@ app.include_router(cycle.router)
 app.include_router(timeline.router)
 app.include_router(ledger.router)
 app.include_router(lenses.router)
+app.include_router(topics.router)
 app.include_router(trades.router)
 
 if WEB_DIR.exists():

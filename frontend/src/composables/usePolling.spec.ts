@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { defineComponent } from "vue";
+import { defineComponent, nextTick, ref } from "vue";
 import { mount } from "@vue/test-utils";
 import { usePolling, type PollingOptions, type PollingState } from "./usePolling";
 
@@ -146,6 +146,44 @@ describe("usePolling", () => {
     resolve(1);
     await vi.advanceTimersByTimeAsync(0);
     expect(getState().data.value).toBe(1);
+
+    wrapper.unmount();
+  });
+
+  it("resets and discards an older in-flight response when the source changes", async () => {
+    const source = ref(1);
+    const pending: { resolve?: (value: number) => void } = {};
+    let call = 0;
+    const fetcher = vi.fn(
+      () =>
+        new Promise<number>((done) => {
+          call += 1;
+          if (call === 1) pending.resolve = done;
+          else done(source.value * 10);
+        }),
+    );
+    const { wrapper, getState } = mountPolling(fetcher, {
+      interval: 5000,
+      pauseWhenHidden: false,
+      watchSource: source,
+      resetOnSourceChange: true,
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    source.value = 2;
+    await nextTick();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(getState().data.value).toBe(20);
+
+    pending.resolve?.(10);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(getState().data.value).toBe(20);
+
+    getState().reset();
+    expect(getState().data.value).toBeNull();
 
     wrapper.unmount();
   });

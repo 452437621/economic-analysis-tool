@@ -7,6 +7,8 @@ export interface PollingOptions {
   pauseWhenHidden?: boolean;
   /** 依赖变化时重新拉取 */
   watchSource?: Ref<unknown> | (() => unknown);
+  /** 依赖变化时清空旧数据并强制重拉（用于专题切换；默认只触发一次受控刷新） */
+  resetOnSourceChange?: boolean;
 }
 
 export interface PollingState<T> {
@@ -14,7 +16,8 @@ export interface PollingState<T> {
   error: Ref<Error | null>;
   loading: Ref<boolean>;
   lastUpdated: Ref<Date | null>;
-  refresh: () => Promise<void>;
+  refresh: (force?: boolean) => Promise<void>;
+  reset: () => void;
 }
 
 /**
@@ -33,6 +36,7 @@ export function usePolling<T>(
   let timer: number | null = null;
   let inflight = false;
   let disposed = false;
+  let generation = 0;
 
   const intervalMs = computed(() => {
     const source = options.interval;
@@ -45,23 +49,37 @@ export function usePolling<T>(
     return Math.max(1000, Number(raw ?? 15000));
   });
 
-  async function refresh(): Promise<void> {
-    if (inflight || disposed) return;
+  async function refresh(force = false): Promise<void> {
+    if (disposed || (inflight && !force)) return;
+    const token = ++generation;
     inflight = true;
     loading.value = true;
     try {
       const result = await fetcher();
-      if (!disposed) {
+      if (!disposed && token === generation) {
         data.value = result;
         error.value = null;
         lastUpdated.value = new Date();
       }
     } catch (err) {
-      if (!disposed) error.value = err instanceof Error ? err : new Error(String(err));
+      if (!disposed && token === generation) {
+        error.value = err instanceof Error ? err : new Error(String(err));
+      }
     } finally {
-      inflight = false;
-      loading.value = false;
+      if (token === generation) {
+        inflight = false;
+        loading.value = false;
+      }
     }
+  }
+
+  function reset(): void {
+    generation += 1;
+    inflight = false;
+    data.value = null;
+    error.value = null;
+    lastUpdated.value = null;
+    loading.value = false;
   }
 
   function schedule(): void {
@@ -100,9 +118,14 @@ export function usePolling<T>(
 
   if (options.watchSource) {
     watch(options.watchSource, () => {
-      void refresh();
+      if (options.resetOnSourceChange) {
+        reset();
+        void refresh(true);
+      } else {
+        void refresh();
+      }
     });
   }
 
-  return { data, error, loading, lastUpdated, refresh };
+  return { data, error, loading, lastUpdated, refresh, reset };
 }

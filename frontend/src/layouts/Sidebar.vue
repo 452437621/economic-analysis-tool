@@ -63,7 +63,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "专题",
     items: [
-      { to: "/gold", label: "黄金研判", icon: "#i-flame" },
+      { to: "/topics", label: "专题研判", icon: "#i-flame" },
       { to: "/lenses", label: "多透镜研判", icon: "#i-layers" },
       { to: "/signals", label: "交易信号", icon: "#i-activity" },
     ],

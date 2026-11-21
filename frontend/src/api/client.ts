@@ -81,6 +81,10 @@ export function patchJson<T>(url: string, body: unknown, options?: RequestOption
   return request<T>(url, { ...options, method: "PATCH", body: JSON.stringify(body) });
 }
 
+export function putJson<T>(url: string, body: unknown, options?: RequestOptions): Promise<T> {
+  return request<T>(url, { ...options, method: "PUT", body: JSON.stringify(body) });
+}
+
 export function deleteJson<T>(url: string, options?: RequestOptions): Promise<T> {
   return request<T>(url, { ...options, method: "DELETE" });
 }

@@ -131,6 +131,14 @@ def save_manual_metric(
     if payload.note:
         row.extra = {**(row.extra or {}), "note": payload.note}
     session.commit()
+    # The topic overview aggregates GoldMetric; drop its short-lived cache so
+    # an immediate refresh shows the manually entered value.
+    try:
+        from app.api import topics as topics_api
+
+        topics_api._overview_cache.clear()
+    except Exception:  # noqa: BLE001 - cache clearing must never fail the write
+        pass
     return {"code": code, "as_of": as_of.isoformat(), "value": payload.value, "saved": True}
 
 

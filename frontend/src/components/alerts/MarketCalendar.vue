@@ -13,7 +13,7 @@
         </span>
         <span class="badge badge--sm">{{ items.length }} 个事件</span>
         <span class="badge badge--sm badge--warn">{{ tripleStar }} 个三星</span>
-        <button class="btn btn--sm btn--ghost" type="button" :disabled="loading" @click="refresh">
+        <button class="btn btn--sm btn--ghost" type="button" :disabled="loading" @click="refresh()">
           <svg class="ic" :class="{ spin: loading }"><use href="#i-refresh" /></svg>刷新
         </button>
       </div>

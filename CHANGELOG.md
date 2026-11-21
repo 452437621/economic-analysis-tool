@@ -6,6 +6,22 @@
 
 ## [Unreleased]
 
+### 新增（专题研判：黄金 + 洛阳钼业，2026-11-21）
+- **专题框架**：新增 `config/topics.yaml` 注册表与 `app/topics/{config,scoring,storage}`；`/api/topics` 提供列表、overview、refresh、持仓读写；`config/topics/luoyang.yaml` 承载标的/情景/持仓/评分参数。新增专题只需改配置并登记 adapter。
+- **黄金评分合并**：`app/gold/signals.py` 移植 golden_analysis 的估值缺口、趋势、波动率、金银比、通胀预期、季节性 6 项正交信号；`compute_gold_score` 与 17 项指标统一走 `combine_factors`，新增 `signals/signal_details/combined/analytics`，重叠维度不重复计权；动量因子升级为 3 个月收益 + RSI14 复合口径。旧 `/api/gold/*` 键保持兼容。
+- **洛阳钼业**：新增东财采集器（行情/估值/财务/三表/分部/两融/资金流/分红/公告/研报/同业）与 `collect_luoyang`（每日 16:50）；移植单因子/多因子/滚动 beta/领先滞后/收益分解/估值分位/四法情景/持仓补仓/事件反应等纯函数；`topic_datasets/topic_dataset_rows/topic_source_runs/topic_settings` 通用长表存储。
+- **前端**：新增 `TopicsView` + `components/topics/*`（13 种分区渲染器、tab、吸顶锚点导航、图表范围、持仓/手动指标抽屉）；`/topics/:topicId?` 路由，`/gold` 重定向到 `/topics/gold`；侧栏、命令面板、分析页黄金卡同步；删除旧 `GoldView` 与 gold 页面专属组件。
+- **质检**：`check_data_quality` 增加洛阳关键数据集新鲜度检查（`action_job=collect_luoyang`）。
+
+### 修复
+- 洛阳 overview 在 `total_market_cap=NaN`、缺 `pb_mrq/ps_ttm`、PE 跨 0 时不再 500；事件表次日/5 日反应列已对齐。
+- 黄金覆盖率在信号缺失时不再高估（unavailable 信号保留权重）；KPI「伦敦金现」与 ETF 资金流/COMEX 库存/上金所租借费率图表序列恢复。
+- 配置参数缓存纳入 `config/topics/*.yaml`；topic 数据版本在刷新已有行时前进；`load_rows(limit)` 改为返回最新 N 条；批内重复键 upsert 去重。
+- `PositionIn` 支持 `add_prices/add_ratios`；`tests/helpers` 注册 topic 模型；0 分位、HAC 标准误、单调上涨 RSI 等边界修正。
+
+### 验证
+- 后端 `pytest -q` **540 passed / 1 skipped**；`scripts/lint.py` PASSED；前端 `vue-tsc` 0 error、vitest **55 passed**、`vite build` 成功。
+
 ## [3.0.0] - 2026-11-21
 
 ### 结构整理（V3.0.0）

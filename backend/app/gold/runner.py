@@ -93,9 +93,10 @@ def _derive_composite(rec: RunRecorder, score: dict, failed: list[str]):  # noqa
     factors = score.get("factors") or []
     codes = [factor.get("code") for factor in factors if factor.get("code")]
     coverage = float(score.get("coverage") or 0.0)
-    confidence = round(min(0.85, 0.40 + 0.50 * coverage), 2)
+    coverage_ratio = max(0.0, min(1.0, coverage / 100.0))
+    confidence = round(min(0.85, 0.40 + 0.50 * coverage_ratio), 2)
     caveats = [
-        f"覆盖率 {coverage:.0%}：{len(codes)} 个因子可用，缺失因子按中性处理",
+        f"覆盖率 {coverage:.0f}%：{len(codes)} 个因子可用，缺失因子按中性处理",
         "计分权重为人工设定，未经样本外权重优化",
     ]
     if failed:

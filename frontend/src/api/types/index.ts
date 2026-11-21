@@ -17,3 +17,4 @@ export * from "./coverage";
 export * from "./translate";
 export * from "./trades";
 export * from "./lenses";
+export * from "./topic";

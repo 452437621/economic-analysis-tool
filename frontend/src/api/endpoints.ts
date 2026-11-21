@@ -1,5 +1,5 @@
 /** 所有后端端点封装（契约见 backend/app/api）。 */
-import { deleteJson, getJson, patchJson, postJson } from "./client";
+import { deleteJson, getJson, patchJson, postJson, putJson } from "./client";
 import type {
   CoverageResponse,
   CycleReadingsResponse,
@@ -81,6 +81,10 @@ import type {
   WatchCandidate,
   WatchlistItem,
   WatchPatch,
+  TopicListResponse,
+  TopicOverview,
+  TopicPositionInput,
+  TopicPositionResponse,
 } from "./types";
 
 
@@ -192,6 +196,25 @@ export const saveGoldMetric = (payload: {
   source?: string;
   note?: string;
 }) => postJson<{ saved: boolean }>("/api/gold/metrics", payload);
+
+/* 专题研判 */
+export const getTopics = () => getJson<TopicListResponse>("/api/topics");
+export const getTopicOverview = (topicId: string, seriesLimit = 2500) =>
+  getJson<TopicOverview>(`/api/topics/${encodeURIComponent(topicId)}/overview`, {
+    params: { series_limit: seriesLimit },
+  });
+export const refreshTopic = (topicId: string) =>
+  postJson<{ accepted: boolean; job: string }>(
+    `/api/topics/${encodeURIComponent(topicId)}/refresh`,
+    {},
+  );
+export const getTopicPosition = (topicId: string) =>
+  getJson<TopicPositionResponse>(`/api/topics/${encodeURIComponent(topicId)}/position`);
+export const saveTopicPosition = (topicId: string, payload: Partial<TopicPositionInput>) =>
+  putJson<TopicPositionResponse>(
+    `/api/topics/${encodeURIComponent(topicId)}/position`,
+    payload,
+  );
 
 /* 分析 */
 export const getAnalytics = () => getJson<AnalyticsOverview>("/api/analytics/overview");

@@ -18,6 +18,7 @@ WORKSPACE_TEST_DATA = ROOT / "data" / "test"
 def _register_models() -> None:
     """Import every model module so Base.metadata is complete."""
     import app.models  # noqa: F401
+    import app.models.topics  # noqa: F401
     import app.models.v2  # noqa: F401
 
 

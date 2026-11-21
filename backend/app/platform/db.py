@@ -172,6 +172,7 @@ def _ensure_light_migrations() -> None:
 def init_db() -> None:
     """Create all tables for the current schema (Alembic takes over in M1)."""
     import app.models.core  # noqa: F401  (register models)
+    import app.models.topics  # noqa: F401  (register topic research tables)
     import app.models.v2  # noqa: F401  (register V2.0 glassbox/cycle tables)
 
     Base.metadata.create_all(engine)

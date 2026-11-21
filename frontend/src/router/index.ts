@@ -68,10 +68,14 @@ const routes: RouteRecordRaw[] = [
     meta: { title: "交易信号", group: "专题" },
   },
   {
+    path: "/topics/:topicId?",
+    name: "topics",
+    component: () => import("@/views/TopicsView.vue"),
+    meta: { title: "专题研判", group: "专题" },
+  },
+  {
     path: "/gold",
-    name: "gold",
-    component: () => import("@/views/GoldView.vue"),
-    meta: { title: "黄金研判", group: "专题" },
+    redirect: (to) => ({ path: "/topics/gold", hash: to.hash, query: to.query }),
   },
   {
     path: "/lenses",

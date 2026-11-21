@@ -1,0 +1,153 @@
+# 洛阳钼业研判的专题参数（与 config/topics.yaml 的 topic 注册表配合使用）。
+# 这里的假设与持仓默认值都可以被页面「持仓设置」覆盖；覆盖值写入本地数据库。
+
+symbol: "603993"
+name: 洛阳钼业
+exchange: SSE
+h_symbol: "03993"
+
+benchmarks:
+  hs300: "000300"
+  sse: "000001"
+  sector: "BK0478"
+
+peers:
+  - { code: "601899", name: 紫金矿业, secid: "1.601899" }
+  - { code: "600362", name: 江西铜业, secid: "1.600362" }
+  - { code: "000630", name: 铜陵有色, secid: "0.000630" }
+  - { code: "603799", name: 华友钴业, secid: "1.603799" }
+  - { code: "601958", name: 金钼股份, secid: "1.601958" }
+
+assumptions:
+  mid_cycle_cu: 95000.0
+  payout_ratio: 0.30
+  da_2027: 78.0
+  capex_2027: 105.0
+  dwc_2027: 15.0
+  wacc: 0.090
+  terminal_g: 0.020
+  pe_target: { bear: 7.5, base: 9.5, bull: 11.5 }
+  pb_target: { bear: 2.2, base: 2.7, bull: 3.3 }
+  ev_ebitda_target: { bear: 4.3, base: 5.1, bull: 5.8 }
+  dcf_g1: { bear: 0.005, base: 0.020, bull: 0.030 }
+  wacc_scenario: { bear: 0.095, base: 0.090, bull: 0.085 }
+  terminal_g_scenario: { bear: 0.015, base: 0.020, bull: 0.025 }
+  copper: { bear: 88000.0, base: 100000.0, bull: 118000.0 }
+  probability: { bear: 0.30, base: 0.50, bull: 0.20 }
+  method_weights: { pe_band: 0.30, pb_band: 0.25, ev_ebitda: 0.25, dcf: 0.20 }
+  fallback:
+    eps_this_year: 1.48
+    eps_next_year: 1.63
+    sens_np_yi_per_1000yuan: 4.2
+    tax_rate: 0.285
+    minority_share: 0.133
+
+position_defaults:
+  buy_price: 23.40
+  buy_date: "2026-02"
+  shares_lots: null
+  dividends:
+    - { date: "2026-05-27", per_share: 0.286 }
+    - { date: "2026-09-09", per_share: 0.095 }
+  add_prices: [12.5, 12.0, 11.5, 11.0, 10.5, 10.0]
+  add_ratios: [0.25, 0.5, 0.75, 1.0]
+  risk_free_rate: 0.02
+
+score_weights:
+  valuation: 30
+  technical: 25
+  copper: 20
+  scenario: 15
+  relative: 10
+
+datasets:
+  price_daily:
+    label: 洛阳钼业日线
+    freq: d
+    source: eastmoney_push2his
+    primary_key: date
+    max_age_days: 5
+  price_raw_daily:
+    label: 洛阳钼业不复权日线
+    freq: d
+    source: eastmoney_push2his
+    primary_key: date
+    max_age_days: 5
+  h_price_daily:
+    label: 洛阳钼业 H 股
+    freq: d
+    source: eastmoney_push2his
+    primary_key: date
+    max_age_days: 5
+  benchmarks_daily:
+    label: 基准指数与板块
+    freq: d
+    source: eastmoney_push2his
+    primary_key: date+symbol
+    max_age_days: 5
+  market_daily:
+    label: 商品与汇率
+    freq: d
+    source: eastmoney+sina
+    primary_key: date+symbol
+    max_age_days: 5
+  valuation_daily:
+    label: 每日估值
+    freq: d
+    source: eastmoney_datacenter
+    primary_key: date
+    max_age_days: 5
+  financials_quarterly:
+    label: 财务主要指标
+    freq: q
+    source: eastmoney_datacenter
+    primary_key: report_date
+    max_age_days: 150
+  financial_statements:
+    label: 三表关键科目
+    freq: q
+    source: eastmoney_datacenter
+    primary_key: report_date
+    max_age_days: 150
+  segments:
+    label: 分部/分产品
+    freq: q
+    source: eastmoney_datacenter
+    primary_key: report_date+item
+    max_age_days: 200
+  margin_daily:
+    label: 融资融券
+    freq: d
+    source: eastmoney_datacenter
+    primary_key: date
+    max_age_days: 5
+  flows_daily:
+    label: 主力资金流
+    freq: d
+    source: eastmoney_fflow
+    primary_key: date
+    max_age_days: 5
+  dividends:
+    label: 分红送配
+    freq: q
+    source: eastmoney_datacenter
+    primary_key: report_date
+    max_age_days: 400
+  announcements:
+    label: 公告
+    freq: d
+    source: eastmoney_notice
+    primary_key: art_code
+    max_age_days: 7
+  research_reports:
+    label: 研报
+    freq: d
+    source: eastmoney_report
+    primary_key: info_code
+    max_age_days: 30
+  snapshots:
+    label: 同业与 A/H 快照
+    freq: d
+    source: eastmoney_quote
+    primary_key: code
+    max_age_days: 2

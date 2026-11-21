@@ -22,7 +22,7 @@
     <div v-if="statusError" class="pipe-status-strip">
       <span class="badge badge--warn badge--sm">状态接口异常</span>
       <span class="pipe-status-strip-text">{{ errorText(statusError) }}</span>
-      <button class="link-btn" type="button" @click="refreshStatus">重试</button>
+      <button class="link-btn" type="button" @click="refreshStatus()">重试</button>
     </div>
 
     <PipelineRunStrip

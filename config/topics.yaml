@@ -1,0 +1,57 @@
+# 专题研判注册表：菜单「专题研判」下的研判类型与页内分区。
+#
+# 新增一个研判类型：
+#   1. 在这里增加一个 topic 块；
+#   2. 在 backend/app/topics/__init__.py 的 ADAPTERS 中登记同名适配器。
+# 只调整顺序、显隐、标题、分区时无需改代码，保存后下一次请求生效。
+version: 1
+
+topics:
+  - id: gold
+    label: 黄金研判
+    subtitle: 央行购金 · 全球 ETF · 租赁/掉期 · 库存 · 做市商 · 实际利率与量化信号
+    asset: 黄金
+    adapter: gold
+    enabled: true
+    order: 10
+    refresh_job: collect_gold
+    # golden_analysis 的正交信号权重（并入综合评分；与现有指标重复的维度不再计权）
+    signal_weights:
+      fair_value: 12
+      trend: 14
+      volatility: 5
+      silver_ratio: 5
+      inflation_expectation: 5
+      seasonality: 4
+    sections:
+      - { id: conclusion, label: 结论与评分, kind: hero }
+      - { id: kpis, label: 关键读数, kind: kpis }
+      - { id: performance, label: 表现与波动状态, kind: kpis }
+      - { id: factors, label: 驱动因子, kind: factors }
+      - { id: charts, label: 行情图表, kind: charts }
+      - { id: valuation, label: 估值模型, kind: valuation }
+      - { id: signals, label: 量化信号, kind: table }
+      - { id: correlations, label: 相关性, kind: table }
+      - { id: sources, label: 数据源与手动指标, kind: sources }
+      - { id: health, label: 数据健康, kind: health }
+      - { id: methodology, label: 方法论, kind: methodology }
+
+  - id: luoyang
+    label: 洛阳钼业研判
+    subtitle: 铜钴价格 · 产量成本 · 因子归因 · 估值 · 四法情景 · 持仓与事件
+    asset: 股票
+    adapter: luoyang
+    enabled: true
+    order: 20
+    refresh_job: collect_luoyang
+    sections:
+      - { id: conclusion, label: 结论与评分, kind: hero }
+      - { id: kpis, label: 行情快照, kind: kpis }
+      - { id: charts, label: 行情与资金, kind: charts }
+      - { id: factors, label: 因子归因, kind: table }
+      - { id: valuation, label: 估值, kind: valuation }
+      - { id: scenarios, label: 情景与目标价, kind: scenarios }
+      - { id: events, label: 事件与反应, kind: events }
+      - { id: position, label: 持仓与操作, kind: position }
+      - { id: health, label: 数据健康, kind: health }
+      - { id: methodology, label: 方法与声明, kind: methodology }

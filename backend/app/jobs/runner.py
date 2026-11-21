@@ -24,6 +24,7 @@ from app.decision.scoring import score_predictions
 from app.knowledge import events as event_mod
 from app.decision.theses import generate_theses
 from app.gold.runner import collect_gold
+from app.ingest.collectors.topics import collect_luoyang
 from app.ingest import pipeline
 from app.ingest.backfill import run_backfill
 from app.models.base import utcnow
@@ -152,6 +153,7 @@ JOBS = {
     "collect_news": pipeline.collect_news,
     "collect_news_slow": lambda: pipeline.collect_news(slow=True),
     "collect_gold": collect_gold,
+    "collect_luoyang": collect_luoyang,
     "collect_bodies": pipeline.collect_bodies,
     "extract_claims": pipeline.extract_claims,
     "extract_events": event_mod.extract_events,

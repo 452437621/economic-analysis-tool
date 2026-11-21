@@ -45,6 +45,15 @@ def test_scoring_with_synthetic_metrics():
         factor_codes = {factor["code"] for factor in score["factors"]}
         assert "ETF_GLOBAL_TONNES" in factor_codes
         assert "SGE_GOLD_LEASE_3M_PCT" in factor_codes
+        assert len(score["signals"]) == 6
+        assert score["signal_details"]
+        assert set(score["combined"]) >= {
+            "score",
+            "label",
+            "coverage",
+            "available_weight",
+            "total_weight",
+        }
         for row in session.query(GoldMetric).filter(GoldMetric.source == "test").all():
             session.delete(row)
         session.commit()

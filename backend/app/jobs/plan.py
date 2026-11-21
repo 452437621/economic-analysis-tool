@@ -296,6 +296,15 @@ JOB_PLANS: dict[str, JobPlan] = {
         max_lag_hours=36,
         order=70,
     ),
+    "collect_luoyang": JobPlan(
+        "collect_luoyang",
+        "data",
+        (_daily(16, 50),),
+        depends_on=("collect_daily_bars",),
+        data_requirements=("daily_bars",),
+        max_lag_hours=48,
+        order=75,
+    ),
     "collect_news": JobPlan(
         "collect_news",
         "data",

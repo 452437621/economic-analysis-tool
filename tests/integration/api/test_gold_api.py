@@ -19,6 +19,9 @@ def test_gold_api_overview_and_manual_metric():
         assert set(payload) >= {"score", "series", "providers", "manual", "indicators", "categories"}
         expected_factors = sum(1 for item in INDICATORS.values() if item.weight > 0)
         assert len(payload["score"]["factors"]) == expected_factors
+        assert len(payload["score"]["signals"]) == 6
+        assert payload["score"]["signal_details"]
+        assert -100 <= payload["score"]["combined"]["score"] <= 100
         assert payload["manual"], "manual indicator list should not be empty"
 
         series = client.get("/api/gold/series?code=COT_MONEY_NET&limit=5")

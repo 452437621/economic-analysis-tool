@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import timedelta, timezone
+from datetime import date, timedelta, timezone
 
 from sqlalchemy import func, select
 
@@ -29,6 +29,64 @@ from app.platform.config import settings
 from app.platform.db import SessionLocal
 
 logger = logging.getLogger(__name__)
+
+TOPIC_KEY_DATASETS = {"price_daily", "valuation_daily", "financials_quarterly", "benchmarks_daily"}
+
+
+def topic_freshness_findings(session, now) -> list[dict]:
+    """Freshness findings for topic datasets (no network, safe to unit-test)."""
+    findings: list[dict] = []
+    try:
+        from app.topics import config as topic_config
+        from app.topics import storage as topic_storage
+
+        spec = topic_config.get_topic("luoyang")
+        if spec is None or not spec.enabled:
+            return findings
+        catalog = {
+            item["dataset"]: item
+            for item in topic_storage.load_dataset_catalog(session, spec.id)
+        }
+        datasets = (spec.params or {}).get("datasets") or {}
+        for dataset in sorted(TOPIC_KEY_DATASETS):
+            meta = datasets.get(dataset) or {}
+            item = catalog.get(dataset) or {}
+            latest = item.get("latest_as_of")
+            max_age = int(meta.get("max_age_days") or 5)
+            latest_date = None
+            if latest:
+                try:
+                    latest_date = date.fromisoformat(str(latest)[:10])
+                except ValueError:
+                    latest_date = None
+            age = (now.date() - latest_date).days if latest_date else None
+            passed = age is not None and age <= max_age
+            detail = f"最新={latest_date or '无'}"
+            if age is not None:
+                detail += f", 距今{age}天"
+            if not passed:
+                detail += f", 超过{max_age}天阈值" if age is not None else ", 尚未采集"
+            findings.append(
+                {
+                    "kind": "freshness",
+                    "dataset": f"专题:luoyang/{dataset}",
+                    "passed": passed,
+                    "detail": detail,
+                    "action_job": "collect_luoyang",
+                }
+            )
+    except Exception as exc:  # noqa: BLE001 - topic quality must not break the batch
+        logger.warning("topic quality check failed: %s", exc)
+        findings.append(
+            {
+                "kind": "freshness",
+                "dataset": "专题:luoyang",
+                "passed": False,
+                "detail": f"专题质检失败: {exc}",
+                "action_job": "collect_luoyang",
+            }
+        )
+    return findings
 
 
 def check_data_quality() -> dict:
@@ -216,6 +274,10 @@ def check_data_quality() -> dict:
             session.scalar(select(func.max(func.coalesce(Document.published_at, Document.fetched_at)))),
             3,
         )
+
+        # 专题研判（洛阳）关键数据集新鲜度：采集失败时给出可执行的补采作业。
+        for finding in topic_freshness_findings(session, now):
+            add(**finding)
 
         coverage = session.execute(
             select(Instrument.symbol, func.count(MarketBar.id))

@@ -1322,7 +1322,7 @@ SCREENSHOT_PAGES = (
     ("vue-analysis", "/analysis"),
     ("vue-signals", "/signals"),
     ("vue-lenses", "/lenses"),
-    ("vue-gold", "/gold"),
+    ("vue-gold", "/topics/gold"),
     ("vue-theses", "/theses"),
     ("vue-briefs", "/briefs"),
     ("vue-system", "/system"),

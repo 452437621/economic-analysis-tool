@@ -32,7 +32,7 @@
         <div class="gold-sub">
           {{ goldAvailableCount }}/{{ goldTotalCount }} 因子可用 · 评分区间 −100 ～ +100
         </div>
-        <RouterLink class="link-btn gold-link" to="/gold">查看完整黄金研判 →</RouterLink>
+        <RouterLink class="link-btn gold-link" to="/topics/gold">查看完整黄金研判 →</RouterLink>
       </div>
 
       <div class="gold-factors">

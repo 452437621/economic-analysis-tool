@@ -8,7 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.gold.registry import CATEGORY_LABELS, INDICATORS, Indicator
+from app.gold.signals import build_signal_context, unavailable_signals
 from app.models.core import GoldMetric, Instrument, MarketBar
+from app.topics.scoring import combine_factors, score_0_100
 
 HISTORY_LIMIT = 400
 WEIGHT_TOTAL = sum(item.weight for item in INDICATORS.values() if item.weight > 0)
@@ -112,9 +114,6 @@ def _label(score: float) -> str:
 
 
 def compute_gold_score(session: Session) -> dict:
-    weighted = 0.0
-    total_weight = 0.0
-    available_weight = 0.0
     factors: list[dict] = []
     for code, item in INDICATORS.items():
         if item.weight <= 0:
@@ -132,10 +131,6 @@ def compute_gold_score(session: Session) -> dict:
                 change = adjusted
         factor_score = raw_score * item.direction
         available = bool(obs)
-        if available:
-            total_weight += item.weight
-            available_weight += item.weight
-            weighted += item.weight * factor_score
         factors.append(
             {
                 "code": code,
@@ -157,6 +152,7 @@ def compute_gold_score(session: Session) -> dict:
                 "note": item.note,
                 "explain": note,
                 "as_of": obs[-1][0].isoformat() if obs else None,
+                "kind": "indicator",
             }
         )
     # GOLD_MOM_20D_PCT 由日线直接计算（覆盖“首次运行样本不足”）
@@ -165,12 +161,6 @@ def compute_gold_score(session: Session) -> dict:
         if factor["code"] != "GOLD_MOM_20D_PCT" or momentum is None:
             continue
         norm = max(-1.0, min(1.0, momentum / 8))
-        if factor["available"]:
-            weighted -= factor["weight"] * (factor["score"] / 100)
-        else:
-            total_weight += factor["weight"]
-            available_weight += factor["weight"]
-        weighted += factor["weight"] * norm
         factor.update(
             {
                 "available": True,
@@ -181,27 +171,132 @@ def compute_gold_score(session: Session) -> dict:
                 "explain": f"AU 近 20 个交易日 {momentum:+.2f}%",
             }
         )
-    score = round(weighted / total_weight * 100, 1) if total_weight else 0.0
-    coverage = round(available_weight / WEIGHT_TOTAL * 100, 0) if WEIGHT_TOTAL else 0.0
+
+    # ---- golden_analysis 正交信号（并入同一套评分，重叠维度不重复计权）----
+    spec = None
+    try:
+        from app.topics.config import get_topic
+
+        spec = get_topic("gold")
+    except Exception:  # noqa: BLE001 - config issues must not break the legacy page
+        spec = None
+    context = None
+    try:
+        context = build_signal_context(session, spec)
+        signal_factors = context.signals
+        if context.momentum and context.available:
+            for factor in factors:
+                if factor["code"] != "GOLD_MOM_20D_PCT":
+                    continue
+                value = float(context.momentum["score"])
+                factor.update(
+                    {
+                        "available": True,
+                        "value": round(context.momentum["value"], 3),
+                        "change": round(context.momentum["change"], 3),
+                        "score": round(value * 100, 1),
+                        "signal": _factor_signal(value),
+                        "explain": context.momentum["explain"],
+                    }
+                )
+    except Exception as exc:  # noqa: BLE001 - signals are additive, never fatal
+        signal_factors = unavailable_signals(f"量化信号计算失败：{exc}", spec)
+        context = None
+
+    # 动量因子可能被 golden 口径覆盖，贡献需要按新得分重算
+    for factor in factors:
+        factor["contribution"] = round(factor["weight"] * factor["score"] / 100, 2)
+
+    combined = combine_factors([*factors, *signal_factors])
     return {
-        "score": score,
-        "label": _label(score),
-        "coverage": coverage,
-        "available_weight": round(available_weight, 1),
-        "total_weight": round(WEIGHT_TOTAL, 1),
+        "score": combined["score"],
+        "label": combined["label"],
+        "coverage": round(combined["coverage"], 0),
+        "available_weight": combined["available_weight"],
+        "total_weight": combined["total_weight"],
         "factors": factors,
+        "signals": signal_factors,
+        "signal_details": _signal_details(factors, signal_factors),
+        "combined": combined,
+        "score_0_100": score_0_100(combined["score"]),
         "categories": [
             {"key": key, "label": label, "count": sum(1 for f in factors if f["category"] == key)}
             for key, label in CATEGORY_LABELS.items()
         ],
         "generated_at": _utcnow().isoformat(),
         "methodology": (
-            "综合评分 = Σ(指标权重 × 标准化得分 × 方向) / 已获取权重；"
-            "权重按可得数据重新归一。方向：实际利率/美元/库存/投机持仓逆向，"
-            "央行购金/ETF/上海溢价/租赁紧张正向。CFTC 分类持仓与银行参与报告是"
-            "公开可得的最佳代理，不等同于摩根大通/汇丰等个体做市商账簿。"
+            "综合评分 = Σ(指标权重 × 标准化得分 × 方向) / 已获取权重；权重按可得数据重新归一。"
+            "覆盖 17 项基本面/持仓指标 + 6 项黄金量化信号（实际利率估值缺口、趋势、波动率、"
+            "金银比、通胀预期、季节性）；动量因子采用 3 个月收益 + RSI14 复合口径。"
+            "实际利率/美元/央行购金/ETF/COT 等重叠维度只在指标层计权一次，避免重复计权。"
+            "方向：实际利率/美元/库存/投机持仓逆向，央行购金/ETF/上海溢价/租赁紧张正向。"
+            "CFTC 分类持仓与银行参与报告是公开可得的最佳代理，不等同于个体做市商账簿。"
+        ),
+        "analytics": (
+            {
+                "valuation": context.valuation,
+                "seasonality": context.seasonality,
+                "regime": context.regime,
+                "performance": context.performance,
+                "technical": context.technical,
+                "correlations": context.correlations,
+                "coverage": context.coverage,
+                "notes": context.notes,
+            }
+            if context is not None
+            else None
         ),
     }
+
+
+_DETAIL_MAP = (
+    ("实际利率", "US10Y_REAL"),
+    ("美元指数", "DXY"),
+    ("央行购金", "CN_GOLD_RESERVES_USD"),
+    ("ETF持仓", "ETF_GLOBAL_TONNES"),
+    ("COT持仓", "COT_MONEY_NET"),
+    ("动量", "GOLD_MOM_20D_PCT"),
+)
+
+
+def _signal_details(factors: list[dict], signal_factors: list[dict]) -> list[dict]:
+    """Golden's twelve-signal view: five are already covered by indicator weights."""
+    by_code = {item["code"]: item for item in factors}
+    details: list[dict] = []
+    for name, code in _DETAIL_MAP:
+        item = by_code.get(code)
+        if item is None:
+            continue
+        details.append(
+            {
+                "name": name,
+                "code": code,
+                "weighted": name == "动量",
+                "dedupe_note": "" if name == "动量" else "已由现有指标覆盖，不重复计权",
+                "weight": item["weight"],
+                "score": round(float(item["score"]) / 100.0, 3),
+                "direction": item["signal"],
+                "available": item["available"],
+                "detail": item["explain"],
+                "as_of": item["as_of"],
+            }
+        )
+    for item in signal_factors:
+        details.append(
+            {
+                "name": item["name"],
+                "code": item["code"],
+                "weighted": True,
+                "dedupe_note": "",
+                "weight": item["weight"],
+                "score": round(float(item["score"]) / 100.0, 3) if item["available"] else None,
+                "direction": item["signal"],
+                "available": item["available"],
+                "detail": item["explain"],
+                "as_of": item["as_of"],
+            }
+        )
+    return details
 
 
 def _momentum_from_bars(session: Session) -> float | None:
