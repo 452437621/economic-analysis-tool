@@ -151,9 +151,10 @@ def _fallback_from_system(session: Session, data: LuoyangData) -> None:
     """Use the system's own market library to fill the topic's missing series.
 
     The daily-bar collector already keeps 603993 / 000300 / CU / HG / DXY /
-    USDCNH.  Those bars are adjusted (前复权), so OHLC and the unadjusted close
-    are unavailable; technicals still work from close, and the position block
-    falls back to the adjusted price with an explicit note.
+    USDCNH with real OHLC and volume.  Those bars are forward-adjusted
+    (前复权), so the unadjusted close is unavailable; technicals and candles use
+    the adjusted series, and the position block falls back to the live snapshot
+    when present.
     """
     # Only require the series the analysis actually consumes.  Sector/sse may be
     # absent; treating them as mandatory made the fallback re-read every bar on
@@ -162,28 +163,26 @@ def _fallback_from_system(session: Session, data: LuoyangData) -> None:
     need_market = data.market.empty or "shfe_cu" not in data.market.columns
     if not (data.price.empty or need_bench or need_market):
         return
+    from app.topics import bars
+
+    if data.price.empty:
+        try:
+            frame = bars.load_bar_frame(session, "603993")
+        except Exception as exc:  # noqa: BLE001 - fallback must never break the page
+            data.notes.append(f"系统行情库读取失败：{exc}")
+            frame = pd.DataFrame()
+        if len(frame) >= 30:
+            data.price = frame
+            data.notes.append(
+                "主题日线端点不可达，使用系统行情库 603993 日线（前复权，含 OHLC/成交量；无不复权价）。"
+            )
+    if not (need_bench or need_market):
+        return
     try:
         frames = load_frames(session).closes
     except Exception as exc:  # noqa: BLE001 - fallback must never break the page
         data.notes.append(f"系统行情库读取失败：{exc}")
         return
-    if data.price.empty and "603993" in frames.columns:
-        series = frames["603993"].dropna()
-        if len(series) >= 30:
-            data.price = pd.DataFrame(
-                {
-                    "open": series,
-                    "high": series,
-                    "low": series,
-                    "close": series,
-                    "close_raw": series,
-                    "volume": pd.NA,
-                    "amount": pd.NA,
-                    "pct_chg": series.pct_change() * 100,
-                }
-            )
-            data.price.index = pd.to_datetime(data.price.index)
-            data.notes.append("主题日线端点不可达，使用系统行情库 603993 日线（前复权，无 OHLC/不复权价）。")
     if need_bench:
         mapping = {"hs300": "000300", "sse": "000001"}
         missing = {

@@ -68,6 +68,15 @@ def _kpis(data: LuoyangData, valuation_block: dict, technical_block: dict, posit
     return items
 
 
+def _ohlc_usable(ohlc: list[list[float | None]]) -> bool:
+    """True when candles carry a real high/low range (not a flat close copy)."""
+    complete = [row for row in ohlc if len(row) == 4 and all(value is not None for value in row)]
+    if len(complete) < 5:
+        return False
+    ranged = sum(1 for row in complete if float(row[3]) - float(row[2]) > 1e-9)
+    return ranged >= max(5, len(complete) // 10)
+
+
 def _charts(
     data: LuoyangData,
     position_block: dict,
@@ -94,30 +103,55 @@ def _charts(
         marks.append({"type": "line", "value": support["price"], "label": f"支撑 {support['type']}", "color": "up"})
     for resistance in (technical_block.get("levels") or {}).get("resistances", [])[:2]:
         marks.append({"type": "line", "value": resistance["price"], "label": f"阻力 {resistance['type']}", "color": "down"})
-    charts.append(
-        {
-            "key": "price_kline",
-            "title": "日 K 线",
-            "subtitle": "前复权价格 · 成本线与支撑/阻力（成本线按不复权口径）",
-            "kind": "candlestick",
-            "unit": "元",
-            "height": 380,
-            "wide": True,
-            "dates": dates,
-            "ohlc": ohlc,
-            "series": [
-                {
-                    "name": "成交量",
-                    "type": "bar",
-                    "axis": 1,
-                    "values": [_fmt(value, 0) for value in tail.get("volume", pd.Series(dtype=float))],
-                }
-            ],
-            "marks": marks,
-            "note": "持仓成本用不复权价；技术支撑/阻力由摆动点、成交密集区、均线与 52 周高低聚合。",
-            "hasData": True,
-        }
-    )
+    volume_values = [_fmt(value, 0) for value in tail.get("volume", pd.Series(dtype=float))]
+    if _ohlc_usable(ohlc):
+        charts.append(
+            {
+                "key": "price_kline",
+                "title": "日 K 线",
+                "subtitle": "前复权价格 · 成本线与支撑/阻力（成本线按不复权口径）",
+                "kind": "candlestick",
+                "unit": "元",
+                "height": 380,
+                "wide": True,
+                "dates": dates,
+                "ohlc": ohlc,
+                "series": [
+                    {
+                        "name": "成交量",
+                        "type": "bar",
+                        "axis": 1,
+                        "values": volume_values,
+                    }
+                ],
+                "marks": marks,
+                "note": "持仓成本用不复权价；技术支撑/阻力由摆动点、成交密集区、均线与 52 周高低聚合。",
+                "hasData": True,
+            }
+        )
+    else:
+        # Upstream has no real open/high/low: a candlestick would render as
+        # invisible flat bars, so show the close line instead.
+        close_values = [_fmt(value, 3) for value in tail.get("close", pd.Series(dtype=float))]
+        series: list[dict[str, Any]] = [{"name": "收盘价", "values": close_values, "axis": 0}]
+        if any(value is not None for value in volume_values):
+            series.append({"name": "成交量", "type": "bar", "axis": 1, "values": volume_values})
+        charts.append(
+            {
+                "key": "price_kline",
+                "title": "日 K 线",
+                "subtitle": "上游未提供开高低收，暂以收盘价折线展示",
+                "kind": "line",
+                "unit": "元",
+                "height": 380,
+                "wide": True,
+                "dates": dates,
+                "series": series,
+                "marks": marks,
+                "note": "行情端点未返回 OHLC/成交量；价格与持仓成本仍按收盘价与快照价计算。",
+                "hasData": any(value is not None for value in close_values),
+            }
+        )
     if "shfe_cu" in panel.columns and panel["shfe_cu"].notna().any():
         copper = tail["shfe_cu"].ffill()
         charts.append(

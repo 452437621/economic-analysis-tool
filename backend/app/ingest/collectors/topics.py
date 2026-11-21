@@ -99,24 +99,22 @@ def _statement_rows(client: HttpClient) -> list[dict[str, Any]]:
 
 
 def _seed_from_system(session, spec, dataset: str) -> list[dict[str, Any]]:
-    """Fallback to the system's own daily bars when the topic kline endpoint fails."""
-    from app.analytics.data import load_frames
+    """Fallback to the system's own daily bars when the topic kline endpoint fails.
 
-    frames = load_frames(session).closes
+    Uses the real OHLC/volume stored in ``market_bars``; duplicating the close
+    into open/high/low would render as flat candles with no body or shadows.
+    """
+    from app.topics import bars
+
     mapping: dict[str, list[tuple[str, str]]] = {
         "price_daily": [("default", "603993")],
         "benchmarks_daily": [("hs300", "000300"), ("sse", "000001")],
         "market_daily": [("shfe_cu", "CU"), ("lme_cu", "HG"), ("dxy", "DXY"), ("usdcnh", "USDCNH")],
     }
-    pairs = mapping.get(dataset) or []
     rows: list[dict[str, Any]] = []
-    for row_key, symbol in pairs:
-        if symbol not in frames.columns:
-            continue
-        series = frames[symbol].dropna()
-        for when, value in series.items():
-            payload = {"open": value, "high": value, "low": value, "close": value, "close_raw": value}
-            rows.append({"as_of": when.date(), "row_key": row_key, "payload": payload})
+    for row_key, symbol in mapping.get(dataset) or []:
+        for item in bars.load_bar_rows(session, symbol):
+            rows.append({"as_of": item["as_of"], "row_key": row_key, "payload": item["payload"]})
     return rows
 
 
