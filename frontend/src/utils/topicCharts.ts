@@ -173,7 +173,8 @@ export function buildTopicChartOption(
     grid: {
       left: 48,
       right: axes.length > 1 ? 56 : 16,
-      top: 28,
+      // Reserve a legend row so it never sits on the top y-axis tick or axis name.
+      top: 38,
       bottom: dates.length > 160 ? 44 : 24,
     },
     tooltip: {
@@ -186,10 +187,11 @@ export function buildTopicChartOption(
         typeof value === "number" ? value.toFixed(2) : String(value ?? "—"),
     },
     legend: {
-      top: 2,
-      left: 0,
-      textStyle: { color: palette.muted, fontSize: 10 },
-      itemWidth: 10,
+      top: 3,
+      left: "center",
+      itemGap: 18,
+      textStyle: { color: palette.muted, fontSize: 10, padding: [0, 0, 0, 2] },
+      itemWidth: 12,
       itemHeight: 6,
     },
     xAxis: {

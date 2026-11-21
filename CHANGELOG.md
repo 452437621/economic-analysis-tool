@@ -18,6 +18,7 @@
 - 黄金覆盖率在信号缺失时不再高估（unavailable 信号保留权重）；KPI「伦敦金现」与 ETF 资金流/COMEX 库存/上金所租借费率图表序列恢复。
 - 配置参数缓存纳入 `config/topics/*.yaml`；topic 数据版本在刷新已有行时前进；`load_rows(limit)` 改为返回最新 N 条；批内重复键 upsert 去重。
 - `PositionIn` 支持 `add_prices/add_ratios`；`tests/helpers` 注册 topic 模型；0 分位、HAC 标准误、单调上涨 RSI 等边界修正。
+- 洛阳 K 线：系统行情兜底不再用收盘价伪造 open/high/low（导致蜡烛无实体、无影线、无成交量），改用 `market_bars` 的真实 OHLC 与成交量；OHLC 缺失时降级为收盘价折线并给出说明。
 
 ### 验证
 - 后端 `pytest -q` **540 passed / 1 skipped**；`scripts/lint.py` PASSED；前端 `vue-tsc` 0 error、vitest **55 passed**、`vite build` 成功。

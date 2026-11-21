@@ -73,6 +73,13 @@ describe("topicCharts", () => {
     expect(option.series[0].markLine.data[0].yAxis).toBe(50);
   });
 
+  it("keeps the legend clear of the top y-axis name and tick", () => {
+    const option = buildTopicChartOption(lineSpec, palette) as any;
+    // Legend sits in its own row above the plot; the grid must start below it.
+    expect(option.legend.top).toBeLessThan(option.grid.top);
+    expect(option.grid.top).toBeGreaterThanOrEqual(36);
+  });
+
   it("detects empty charts and exposes all shared ranges", () => {
     expect(chartHasData(lineSpec)).toBe(true);
     expect(chartHasData({ ...lineSpec, series: [{ name: "A", values: [null, null] }], hasData: undefined })).toBe(false);
